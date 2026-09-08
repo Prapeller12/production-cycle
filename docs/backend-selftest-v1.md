@@ -18,6 +18,12 @@
   - `production_load_snapshot`;
   - `production_export_txt`;
   - `production_get_management_report`.
+- frontend подключён к IPC без изменения утверждённой компоновки:
+  - «Сохранить проект» записывает снимок в SQLite;
+  - «Открыть проект» загружает заказ из SQLite по номеру;
+  - «Проверить» использует backend-валидацию;
+  - TXT и модель PDF-отчёта формируются backend-сервисами;
+  - при открытии `frontend/index.html` в браузере остаётся JSON fallback для автономной проверки макета.
 
 ## Проверки разработчика
 
@@ -25,7 +31,7 @@
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Текущий frontend остаётся утверждённым UX/self-test эталоном. На следующем этапе его сохранение, TXT-экспорт и отчёт переключаются на backend IPC без изменения компоновки.
+Текущий frontend остаётся утверждённым UX/self-test эталоном и уже переключён на backend IPC в native-режиме без изменения компоновки.
 
 ## Инварианты
 

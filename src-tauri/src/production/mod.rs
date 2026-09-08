@@ -105,7 +105,16 @@ pub struct ReportCounts { pub total:usize, pub done:usize, pub work:usize, pub o
 pub struct ReportStageRow { pub stage:ProductionStageInput, pub depth:usize, pub visual_status:StageVisualStatus, pub days_remaining:i64 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProductionReport { pub project:ProductionProjectInput, pub counts:ReportCounts, pub stages:Vec<ReportStageRow>, pub generated_at:String }
+pub struct ProductionReport {
+    pub project:ProductionProjectInput,
+    pub counts:ReportCounts,
+    pub stages:Vec<ReportStageRow>,
+    pub status:StageVisualStatus,
+    pub project_days:i64,
+    pub project_overdue:bool,
+    pub overdue_held:usize,
+    pub generated_at:String,
+}
 
 pub struct ProductionDb { conn: Mutex<Connection> }
 impl ProductionDb {
@@ -195,10 +204,13 @@ pub fn build_txt_export(snapshot:&ProductionSnapshot)->Result<TxtExportBundle>{
 
 pub fn build_report(snapshot:&ProductionSnapshot,today:NaiveDate)->Result<ProductionReport>{
     let validation=validate_snapshot(snapshot)?;if !validation.valid{return Err(ProductionError::Validation("Проект не прошёл валидацию".into()));}
-    let mut counts=ReportCounts{total:snapshot.stages.len(),done:0,work:0,overdue:0,new_count:0,hold:0,done_percent:0,due_within_7_days:0};let mut rows=Vec::new();
-    for (s,depth) in preorder(&snapshot.stages){let deadline=parse_date(&s.deadline)?;let vs=visual_status(s.status,today,parse_date(&s.start)?,deadline);let days=(deadline-today).num_days();match vs{StageVisualStatus::Done=>counts.done+=1,StageVisualStatus::Work=>counts.work+=1,StageVisualStatus::Overdue=>counts.overdue+=1,StageVisualStatus::New=>counts.new_count+=1,StageVisualStatus::Hold=>counts.hold+=1}if vs!=StageVisualStatus::Done&&days>=0&&days<=7{counts.due_within_7_days+=1;}rows.push(ReportStageRow{stage:s,depth,visual_status:vs,days_remaining:days});}
+    let mut counts=ReportCounts{total:snapshot.stages.len(),done:0,work:0,overdue:0,new_count:0,hold:0,done_percent:0,due_within_7_days:0};let mut rows=Vec::new();let mut overdue_held=0;
+    for (s,depth) in preorder(&snapshot.stages){let deadline=parse_date(&s.deadline)?;let vs=visual_status(s.status,today,parse_date(&s.start)?,deadline);let days=(deadline-today).num_days();match vs{StageVisualStatus::Done=>counts.done+=1,StageVisualStatus::Work=>counts.work+=1,StageVisualStatus::Overdue=>counts.overdue+=1,StageVisualStatus::New=>counts.new_count+=1,StageVisualStatus::Hold=>counts.hold+=1}if vs!=StageVisualStatus::Done&&vs!=StageVisualStatus::Overdue&&days>=0&&days<=7{counts.due_within_7_days+=1;}if vs==StageVisualStatus::Hold&&days<0{overdue_held+=1;}rows.push(ReportStageRow{stage:s,depth,visual_status:vs,days_remaining:days});}
     if counts.total>0{counts.done_percent=((counts.done*100+counts.total/2)/counts.total) as u8;}
-    Ok(ProductionReport{project:snapshot.project.clone(),counts,stages:rows,generated_at:Local::now().to_rfc3339()})
+    let project_start=parse_date(&snapshot.project.start)?;let project_deadline=parse_date(&snapshot.project.deadline)?;let project_days=(project_deadline-today).num_days();
+    let status=if !snapshot.stages.is_empty()&&snapshot.stages.iter().all(|s|s.status==StageStatus::Done){StageVisualStatus::Done}else if counts.overdue>0{StageVisualStatus::Overdue}else if today<project_start{StageVisualStatus::New}else{StageVisualStatus::Work};
+    let project_overdue=status!=StageVisualStatus::Done&&project_days<0;
+    Ok(ProductionReport{project:snapshot.project.clone(),counts,stages:rows,status,project_days,project_overdue,overdue_held,generated_at:Local::now().to_rfc3339()})
 }
 
 fn save_snapshot_tx(tx:&Transaction<'_>,snapshot:&ProductionSnapshot)->Result<()> {
@@ -234,5 +246,6 @@ mod tests{
     #[test]fn txt_contract_and_empty_link(){let b=build_txt_export(&sample()).unwrap();assert_eq!(OUT_HEADER.len(),9);assert_eq!(IN_HEADER.len(),8);let incoming:Vec<_>=b.incoming_text.split("\r\n").collect();assert!(incoming[1].ends_with('\t'));assert!(incoming[1].contains("A\t916-001"));assert!(incoming[2].contains("B\t916-002"));}
     #[test]fn sqlite_roundtrip(){let db=ProductionDb::memory().unwrap();let s=sample();db.save_snapshot(&s).unwrap();let loaded=db.load_snapshot("916").unwrap().unwrap();assert_eq!(loaded.project.enterprise,"Предприятие");assert_eq!(loaded.stages.len(),2);assert_eq!(loaded.stages[1].parent_uid.as_deref(),Some("a"));}
     #[test]fn status_is_derived(){let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let start=NaiveDate::from_ymd_opt(2026,9,1).unwrap();let deadline=NaiveDate::from_ymd_opt(2026,9,7).unwrap();assert_eq!(visual_status(StageStatus::Work,today,start,deadline),StageVisualStatus::Overdue);assert_eq!(visual_status(StageStatus::Done,today,start,deadline),StageVisualStatus::Done);}
+    #[test]fn report_contains_management_risks(){let mut s=sample();s.project.deadline="2026-09-07".into();s.stages[0].status=StageStatus::Hold;s.stages[0].deadline="2026-09-07".into();let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let r=build_report(&s,today).unwrap();assert_eq!(r.overdue_held,1);assert_eq!(r.project_days,-1);assert!(r.project_overdue);assert_eq!(r.status,StageVisualStatus::Work);}
     #[test]fn cycle_is_rejected(){let mut s=sample();s.stages[0].parent_uid=Some("b".into());let r=validate_snapshot(&s).unwrap();assert!(!r.valid);assert!(r.errors.iter().any(|e|e.code=="CYCLE"));}
 }

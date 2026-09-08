@@ -5,8 +5,8 @@ const vm=require('node:vm');
 const path=require('node:path');
 const root=path.resolve(__dirname,'../frontend');
 const context=vm.createContext({console,Date,Set,Map,JSON});context.window=context;
-for(const f of ['config/contracts.js','domain/cycle.js','services/project-file.js','services/exchange.js'])vm.runInContext(fs.readFileSync(path.join(root,f),'utf8'),context,{filename:f});
-const {domain:D,projectFile:J,exchange:X}=context.Production;
+for(const f of ['config/contracts.js','domain/cycle.js','services/project-file.js','services/exchange.js','services/backend.js'])vm.runInContext(fs.readFileSync(path.join(root,f),'utf8'),context,{filename:f});
+const {domain:D,projectFile:J,exchange:X,backend:B}=context.Production;
 const plain=x=>JSON.parse(JSON.stringify(x));
 function stage(seq,parentUid=null,status='work'){return {uid:'s'+seq,seq,sort:seq,parentUid,title:'Этап '+seq,executor:'Исполнитель',addressees:'Предприятие',start:'2026-09-01',deadline:'2026-09-15',status}}
 function fixture(stages=[]){return {project:{orderNo:'123',name:'Проект',initiator:'Инициатор',executor:'Исполнитель',addressees:'Предприятие',start:'2026-09-01',deadline:'2026-09-30'},stages,nextSeq:1+stages.reduce((n,s)=>Math.max(n,s.seq),0),collapsed:{}}}
@@ -26,3 +26,13 @@ test('dates 0 to 7 days inclusive, done excluded',()=>{const s=fixture([stage(1)
 test('malformed paired tree rejected',()=>{const pair=X.exportPair(fixture([stage(1)])),out='\ufeff'+pair.out,input='\ufeff'+pair.in;for(const invalid of [out.replace('\r\n1\t','\r\n2\t'),out.replace('\r\n1\t','\r\n0\t'),out.replace('\r\n1\t','\r\n-1\t')])assert.throws(()=>X.previewPair(invalid,input));assert.throws(()=>X.previewPair(out,input.replace('123-001','456-001')));assert.throws(()=>X.previewPair(pair.out,input))});
 test('iterative tree handles deep imported structure',()=>{const s=fixture(Array.from({length:2500},(_,i)=>stage(i+1,i?'s'+i:null)));assert.equal(D.preorder(s).at(-1).depth,2499)});
 test('print layout retains A4 landscape and table continuation',()=>{const css=fs.readFileSync(path.join(root,'styles/app.css'),'utf8');assert.match(css,/size:A4 landscape/);assert.match(css,/display:table-header-group/);assert.match(css,/break-inside:avoid/);const html=fs.readFileSync(path.join(root,'index.html'),'utf8');assert.match(html,/id="pdfReportBtn"/);assert.ok(!/https?:\/\//.test(html))});
+test('native backend adapter preserves UI model and invokes SQLite commands',async()=>{
+ const s=fixture([stage(1)]),calls=[];
+ context.__TAURI__={core:{invoke:async(command,args)=>{calls.push({command,args});if(command==='production_validate')return{valid:true,errors:[],warnings:[]};if(command==='production_load_snapshot')return args.orderNo==='123'?args.__snapshot||B.toSnapshot(s):null;if(command==='production_export_txt')return{outgoingText:'out',incomingText:'in',outgoingFileName:'out.txt',incomingFileName:'in.txt'};if(command==='production_get_management_report')return{counts:{total:1,done:0,work:1,overdue:0,newCount:0,hold:0,donePercent:0,dueWithin7Days:1},stages:[{stage:B.toSnapshot(s).stages[0],depth:0,visualStatus:'work',daysRemaining:7}],status:'work',projectDays:22,projectOverdue:false,overdueHeld:0};return null}}};
+ const snapshot=B.toSnapshot(s);assert.equal(snapshot.project.enterprise,'Предприятие');assert.equal(snapshot.project.addressees,undefined);
+ await B.save(s);assert.equal(calls.at(-1).command,'production_save_snapshot');
+ const loaded=B.fromSnapshot(snapshot);assert.equal(loaded.project.addressees,'Предприятие');assert.deepEqual(plain(loaded.collapsed),{});
+ const pair=await B.exportPair(s);assert.deepEqual(plain(pair),{out:'out',in:'in',outFileName:'out.txt',inFileName:'in.txt'});
+ const report=await B.report(s);assert.equal(report.rows[0].visualStatus,'work');assert.equal(report.dueSoon,1);
+ delete context.__TAURI__;
+});
