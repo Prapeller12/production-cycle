@@ -23,7 +23,7 @@ fn main(){
         .invoke_handler(tauri::generate_handler![commands::save_file,commands::print_report,smoke::finish_smoke])
         .setup(move |app|{
             let paths=app.state::<Paths>();
-            WebviewWindowBuilder::new(app,"main",WebviewUrl::Custom("production://localhost/index.html".parse()?))
+            WebviewWindowBuilder::new(app,"main",WebviewUrl::CustomProtocol("production://localhost/index.html".parse()?))
                 .title("Производственный цикл — макет №1")
                 .inner_size(1440.0,900.0).min_inner_size(700.0,500.0)
                 .data_directory(paths.webview.clone())

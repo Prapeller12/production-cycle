@@ -1,4 +1,4 @@
-use tauri::{Manager, State};
+use tauri::State;
 use crate::infrastructure::portable::Paths;
 pub struct Smoke(pub bool);
 
