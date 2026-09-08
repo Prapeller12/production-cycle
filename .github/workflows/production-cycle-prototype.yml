@@ -33,6 +33,8 @@ jobs:
   windows-host:
     runs-on: windows-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: actions/cache/restore@v4
@@ -61,6 +63,9 @@ jobs:
           $testRoot=Join-Path $env:RUNNER_TEMP 'Проверка программы'
           Expand-Archive ./dist/portable/ProductionCycle-prototype-1-windows-x64.zip $testRoot
           ./scripts/test-portable.ps1 -Root (Join-Path $testRoot 'ProductionCycle')
+      - name: Verify offline launch without Python or Node on PATH
+        shell: pwsh
+        run: ./scripts/test-offline.ps1 -Zip ./dist/portable/ProductionCycle-prototype-1-windows-x64.zip
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -69,6 +74,7 @@ jobs:
             src-tauri/Cargo.lock
             ${{ runner.temp }}/Проверка программы/ProductionCycle/temp/self-test.json
             ${{ runner.temp }}/fixed-webview/unpacked/**/RUNTIME-PROVENANCE.json
+            ${{ runner.temp }}/Offline check/ProductionCycle/temp/self-test.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ProductionCycle-prototype-1-windows-x64
@@ -76,6 +82,17 @@ jobs:
             dist/portable/*.zip
             dist/portable/*.sha256
           if-no-files-found: error
+      - name: Publish portable prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag='portable-prototype-1-'+$env:GITHUB_SHA.Substring(0,7)
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
+          if($LASTEXITCODE -ne 0){
+            gh release create $tag ./dist/portable/ProductionCycle-prototype-1-windows-x64.zip ./dist/portable/ProductionCycle-prototype-1-windows-x64.zip.sha256 src-tauri/Cargo.lock --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title "Production Cycle - portable prototype 1" --notes-file docs/release-notes.md
+            if($LASTEXITCODE -ne 0){throw 'Prerelease publication failed'}
+          }
       - uses: actions/cache/save@v4
         if: always()
         with:

@@ -7,6 +7,7 @@ $cab=Join-Path $Destination 'runtime.cab'
 & curl.exe --fail --location --retry 5 --output $cab $c.url
 if($LASTEXITCODE -ne 0){throw 'Runtime download failed'}
 if((Get-Item $cab).Length -ne $c.cabinetBytes){throw 'Incomplete runtime CAB. Expected cabinet size differs from downloaded bytes.'}
+if((Get-FileHash $cab -Algorithm SHA256).Hash.ToLowerInvariant() -ne $c.sha256){throw 'Runtime SHA-256 mismatch'}
 $unpack=Join-Path $Destination 'unpacked'
 New-Item -ItemType Directory -Path $unpack -Force | Out-Null
 & expand.exe $cab '-F:*' $unpack | Out-Null

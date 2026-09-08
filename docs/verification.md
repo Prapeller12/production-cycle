@@ -1,23 +1,27 @@
-# Проверка первого макета — 2026-09-08
+# Проверка portable-макета №1 — 2026-09-08
 
-Код опубликован в отдельном репозитории [Prapeller12/production-cycle](https://github.com/Prapeller12/production-cycle).
-Коммит реализации: 960b96d7e8082263b7237d98070d734a0bc7199f.
-История и файлы отчётности не включены; запись в otchet не выполнялась.
+Код: отдельный репозиторий Prapeller12/production-cycle. Репозиторий otchet не изменяется.
+
+Проверенный native-коммит: 2f087e0f88769ba09bad93b7e93f46ff2071761f.
+Источник: https://github.com/Prapeller12/production-cycle/actions/runs/34201808086
 
 | Проверка | Результат |
 |---|---|
-| `node --test tests/domain.test.cjs` | 19 passed, 0 failed; локально и в GitHub Actions |
-| `node --check frontend/ui/app.js` | успешно |
-| `git diff --check` | успешно |
-| Браузерные сценарии Chromium в Actions | успешно: демо, валидация, JSON/TXT, отказ повреждённого импорта без потери данных, редактирование и PDF |
-| Сетевые запросы UI в браузерном сценарии | внешних HTTP(S)-запросов не обнаружено |
-| Скриншоты и PDF | созданы workflow как артефакт production-cycle-visual-check; ручной визуальный просмотр ещё не выполнен |
-| Rust/Windows build | выполняется в GitHub Actions; результат ещё не подтверждён |
-| Windows 10/11 offline | не проведена |
-| Полный portable ZIP | не выпущен |
-| GitHub чтение и запись | подтверждены фактической публикацией в production-cycle |
+| JavaScript domain/contracts | 19 passed, 0 failed |
+| Браузерные сценарии Chromium | успешно: демо, редактирование, JSON/TXT, защита при ошибке импорта, PDF |
+| HTTP(S)-запросы UI в браузерном сценарии | отсутствуют |
+| Rust release unit tests | 2 passed, 0 failed |
+| Windows EXE с внешним frontend | скомпилирован |
+| Подпись, размер и версия Microsoft Fixed WebView2 | проверены |
+| Полный ZIP с runtime | собран |
+| Native WebView2 / IPC / JSON / TXT | PASS |
+| Путь с кириллицей и пробелами | PASS |
+| Данные и профиль в папке программы | подтверждено native self-test |
+| ОС native-проверки | Microsoft Windows Server 2025, GitHub runner |
+| Offline с запретом исходящей сети и без Python/Node в PATH | отдельный тест добавлен; смотреть результат текущего workflow |
+| Чистые Windows 10/11 x64, без установленного runtime | пока не проверены |
+| Ручная визуальная приёмка скриншотов/PDF | пока не выполнена |
 
-Источник CI: [запуск 34200636096](https://github.com/Prapeller12/production-cycle/actions/runs/34200636096).
-Следующие проверки: результат Rust-сборки, визуальные артефакты, закрепление Cargo.lock,
-полный ZIP с проверенным Fixed Runtime и матрица Windows.
-Успешные браузерные тесты не подтверждают работу native WebView2-host или совместимость Windows.
+Проверка на сервере сборки не заменяет пользовательские Windows 10/11.
+В программе пока JSON-хранение. SQLite и production-сервисы Rust остаются отдельным этапом.
+Готовые предварительные выпуски: https://github.com/Prapeller12/production-cycle/releases
