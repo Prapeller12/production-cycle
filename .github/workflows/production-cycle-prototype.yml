@@ -2,7 +2,7 @@ name: Production cycle prototype checks
 on:
   push:
     branches: [main, codex/production-cycle-prototype]
-    paths: ['frontend/**', 'src-tauri/**', 'tests/**', '.github/workflows/production-cycle-prototype.yml']
+    paths: ['frontend/**', 'src-tauri/**', 'scripts/**', 'config/**', '.cargo/**', 'tests/**', '.github/workflows/production-cycle-prototype.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -32,16 +32,46 @@ jobs:
             /tmp/production-cycle-report.pdf
   windows-host:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-rust-portable-${{ hashFiles('src-tauri/Cargo.toml', '.cargo/config.toml') }}
       - name: Check and test Rust host
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo test --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
       - name: Build native prototype host
         run: cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
+      - name: Obtain and verify Microsoft Fixed Runtime
+        shell: pwsh
+        run: ./scripts/fetch-runtime.ps1 -Destination "$env:RUNNER_TEMP/fixed-webview"
+      - name: Package complete portable ZIP
+        shell: pwsh
+        run: |
+          $runtime=(Get-Content "$env:RUNNER_TEMP/fixed-webview/runtime-path.txt" -Raw).Trim()
+          ./scripts/package-windows.ps1 -FixedRuntimePath $runtime -OutputPath ./dist/portable
+      - name: Test extracted ZIP with Cyrillic and spaces
+        shell: pwsh
+        run: |
+          $testRoot=Join-Path $env:RUNNER_TEMP 'Проверка программы'
+          Expand-Archive ./dist/portable/ProductionCycle-prototype-1-windows-x64.zip $testRoot
+          ./scripts/test-portable.ps1 -Root (Join-Path $testRoot 'ProductionCycle')
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: production-cycle-build-evidence
+          path: |
+            src-tauri/Cargo.lock
+            ${{ runner.temp }}/Проверка программы/ProductionCycle/temp/self-test.json
+            ${{ runner.temp }}/fixed-webview/unpacked/**/RUNTIME-PROVENANCE.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: production-cycle-native-host-NOT-PORTABLE
+          name: ProductionCycle-prototype-1-windows-x64
           path: |
-            src-tauri/target/release/production-cycle.exe
-            src-tauri/Cargo.lock
+            dist/portable/*.zip
+            dist/portable/*.sha256
           if-no-files-found: error

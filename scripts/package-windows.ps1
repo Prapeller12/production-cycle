@@ -16,6 +16,6 @@ Copy-Item (Join-Path $source 'docs') $root -Recurse
 Copy-Item (Join-Path $source 'README.md') $root
 Copy-Item (Join-Path $runtime '*') (Join-Path $root 'runtime/webview2') -Recurse
 Copy-Item (Join-Path $source 'start.cmd') $root
-# Windows 10 Fixed Runtime access requirements must be checked for the chosen runtime version.
+# The application grants the Microsoft-required read/execute ACLs inside runtime/webview2 at launch.
 Compress-Archive -Path $root -DestinationPath (Join-Path $destination 'ProductionCycle-prototype-1-windows-x64.zip')
-Get-FileHash (Join-Path $destination 'ProductionCycle-prototype-1-windows-x64.zip') -Algorithm SHA256 | Format-List
+(Get-FileHash (Join-Path $destination 'ProductionCycle-prototype-1-windows-x64.zip') -Algorithm SHA256).Hash | Set-Content (Join-Path $destination 'ProductionCycle-prototype-1-windows-x64.zip.sha256') -Encoding ascii
