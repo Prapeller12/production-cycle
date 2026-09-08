@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Конструктор производственного цикла v8 → TXT и PDF</title>
+<link rel="stylesheet" href="styles/app.css">
+</head>
+<body>
+<div class="appbar"><strong>Конструктор производственного цикла</strong><span class="muted">макет №1 · локальная работа</span><span class="spacer"></span><span class="save-state" id="saveState">Изменения не сохранены</span><span id="taskCounter">0 элементов</span></div>
+<div class="tabs" aria-label="Навигация"><div class="tab active">Реестр цикла</div><div class="tab">TXT-контракт</div><div class="tab">Проверка</div></div>
+<div class="shell">
+  <div class="toolbar">
+    <h1>Производственный цикл</h1>
+    <button class="btn" id="demoBtn">Демо</button>
+    <button class="btn" id="newBtn">Новый проект</button>
+    <button class="btn" id="saveJsonBtn">Сохранить проект</button>
+    <button class="btn" id="loadJsonBtn">Открыть проект</button>
+    <input type="file" id="jsonFile" class="hidden-file" accept="application/json,.json" />
+    <span class="spacer"></span>
+    <button class="btn" id="pdfReportBtn">Отчёт PDF</button>
+    <button class="btn" id="validateBtn">Проверить</button>
+    <button class="btn primary" id="exportBtn">Сформировать 2 TXT</button>
+  </div>
+
+  <section class="project-card">
+    <div class="project-grid">
+      <div class="field"><label>Название проекта *</label><input id="projectName" placeholder="Например: Изделие 5П-20К заказ №924" /></div>
+      <div class="field"><label>Номер заказа *</label><input id="orderNo" placeholder="924" /></div>
+      <div class="field"><label>Инициатор / подписант *</label><input id="initiator" placeholder="ФИО / подразделение" /></div>
+      <div class="field"><label>Исполнитель / получатель *</label><input id="executor" placeholder="ФИО / организация" /></div>
+      <div class="field"><label>Начало *</label><input id="projectStart" type="date" /></div>
+      <div class="field"><label>Дедлайн *</label><input id="projectDeadline" type="date" /></div>
+    </div>
+    <div class="project-extra">
+      <div class="field"><label>Предприятие *</label><input id="projectAddressees" placeholder="Наименование предприятия" /><div class="field-map-note">Поле «Адресаты» в исходящем TXT.</div></div>
+      <div class="required-hint">Поля со знаком * обязательны. Служебные поля «Количество связей» и «Ссылка» программа формирует автоматически и не требует ручного ввода.</div>
+    </div>
+    <div class="meta-line">
+      <span>Основной проект: <code id="rootId">Заказ № —</code></span>
+      <span>TXT: основной проект → <b>исходящий</b></span>
+      <span>TXT: этапы → <b>входящие</b></span>
+      <span>Один элемент → один родитель</span>
+      <span class="muted-text">Номер заказа после первого импорта следует считать идентификатором.</span>
+    </div>
+  </section>
+
+  <section class="structure-card">
+    <div class="structure-head"><strong>Структура вложенности</strong><span>Основной заказ → этап → дочерний этап. Один элемент — один родитель.</span></div>
+    <div id="structureTree" class="structure-tree"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <span class="title">Реестр этапов</span>
+      <span class="summary-chip"><span class="status-dot work"></span>В работе <b id="sumWork">0</b></span>
+      <span class="summary-chip"><span class="status-dot done"></span>Выполнено <b id="sumDone">0</b></span>
+      <span class="summary-chip"><span class="status-dot overdue"></span>Просрочено <b id="sumOverdue">0</b></span>
+      <span class="summary-chip"><span class="status-dot new"></span>Не начато <b id="sumNew">0</b></span>
+      <span class="summary-chip"><span class="status-dot hold"></span>Приостановлено <b id="sumHold">0</b></span>
+    </div>
+    <div class="table-wrap">
+      <table class="tree-table">
+        <thead><tr>
+          <th class="col-actions">Действия</th><th class="col-id">ID</th><th class="col-title">Название / этап</th><th class="col-exec">Исполнитель</th><th class="col-init">Инициатор</th><th class="col-status">Статус</th><th class="col-date">Начало</th><th class="col-date">Дедлайн</th><th class="col-left">Осталось</th>
+        </tr></thead>
+        <tbody id="treeBody"></tbody>
+      </table>
+      <div id="inlineStageButtonSlot" class="stage-action-zone"></div>
+      <div id="emptyState" class="empty"><strong>Этапы пока не созданы</strong>Создайте первый производственный этап. Его ID будет связан с номером основного заказа.<div id="emptyStageButtonSlot"></div></div>
+    </div>
+  </section>
+
+  <div id="messageArea"></div>
+
+  <div class="bottom-grid">
+    <section class="info-card"><h3>Как данные попадут в стандартные TXT</h3>
+      <table class="mapping"><thead><tr><th>Поле утилиты</th><th>Исходящие / основной проект</th><th>Входящие / этап</th></tr></thead><tbody>
+        <tr><td>Название</td><td>Заголовок</td><td>Краткое содержание</td></tr>
+        <tr><td>ID</td><td>Регистрационный номер</td><td>Рег. номер</td></tr>
+        <tr><td>Начало</td><td>Дата</td><td>Дата регистрации</td></tr>
+        <tr><td>Исполнитель</td><td>Получатель исходящего</td><td>Корреспондент</td></tr>
+        <tr><td>Инициатор</td><td>Подписант</td><td>—</td></tr>
+        <tr><td>Адресаты</td><td>Адресаты</td><td>Адресаты</td></tr>
+        <tr><td>Дедлайн</td><td>Срок исполнения</td><td>Срок исполнения</td></tr>
+        <tr><td>Вложенность</td><td colspan="2">Поле «Ссылка» не используется для служебных данных. Если ссылки нет — ячейка остаётся пустой. Иерархия передаётся порядком строк и числом прямых дочерних связей в первой колонке.</td></tr>
+      </tbody></table>
+    </section>
+    <section class="info-card"><h3>Инвариант интеграции с Реестром</h3>
+      <div class="notice warn" style="margin:0">Производственная вложенность <b>не должна</b> записываться в существующий статусный <code>LINK</code>. Иначе первый входящий этап переведёт основной исходящий проект в «Выполнено». Служебная метка предназначена только для построения дерева производственного цикла.</div>
+      <div class="footer-note">Оба файла сохраняют штатные заголовки: 9 колонок для исходящих и 8 для входящих, TAB-разделитель, UTF-8 с BOM, CRLF. Существующий импорт сможет прочитать их как документы. Для автоматического восстановления вложенности Реестр должен читать строки этапов в порядке дерева и использовать первую колонку как количество прямых дочерних элементов.</div>
+    </section>
+  </div>
+</div>
+
+<section id="pdfReport" class="pdf-report" aria-hidden="true"></section>
+
+<div class="modal-backdrop" id="stageModal">
+  <div class="modal">
+    <div class="modal-head"><h2 id="stageModalTitle">Новый этап</h2><span class="spacer"></span><button class="btn icon" data-close="stageModal">×</button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="wide"><label>Название этапа / краткое содержание *</label><input id="stageTitle" placeholder="Например: Изготовление блока МЭТ" /></div>
+        <div><label>Родитель *</label><select id="stageParent"></select><div class="help">У элемента может быть только один родитель. Для верхнего уровня выберите основной проект.</div></div>
+        <div><label>Исполнитель / корреспондент *</label><input id="stageExecutor" placeholder="ФИО / организация" /></div>
+        <div><label>Адресаты *</label><input id="stageAddressees" placeholder="ФИО / подразделение" /></div>
+        <div><label>Начало / дата регистрации *</label><input id="stageStart" type="date" /></div>
+        <div><label>Дедлайн / срок исполнения *</label><input id="stageDeadline" type="date" /></div>
+        <div><label>Статус *</label><select id="stageStatus"><option value="new">Не начато</option><option value="work">В работе</option><option value="hold">Приостановлено</option><option value="done">Выполнено</option></select></div>
+        <div><label>ID этапа — автоматически</label><div id="stageIdPreview" class="auto-value"></div><div class="help">ID сохраняется за этапом. Изменение родителя не меняет ID.</div></div>
+      </div>
+      <div class="required-hint">Все поля со знаком * обязательны. Количество прямых детей рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close="stageModal">Отмена</button><button class="btn primary" id="saveStageBtn">Сохранить</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="exportModal">
+  <div class="modal" style="width:min(960px,100%)">
+    <div class="modal-head"><h2>Комплект TXT для Реестра</h2><span class="spacer"></span><button class="btn icon" data-close="exportModal">×</button></div>
+    <div class="modal-body">
+      <div id="exportValidation"></div>
+      <div class="preview-tabs"><button class="preview-tab active" data-preview="out">Исходящие — основной проект</button><button class="preview-tab" data-preview="in">Входящие — этапы</button></div>
+      <div class="preview-box" id="txtPreview"></div>
+      <div class="export-row">
+        <div class="file-pill"><div><strong id="outFileName">Список исх..txt</strong><span>UTF-8 BOM · TAB · CRLF · 9 колонок</span></div><button class="btn primary" id="downloadOutBtn">Скачать</button></div>
+        <div class="file-pill"><div><strong id="inFileName">Список вхд..txt</strong><span>UTF-8 BOM · TAB · CRLF · 8 колонок</span></div><button class="btn primary" id="downloadInBtn">Скачать</button></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close="exportModal">Закрыть</button></div>
+  </div>
+</div>
+
+<script defer src="config/contracts.js"></script>
+<script defer src="domain/cycle.js"></script>
+<script defer src="services/exchange.js"></script>
+<script defer src="services/project-file.js"></script>
+<script defer src="ui/app.js"></script>
+</body>
+</html>

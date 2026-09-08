@@ -1,0 +1,8 @@
+src-tauri/target/
+src-tauri/gen/
+dist/
+data/
+exports/
+temp/
+runtime/
+*.log

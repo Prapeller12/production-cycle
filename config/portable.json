@@ -1,0 +1,8 @@
+{
+  "frontend": "frontend",
+  "webviewRuntime": "runtime/webview2",
+  "webviewData": "temp/webview2",
+  "workingData": "data",
+  "exports": "exports",
+  "technicalLogging": false
+}

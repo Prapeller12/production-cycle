@@ -1,0 +1,47 @@
+name: Production cycle prototype checks
+on:
+  push:
+    branches: [main, codex/production-cycle-prototype]
+    paths: ['frontend/**', 'src-tauri/**', 'tests/**', '.github/workflows/production-cycle-prototype.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - run: node --test tests/domain.test.cjs
+      - name: Install browser test tools
+        run: |
+          npm install --prefix /tmp/prototype-tests playwright@1.58.2
+          /tmp/prototype-tests/node_modules/.bin/playwright install --with-deps chromium
+      - name: Run browser scenarios
+        env:
+          PLAYWRIGHT_MODULE: /tmp/prototype-tests/node_modules/playwright
+        run: node tests/browser.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: production-cycle-visual-check
+          path: |
+            /tmp/production-cycle-*.png
+            /tmp/production-cycle-report.pdf
+  windows-host:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Check and test Rust host
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Build native prototype host
+        run: cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: production-cycle-native-host-NOT-PORTABLE
+          path: |
+            src-tauri/target/release/production-cycle.exe
+            src-tauri/Cargo.lock
+          if-no-files-found: error
