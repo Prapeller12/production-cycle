@@ -4,7 +4,7 @@
 const {STATUS}=Production.config;
 const D=Production.domain, J=Production.projectFile, B=Production.backend;
 let state={project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};
-let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',importFiles={out:null,in:null},importCandidate=null,importPreviewKind='out';
+let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',ganttScale='week',structureCollapsed=false,importFiles={out:null,in:null},importCandidate=null,importPreviewKind='out';
 const $=id=>document.getElementById(id);
 const els={projectName:$('projectName'),orderNo:$('orderNo'),initiator:$('initiator'),executor:$('executor'),projectAddressees:$('projectAddressees'),projectStart:$('projectStart'),projectDeadline:$('projectDeadline')};
 
@@ -32,10 +32,18 @@ const primaryStageButton=document.createElement('button');primaryStageButton.cla
 function placePrimaryStageButton(){const emptySlot=$('emptyStageButtonSlot'),inlineSlot=$('inlineStageButtonSlot'),wrap=document.querySelector('.table-wrap');if(state.stages.length){wrap.classList.add('has-stages');inlineSlot.appendChild(primaryStageButton)}else{wrap.classList.remove('has-stages');emptySlot.appendChild(primaryStageButton)}}
 
 function stageMatchesFilter(s){return completionFilter==='all'||(completionFilter==='done'?s.status==='done':s.status!=='done')}
+function renderStructure(){
+ const box=$('structureTree');
+ if(!state.project.name&&!state.project.orderNo&&!state.stages.length){box.innerHTML='<div class="structure-empty">Заполните основной проект и добавьте этапы — здесь появится схема подчинённости.</div>';return}
+ function nodeHtml(label,title,executor,deadline,isRoot=false){return `<div class="structure-node ${isRoot?'root-node':''}"><span class="tree-id">${escapeHtml(label)}</span><span class="tree-name">${escapeHtml(title||'Без названия')}</span>${executor?`<span class="tree-meta">${escapeHtml(executor)}</span>`:''}${deadline?`<span class="tree-meta">до ${escapeHtml(fullDate(deadline))}</span>`:''}</div>`}
+ const ul=document.createElement('ul'),root=document.createElement('li');root.innerHTML=nodeHtml('Заказ № '+rootId(),state.project.name,state.project.executor,state.project.deadline,true);ul.appendChild(root);const parents=new Map([[null,root]]);
+ for(const {stage:s} of D.preorder(state)){const parent=parents.get(s.parentUid||null);if(!parent)continue;let children=Array.from(parent.children).find(e=>e.tagName==='UL');if(!children){children=document.createElement('ul');parent.appendChild(children)}const li=document.createElement('li');li.innerHTML=nodeHtml(stageId(s),s.title,s.executor,s.deadline);children.appendChild(li);parents.set(s.uid,li)}box.replaceChildren(ul);
+}
+function toggleStructure(){structureCollapsed=!structureCollapsed;$('structureContent').classList.toggle('collapsed',structureCollapsed);$('toggleStructureBtn').textContent=structureCollapsed?'Развернуть':'Свернуть';$('toggleStructureBtn').setAttribute('aria-expanded',String(!structureCollapsed))}
 
 function render(showMessage=false){
  updateSavedState();
- $('taskCounter').textContent=`${state.stages.length+1} элемент(ов)`;
+ $('taskCounter').textContent=`${state.stages.length+1} элемент(ов)`;renderStructure();
  const counts={work:0,done:0,overdue:0,new:0,hold:0};state.stages.forEach(s=>counts[derivedStageVisualStatus(s)]++);
  $('sumWork').textContent=counts.work;$('sumDone').textContent=counts.done;$('sumOverdue').textContent=counts.overdue;$('sumNew').textContent=counts.new;$('sumHold').textContent=counts.hold;
  const body=$('treeBody');body.innerHTML='';
@@ -133,11 +141,20 @@ function renderGantt(){
  const box=$('ganttChart'),items=D.preorder(state).filter(x=>stageMatchesFilter(x.stage));
  if(!items.length){box.innerHTML='<div class="gantt-empty">Нет этапов для выбранного фильтра.</div>';$('ganttPeriod').textContent='';return}
  const dates=items.flatMap(x=>[x.stage.start,x.stage.deadline]).filter(D.validDate).map(Date.parse);if(!dates.length){box.innerHTML='<div class="gantt-empty">Для диаграммы нужны корректные даты.</div>';return}
- const start=Math.min(...dates),end=Math.max(...dates),day=86400000,span=Math.max(1,Math.round((end-start)/day)+1),pct=v=>Math.max(0,Math.min(100,(Date.parse(v)-start)/day/span*100));
- const format=ms=>fullDate(new Date(ms).toISOString().slice(0,10)),ticks=Array.from({length:Math.min(10,span)},(_,i)=>{const pos=i/(Math.min(10,span)-1||1)*100,ms=start+Math.round((span-1)*i/(Math.min(10,span)-1||1))*day;return `<span class="gantt-tick" style="left:${pos}%">${format(ms)}</span>`}).join('');
- const today=Date.parse(isoToday()),todayLine=today>=start&&today<=end?`<span class="gantt-today" style="left:${pct(isoToday())}%"><span>Сегодня</span></span>`:'';
- $('ganttPeriod').textContent=`${format(start)} — ${format(end)}`;let html=`<div class="gantt-grid"><div class="gantt-label"><b>Этап / связь</b></div><div class="gantt-axis">${ticks}${todayLine}</div>`;
- for(const {stage:s,depth} of items){const left=pct(s.start),width=Math.max(0.7,(Math.round((Date.parse(s.deadline)-Date.parse(s.start))/day)+1)/span*100),st=derivedStageVisualStatus(s),parent=s.parentUid?stageId(byUid(s.parentUid)):'Заказ № '+rootId();html+=`<div class="gantt-label" style="padding-left:${11+depth*14}px"><div><span class="node-title">${escapeHtml(stageId(s)+' · '+s.title)}</span><small>Связь → ${escapeHtml(parent)}</small></div></div><div class="gantt-track">${todayLine}<span class="gantt-bar ${st}" style="left:${left}%;width:${width}%" title="${escapeHtml(fullDate(s.start)+' — '+fullDate(s.deadline))}">${escapeHtml(s.title)}</span></div>`}box.innerHTML=html+'</div>';
+ const day=86400000,rawStart=Math.min(...dates),rawEnd=Math.max(...dates),asDate=ms=>new Date(ms),utc=(y,m,d)=>Date.UTC(y,m,d),monthNames=['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+ let start=rawStart,end=rawEnd,tickDates=[],timelineWidth=900;
+ if(ganttScale==='day'){for(let t=start;t<=end;t+=day)tickDates.push(t);timelineWidth=Math.max(900,tickDates.length*34)}
+ else if(ganttScale==='week'){const d=asDate(start),shift=(d.getUTCDay()+6)%7;start-=shift*day;end+=((7-((asDate(end).getUTCDay()+6)%7)-1)%7)*day;for(let t=start;t<=end;t+=7*day)tickDates.push(t);timelineWidth=Math.max(900,tickDates.length*112)}
+ else{let d=asDate(start);start=utc(d.getUTCFullYear(),d.getUTCMonth(),1);d=asDate(end);end=utc(d.getUTCFullYear(),d.getUTCMonth()+1,1)-day;for(let t=start;t<=end;){tickDates.push(t);const x=asDate(t);t=utc(x.getUTCFullYear(),x.getUTCMonth()+1,1)}timelineWidth=Math.max(900,tickDates.length*150)}
+ const span=Math.max(1,Math.round((end-start)/day)+1),pctMs=ms=>Math.max(0,Math.min(100,(ms-start)/day/span*100)),pct=v=>pctMs(Date.parse(v)),format=ms=>fullDate(asDate(ms).toISOString().slice(0,10));
+ const tickLabel=ms=>{const d=asDate(ms);if(ganttScale==='day')return `${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;if(ganttScale==='week')return `${format(ms)} — ${format(Math.min(ms+6*day,end))}`;return `${monthNames[d.getUTCMonth()]} ${d.getUTCFullYear()}`};
+ const ticks=tickDates.map(ms=>`<span class="gantt-tick" style="left:${pctMs(ms)}%">${tickLabel(ms)}</span>`).join(''),gridlines=tickDates.map(ms=>`<span class="gantt-gridline" style="left:${pctMs(ms)}%"></span>`).join('');
+ const today=Date.parse(isoToday()),todayLine=today>=start&&today<=end?`<span class="gantt-today" style="left:${pctMs(today)}%"><span>Сегодня</span></span>`:'';
+ $('ganttPeriod').textContent=`${format(start)} — ${format(end)}`;let html=`<div class="gantt-grid" style="--timeline-width:${timelineWidth}px"><div class="gantt-label"><b>Этап / связь</b></div><div class="gantt-axis">${ticks}${todayLine}</div>`;
+ for(const {stage:s,depth} of items){const left=pct(s.start),width=Math.max(0.7,(Math.round((Date.parse(s.deadline)-Date.parse(s.start))/day)+1)/span*100),st=derivedStageVisualStatus(s),parent=s.parentUid?stageId(byUid(s.parentUid)):'Заказ № '+rootId();html+=`<div class="gantt-label" style="padding-left:${11+depth*14}px"><div><span class="node-title">${escapeHtml(stageId(s)+' · '+s.title)}</span><small>Связь → ${escapeHtml(parent)}</small></div></div><div class="gantt-track">${gridlines}${todayLine}<span class="gantt-bar ${st}" style="left:${left}%;width:${width}%" title="${escapeHtml(fullDate(s.start)+' — '+fullDate(s.deadline))}">${escapeHtml(s.title)}</span></div>`}box.innerHTML=html+'</div>';
+}
+function printGantt(size){
+ if(!state.stages.length){message('err','Добавьте этапы для печати диаграммы Ганта.');return}renderGantt();const scaleText={day:'по дням',week:'по неделям',month:'по месяцам'}[ganttScale],oldTitle=document.title,style=document.createElement('style');style.id='ganttPageStyle';style.textContent=`@media print{@page{size:${size} landscape;margin:9mm}}`;document.head.appendChild(style);$('ganttPrint').innerHTML=`<div class="gantt-print-header"><div><h1>Диаграмма Ганта</h1><div>Заказ № ${escapeHtml(state.project.orderNo||'—')} · ${escapeHtml(state.project.name||'Без названия')}</div></div><div class="gantt-print-meta">Формат ${size} · масштаб ${scaleText}<br>${escapeHtml($('ganttPeriod').textContent)}</div></div><div class="gantt-chart">${$('ganttChart').innerHTML}</div>`;document.body.classList.add('print-gantt');document.title=`Диаграмма Ганта Заказ ${fileSafe(state.project.orderNo)} ${size}`;const restore=()=>{document.body.classList.remove('print-gantt');$('ganttPrint').innerHTML='';style.remove();document.title=oldTitle;window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);setTimeout(()=>{if(window.__TAURI__)window.__TAURI__.core.invoke('print_report').catch(e=>{restore();message('err','Не удалось открыть печать: '+e)});else window.print()},60)
 }
 
 function newProject(){if((state.project.name||state.stages.length)&&!confirm('Очистить текущий проект и начать новый?'))return;state={project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};syncForm();render();message('ok','Создан новый пустой проект.')}
@@ -154,6 +171,7 @@ function openModal(id){$(id).classList.add('open')}function closeModal(id){$(id)
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('mousedown',e=>{if(e.target===m)closeModal(m.id)}));
 $('saveStageBtn').onclick=saveStage;$('pdfReportBtn').onclick=printPdfReport;$('validateBtn').onclick=showValidation;$('exportBtn').onclick=openExport;$('saveJsonBtn').onclick=saveProject;$('loadJsonBtn').onclick=showProjects;$('importBtn').onclick=openImport;$('jsonFile').onchange=e=>{if(e.target.files[0])loadJsonFile(e.target.files[0]);e.target.value=''};$('newBtn').onclick=newProject;$('demoBtn').onclick=loadDemo;
 $('completionFilter').onchange=e=>{completionFilter=e.target.value;render()};
+$('toggleStructureBtn').onclick=toggleStructure;$('ganttScale').onchange=e=>{ganttScale=e.target.value;renderGantt()};$('printGanttA4Btn').onclick=()=>printGantt('A4');$('printGanttA3Btn').onclick=()=>printGantt('A3');
 $('importOutFile').onchange=e=>{importFiles.out=e.target.files[0]||null;$('importOutName').textContent=importFiles.out?importFiles.out.name:'Выберите TXT (9 колонок)';updateImportPreview()};$('importInFile').onchange=e=>{importFiles.in=e.target.files[0]||null;$('importInName').textContent=importFiles.in?importFiles.in.name:'Выберите TXT (8 колонок)';updateImportPreview()};$('confirmImportBtn').onclick=confirmImport;
 document.querySelectorAll('[data-import-preview]').forEach(b=>b.onclick=()=>{importPreviewKind=b.dataset.importPreview;document.querySelectorAll('[data-import-preview]').forEach(x=>x.classList.toggle('active',x===b));if(importCandidate)$('importPreview').textContent=previewText(importPreviewKind==='out'?importCandidate.outText:importCandidate.inText)});
 document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>{previewKind=b.dataset.preview;document.querySelectorAll('.preview-tab').forEach(x=>x.classList.toggle('active',x===b));updatePreview()});

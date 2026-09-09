@@ -37,6 +37,11 @@
     <div class="project-extra"><div class="field"><label>Предприятие *</label><input id="projectAddressees" placeholder="Наименование предприятия" /></div></div>
   </section>
 
+  <section class="structure-card" id="structureCard">
+    <div class="structure-head"><div><strong>Структура подчинённости</strong><span>Основной заказ → этап → дочерний этап</span></div><button class="btn small structure-toggle" id="toggleStructureBtn" aria-expanded="true">Свернуть</button></div>
+    <div id="structureContent" class="structure-content"><div id="structureTree" class="structure-tree"></div></div>
+  </section>
+
   <section class="panel">
     <div class="panel-head">
       <span class="title">Реестр этапов</span>
@@ -63,11 +68,12 @@
   <div id="messageArea"></div>
  </div>
  <div id="ganttView" class="workspace-view">
-   <section class="panel gantt-panel"><div class="panel-head"><span class="title">Диаграмма Ганта</span><span class="muted-text" id="ganttPeriod"></span></div><div id="ganttChart" class="gantt-chart"></div></section>
+   <section class="panel gantt-panel"><div class="panel-head"><span class="title">Диаграмма Ганта</span><span class="muted-text" id="ganttPeriod"></span><span class="spacer"></span><label class="filter-control">Масштаб <select id="ganttScale"><option value="day">По дням</option><option value="week" selected>По неделям</option><option value="month">По месяцам</option></select></label><button class="btn small" id="printGanttA4Btn">Печать А4</button><button class="btn small" id="printGanttA3Btn">Печать А3</button></div><div id="ganttChart" class="gantt-chart"></div></section>
  </div>
 </div>
 
 <section id="pdfReport" class="pdf-report" aria-hidden="true"></section>
+<section id="ganttPrint" class="gantt-print" aria-hidden="true"></section>
 
 <div class="modal-backdrop" id="stageModal">
   <div class="modal">
