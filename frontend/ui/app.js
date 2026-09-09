@@ -156,7 +156,7 @@ function renderGantt(){
 function compactGanttForPrint(size){
  const clone=$('ganttChart').cloneNode(true),grid=clone.querySelector('.gantt-grid');if(!grid)return clone.innerHTML;
  grid.style.setProperty('--timeline-width','100%');const ticks=[...grid.querySelectorAll('.gantt-axis .gantt-tick')],limits=size==='A3'?{day:24,week:18,month:16}:{day:16,week:12,month:10},limit=limits[ganttScale],stride=Math.max(1,Math.ceil(ticks.length/limit));
- ticks.forEach((tick,i)=>{if(i%stride&&i!==ticks.length-1)tick.remove()});return clone.innerHTML
+ ticks.forEach((tick,i)=>{if(i%stride&&i!==ticks.length-1)tick.remove()});const visibleTicks=[...grid.querySelectorAll('.gantt-axis .gantt-tick')];if(visibleTicks.length)visibleTicks[visibleTicks.length-1].classList.add('gantt-tick-last');return clone.innerHTML
 }
 function printGantt(size){
  if(!state.stages.length){message('err','Добавьте этапы для печати диаграммы Ганта.');return}renderGantt();const scaleText={day:'по дням',week:'по неделям',month:'по месяцам'}[ganttScale],oldTitle=document.title;

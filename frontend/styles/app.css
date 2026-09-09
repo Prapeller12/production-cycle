@@ -62,6 +62,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}
   body.print-gantt .gantt-label small{font-size:6pt;margin-top:.7mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   body.print-gantt .gantt-bar{top:2.1mm;height:5.8mm;line-height:5.8mm;border-radius:1.2mm;font-size:6.5pt;padding:0 1.5mm;box-shadow:none}
   body.print-gantt .gantt-tick{font-size:6.5pt;font-weight:600;line-height:1.1;padding:1.2mm 1mm 0;overflow:hidden}
+  body.print-gantt .gantt-tick-last{transform:translateX(-100%);text-align:right}
   body.print-gantt .gantt-today span{font-size:5.5pt;padding:.3mm 1mm}
   body.print-gantt .gantt-gridline{border-color:#d5dce1}
 }
