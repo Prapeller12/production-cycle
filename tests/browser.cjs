@@ -22,6 +22,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   const download=page.waitForEvent('download');await page.click('#saveJsonBtn');const d=await download;
   const saved=JSON.parse(fs.readFileSync(await d.path(),'utf8').replace(/^\ufeff/,''));assert.equal(saved.stages.length,8);
   await page.locator('#jsonFile').setInputFiles({name:'broken.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({...saved,stages:[{...saved.stages[0],parentUid:saved.stages[0].uid}]}))});
+  await page.waitForFunction(()=>document.querySelector('#messageArea').innerText.includes('Не удалось открыть'));
   assert.match(await page.locator('#messageArea').innerText(),/Не удалось открыть/);assert.equal(await page.locator('#treeBody tr').count(),9);
   await page.locator('#treeBody [data-act="edit"]').first().click();await page.fill('#stageTitle','Этап после редактирования');await page.click('#saveStageBtn');
   assert.match(await page.locator('#treeBody').innerText(),/Этап после редактирования/);
