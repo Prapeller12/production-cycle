@@ -27,7 +27,7 @@ fn main(){
         .invoke_handler(tauri::generate_handler![
             commands::save_file,commands::print_report,smoke::finish_smoke,
             production::production_validate,production::production_save_snapshot,production::production_load_snapshot,
-            production::production_export_txt,production::production_get_management_report
+            production::production_list_projects,production::production_export_txt,production::production_get_management_report
         ])
         .setup(move |app|{
             let paths=app.state::<Paths>();

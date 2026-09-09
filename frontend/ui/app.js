@@ -4,7 +4,7 @@
 const {STATUS}=Production.config;
 const D=Production.domain, J=Production.projectFile, B=Production.backend;
 let state={project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};
-let editStageUid=null, previewKind='out', exportCache=null;
+let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',importFiles={out:null,in:null},importCandidate=null,importPreviewKind='out';
 const $=id=>document.getElementById(id);
 const els={projectName:$('projectName'),orderNo:$('orderNo'),initiator:$('initiator'),executor:$('executor'),projectAddressees:$('projectAddressees'),projectStart:$('projectStart'),projectDeadline:$('projectDeadline')};
 
@@ -31,24 +31,19 @@ Object.values(els).forEach(el=>el.addEventListener('input',updateFromForm));
 const primaryStageButton=document.createElement('button');primaryStageButton.className='btn primary stage-primary-btn';primaryStageButton.textContent='+ Создать этап';primaryStageButton.onclick=()=>openStageModal(null);
 function placePrimaryStageButton(){const emptySlot=$('emptyStageButtonSlot'),inlineSlot=$('inlineStageButtonSlot'),wrap=document.querySelector('.table-wrap');if(state.stages.length){wrap.classList.add('has-stages');inlineSlot.appendChild(primaryStageButton)}else{wrap.classList.remove('has-stages');emptySlot.appendChild(primaryStageButton)}}
 
-function renderStructure(){
- const box=$('structureTree');
- if(!state.project.name&&!state.project.orderNo&&!state.stages.length){box.innerHTML='<div class="structure-empty">Заполните основной проект и добавьте этапы — здесь появится наглядная схема вложенности.</div>';return}
- function nodeHtml(label,title,executor,deadline,isRoot=false){return `<div class="structure-node ${isRoot?'root-node':''}"><span class="tree-id">${escapeHtml(label)}</span><span class="tree-name">${escapeHtml(title||'Без названия')}</span>${executor?`<span class="tree-meta">${escapeHtml(executor)}</span>`:''}${deadline?`<span class="tree-meta">до ${escapeHtml(fullDate(deadline))}</span>`:''}</div>`}
- const ul=document.createElement('ul'),root=document.createElement('li');root.innerHTML=nodeHtml('Заказ № '+rootId(),state.project.name,state.project.executor,state.project.deadline,true);ul.appendChild(root);const parents=new Map([[null,root]]);
- for(const {stage:s} of D.preorder(state)){const parent=parents.get(s.parentUid||null);let children=Array.from(parent.children).find(e=>e.tagName==='UL');if(!children){children=document.createElement('ul');parent.appendChild(children)}const li=document.createElement('li');li.innerHTML=nodeHtml(stageId(s),s.title,s.executor,s.deadline);children.appendChild(li);parents.set(s.uid,li)}box.replaceChildren(ul);
-}
+function stageMatchesFilter(s){return completionFilter==='all'||(completionFilter==='done'?s.status==='done':s.status!=='done')}
 
 function render(showMessage=false){
  updateSavedState();
- $('rootId').textContent='Заказ № '+rootId();renderStructure();$('taskCounter').textContent=`${state.stages.length+1} элемент(ов)`;
+ $('taskCounter').textContent=`${state.stages.length+1} элемент(ов)`;
  const counts={work:0,done:0,overdue:0,new:0,hold:0};state.stages.forEach(s=>counts[derivedStageVisualStatus(s)]++);
  $('sumWork').textContent=counts.work;$('sumDone').textContent=counts.done;$('sumOverdue').textContent=counts.overdue;$('sumNew').textContent=counts.new;$('sumHold').textContent=counts.hold;
  const body=$('treeBody');body.innerHTML='';
  if(state.project.name||state.project.orderNo||state.stages.length){body.appendChild(makeRootRow());}
  let visible=0;
- const hidden=new Set();for(const {stage:s,depth} of D.preorder(state)){if(state.collapsed.__root||hidden.has(s.parentUid)){hidden.add(s.uid);continue}visible++;body.appendChild(makeStageRow(s,depth+1));if(state.collapsed[s.uid])hidden.add(s.uid)}
+ const hidden=new Set();for(const {stage:s,depth} of D.preorder(state)){if(state.collapsed.__root||hidden.has(s.parentUid)){hidden.add(s.uid);continue}if(stageMatchesFilter(s)){visible++;body.appendChild(makeStageRow(s,depth+1))}if(state.collapsed[s.uid])hidden.add(s.uid)}
  $('emptyState').style.display=state.stages.length?'none':'block';placePrimaryStageButton();
+ renderGantt();
  if(showMessage)message('ok','Структура обновлена.');
 }
 function makeRootRow(){const tr=document.createElement('tr');tr.className='root';const st=rootVisualStatus(),dl=daysLeft(state.project.deadline);tr.innerHTML=`
@@ -63,7 +58,7 @@ function makeRootRow(){const tr=document.createElement('tr');tr.className='root'
 function makeStageRow(s,depth){const tr=document.createElement('tr');const st=derivedStageVisualStatus(s),dl=daysLeft(s.deadline),kids=hasChildren(s.uid);tr.innerHTML=`
 <td><button class="btn icon" title="Добавить дочерний" data-act="add">＋</button> <button class="btn icon" title="Редактировать" data-act="edit">✎</button> <button class="btn icon" title="Удалить" data-act="delete">×</button></td>
 <td><span class="id-badge">${escapeHtml(stageId(s))}</span></td>
-<td><div class="tree-cell"><span class="tree-prefix">${depth>1?'│   '.repeat(Math.max(0,depth-2))+'└── ':'└── '} </span><button class="expander ${kids?'':'placeholder'}" data-act="toggle">${state.collapsed[s.uid]?'▸':'▾'}</button><span class="node-icon">Э</span><div><span class="node-title">${escapeHtml(s.title)}</span><span class="subnote">входит в: ${escapeHtml(s.parentUid?stageId(byUid(s.parentUid)):'Заказ № '+rootId())}</span></div></div></td>
+<td><div class="tree-cell"><span class="tree-prefix" style="--depth:${Math.max(1,depth)}"></span><button class="expander ${kids?'':'placeholder'}" title="${state.collapsed[s.uid]?'Развернуть дочерние этапы':'Свернуть дочерние этапы'}" data-act="toggle">${state.collapsed[s.uid]?'›':'⌄'}</button><span class="node-icon">Э</span><div><span class="node-title">${escapeHtml(s.title)}</span><span class="connection-chip">${escapeHtml(s.parentUid?stageId(byUid(s.parentUid)):'Заказ № '+rootId())}</span></div></div></td>
 <td>${escapeHtml(s.executor)}</td><td>${escapeHtml(state.project.initiator||'—')}</td><td><span class="status-badge ${st}"><span class="status-dot ${st}"></span>${statusText(st)}</span></td><td>${fullDate(s.start)}</td><td class="deadline ${dl!==null&&dl<0&&st!=='done'?'overdue':''}">${fullDate(s.deadline)}</td><td class="left ${dl!==null&&dl<0&&st!=='done'?'overdue':dl!==null&&dl<=7?'soon':''}">${st==='done'?'—':dl}</td>`;
  tr.querySelector('[data-act="add"]').onclick=()=>openStageModal(s.uid);tr.querySelector('[data-act="edit"]').onclick=()=>openStageModal(s.parentUid,s.uid);tr.querySelector('[data-act="delete"]').onclick=()=>deleteStage(s.uid);tr.querySelector('[data-act="toggle"]').onclick=()=>{state.collapsed[s.uid]=!state.collapsed[s.uid];render()};return tr}
 
@@ -114,6 +109,37 @@ async function saveProject(){try{const snapshot=J.fingerprint(state);if(B.native
 function loadJsonFile(f){const r=new FileReader();r.onerror=()=>message('err','Не удалось прочитать файл.');r.onload=()=>{try{const candidate=J.parse(String(r.result));if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из файла?'))return;state=candidate;savedSnapshot=J.fingerprint(state);syncForm();render();message('ok','Проект загружен.')}catch(e){message('err','Не удалось открыть проект: '+e.message)}};r.readAsText(f,'utf-8')}
 async function openProject(){if(!B.native()){$('jsonFile').click();return}const orderNo=clean(prompt('Введите номер ранее сохранённого заказа:',state.project.orderNo||''));if(!orderNo)return;try{const candidate=await B.load(orderNo);if(!candidate){message('err','Проект с таким номером заказа не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;savedSnapshot=J.fingerprint(state);syncForm();render();message('ok','Проект загружен из локальной базы данных.')}catch(e){message('err','Не удалось открыть проект: '+e)}}
 
+async function loadProjectByOrder(orderNo){try{const candidate=await B.load(orderNo);if(!candidate){message('err','Проект не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;savedSnapshot=J.fingerprint(state);syncForm();closeModal('projectsModal');render();message('ok',`Открыт проект: заказ № ${orderNo}.`)}catch(e){message('err','Не удалось открыть проект: '+e)}}
+async function showProjects(){
+ if(!B.native()){$('jsonFile').click();return}
+ openModal('projectsModal');$('projectsList').innerHTML='<div class="projects-empty">Загрузка…</div>';
+ try{const items=await B.listProjects();if(!items.length){$('projectsList').innerHTML='<div class="projects-empty">Сохранённых проектов пока нет.</div>';return}
+  $('projectsList').innerHTML=items.map(p=>`<div class="project-list-row"><div class="project-list-title"><strong>${escapeHtml(p.name)}</strong><span>Заказ № ${escapeHtml(p.orderNo)}</span></div><div><b>${p.donePercent}%</b><div class="progress-track"><div class="progress-fill" style="width:${p.donePercent}%"></div></div><div class="project-list-meta">${p.doneCount} из ${p.stageCount}</div></div><div>${escapeHtml(p.enterprise)}</div><div>до ${escapeHtml(fullDate(p.deadline)||'—')}</div><div class="project-list-meta">Изменён<br>${escapeHtml(String(p.updatedAt||'').replace('T',' ').slice(0,16))}</div><button class="btn primary small" data-open-order="${escapeHtml(p.orderNo)}">Открыть</button></div>`).join('');
+  $('projectsList').querySelectorAll('[data-open-order]').forEach(b=>b.onclick=()=>loadProjectByOrder(b.dataset.openOrder));
+ }catch(e){$('projectsList').innerHTML=`<div class="notice err">Не удалось получить список: ${escapeHtml(e)}</div>`}
+}
+
+function readTxtFile(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onerror=()=>reject(Error('Не удалось прочитать файл.'));r.onload=()=>{try{const bytes=new Uint8Array(r.result);if(bytes.length<3||bytes[0]!==0xef||bytes[1]!==0xbb||bytes[2]!==0xbf)throw Error('Файл должен быть UTF-8 с BOM.');resolve('\uFEFF'+new TextDecoder('utf-8',{fatal:true}).decode(bytes.slice(3)))}catch(e){reject(e)}};r.readAsArrayBuffer(file)})}
+async function updateImportPreview(){
+ importCandidate=null;$('confirmImportBtn').disabled=true;
+ if(!importFiles.out||!importFiles.in){$('importPreview').textContent='Выберите оба файла для проверки.';$('importValidation').innerHTML='';return}
+ try{const [outText,inText]=await Promise.all([readTxtFile(importFiles.out),readTxtFile(importFiles.in)]);const result=Production.exchange.importPair(outText,inText);importCandidate={...result,outText,inText};$('confirmImportBtn').disabled=false;$('importValidation').innerHTML=`<div class="notice ok"><b>Проверка пройдена.</b> Заказ № ${escapeHtml(result.state.project.orderNo)}, этапов: ${result.state.stages.length}.<br>${escapeHtml(result.warnings[0])}</div>`;$('importPreview').textContent=previewText(importPreviewKind==='out'?outText:inText)
+ }catch(e){$('importValidation').innerHTML=`<div class="notice err"><b>Импорт невозможен:</b> ${escapeHtml(e.message||e)}</div>`;$('importPreview').textContent='Исправьте файлы и выберите их повторно.'}
+}
+function openImport(){importFiles={out:null,in:null};importCandidate=null;$('importOutFile').value='';$('importInFile').value='';$('importOutName').textContent='Выберите TXT (9 колонок)';$('importInName').textContent='Выберите TXT (8 колонок)';$('confirmImportBtn').disabled=true;$('importValidation').innerHTML='';$('importPreview').textContent='Выберите оба файла для проверки.';openModal('importModal')}
+async function confirmImport(){if(!importCandidate)return;const candidate=importCandidate.state;if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект импортированными данными?'))return;try{if(B.native())await B.save(candidate);state=candidate;savedSnapshot=B.native()?J.fingerprint(state):null;syncForm();closeModal('importModal');render();message('ok',`Импортирован и сохранён заказ № ${state.project.orderNo}. Статусы этапов установлены «Не начато».`)}catch(e){message('err','Не удалось сохранить импортированный проект: '+e)}}
+
+function renderGantt(){
+ const box=$('ganttChart'),items=D.preorder(state).filter(x=>stageMatchesFilter(x.stage));
+ if(!items.length){box.innerHTML='<div class="gantt-empty">Нет этапов для выбранного фильтра.</div>';$('ganttPeriod').textContent='';return}
+ const dates=items.flatMap(x=>[x.stage.start,x.stage.deadline]).filter(D.validDate).map(Date.parse);if(!dates.length){box.innerHTML='<div class="gantt-empty">Для диаграммы нужны корректные даты.</div>';return}
+ const start=Math.min(...dates),end=Math.max(...dates),day=86400000,span=Math.max(1,Math.round((end-start)/day)+1),pct=v=>Math.max(0,Math.min(100,(Date.parse(v)-start)/day/span*100));
+ const format=ms=>fullDate(new Date(ms).toISOString().slice(0,10)),ticks=Array.from({length:Math.min(10,span)},(_,i)=>{const pos=i/(Math.min(10,span)-1||1)*100,ms=start+Math.round((span-1)*i/(Math.min(10,span)-1||1))*day;return `<span class="gantt-tick" style="left:${pos}%">${format(ms)}</span>`}).join('');
+ const today=Date.parse(isoToday()),todayLine=today>=start&&today<=end?`<span class="gantt-today" style="left:${pct(isoToday())}%"><span>Сегодня</span></span>`:'';
+ $('ganttPeriod').textContent=`${format(start)} — ${format(end)}`;let html=`<div class="gantt-grid"><div class="gantt-label"><b>Этап / связь</b></div><div class="gantt-axis">${ticks}${todayLine}</div>`;
+ for(const {stage:s,depth} of items){const left=pct(s.start),width=Math.max(0.7,(Math.round((Date.parse(s.deadline)-Date.parse(s.start))/day)+1)/span*100),st=derivedStageVisualStatus(s),parent=s.parentUid?stageId(byUid(s.parentUid)):'Заказ № '+rootId();html+=`<div class="gantt-label" style="padding-left:${11+depth*14}px"><div><span class="node-title">${escapeHtml(stageId(s)+' · '+s.title)}</span><small>Связь → ${escapeHtml(parent)}</small></div></div><div class="gantt-track">${todayLine}<span class="gantt-bar ${st}" style="left:${left}%;width:${width}%" title="${escapeHtml(fullDate(s.start)+' — '+fullDate(s.deadline))}">${escapeHtml(s.title)}</span></div>`}box.innerHTML=html+'</div>';
+}
+
 function newProject(){if((state.project.name||state.stages.length)&&!confirm('Очистить текущий проект и начать новый?'))return;state={project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};syncForm();render();message('ok','Создан новый пустой проект.')}
 function loadDemo(){if((state.project.name||state.stages.length)&&!confirm('Заменить текущий проект демонстрационным?'))return;state={project:{name:'Демонстрационный заказ №924',orderNo:'924',initiator:'Производственная дирекция',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-06-01',deadline:'2026-11-30'},nextSeq:9,collapsed:{},stages:[
 {uid:'d1',seq:1,sort:1,parentUid:null,title:'Модуль А',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-06-01',deadline:'2026-06-30',status:'work'},
@@ -126,11 +152,14 @@ function loadDemo(){if((state.project.name||state.stages.length)&&!confirm('За
 {uid:'d8',seq:8,sort:6,parentUid:null,title:'Привода',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-07-15',deadline:'2026-11-30',status:'new'}]};syncForm();render();message('ok','Загружен демонстрационный производственный цикл.')}
 function openModal(id){$(id).classList.add('open')}function closeModal(id){$(id).classList.remove('open')}
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('mousedown',e=>{if(e.target===m)closeModal(m.id)}));
-$('saveStageBtn').onclick=saveStage;$('pdfReportBtn').onclick=printPdfReport;$('validateBtn').onclick=showValidation;$('exportBtn').onclick=openExport;$('saveJsonBtn').onclick=saveProject;$('loadJsonBtn').onclick=openProject;$('jsonFile').onchange=e=>{if(e.target.files[0])loadJsonFile(e.target.files[0]);e.target.value=''};$('newBtn').onclick=newProject;$('demoBtn').onclick=loadDemo;
+$('saveStageBtn').onclick=saveStage;$('pdfReportBtn').onclick=printPdfReport;$('validateBtn').onclick=showValidation;$('exportBtn').onclick=openExport;$('saveJsonBtn').onclick=saveProject;$('loadJsonBtn').onclick=showProjects;$('importBtn').onclick=openImport;$('jsonFile').onchange=e=>{if(e.target.files[0])loadJsonFile(e.target.files[0]);e.target.value=''};$('newBtn').onclick=newProject;$('demoBtn').onclick=loadDemo;
+$('completionFilter').onchange=e=>{completionFilter=e.target.value;render()};
+$('importOutFile').onchange=e=>{importFiles.out=e.target.files[0]||null;$('importOutName').textContent=importFiles.out?importFiles.out.name:'Выберите TXT (9 колонок)';updateImportPreview()};$('importInFile').onchange=e=>{importFiles.in=e.target.files[0]||null;$('importInName').textContent=importFiles.in?importFiles.in.name:'Выберите TXT (8 колонок)';updateImportPreview()};$('confirmImportBtn').onclick=confirmImport;
+document.querySelectorAll('[data-import-preview]').forEach(b=>b.onclick=()=>{importPreviewKind=b.dataset.importPreview;document.querySelectorAll('[data-import-preview]').forEach(x=>x.classList.toggle('active',x===b));if(importCandidate)$('importPreview').textContent=previewText(importPreviewKind==='out'?importCandidate.outText:importCandidate.inText)});
 document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>{previewKind=b.dataset.preview;document.querySelectorAll('.preview-tab').forEach(x=>x.classList.toggle('active',x===b));updatePreview()});
 $('downloadOutBtn').onclick=async()=>{try{const d=exportCache||await exportData();await downloadText($('outFileName').textContent,d.out)}catch(e){message('err','Ошибка экспорта: '+e)}};$('downloadInBtn').onclick=async()=>{try{const d=exportCache||await exportData();await downloadText($('inFileName').textContent,d.in)}catch(e){message('err','Ошибка экспорта: '+e)}};
 
-document.querySelectorAll('.tab').forEach((tab,i)=>{tab.tabIndex=0;tab.setAttribute('role','button');tab.onclick=()=>{if(i===1)openExport();else if(i===2)showValidation();else window.scrollTo({top:0,behavior:'smooth'})};tab.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tab.click()}}});
+document.querySelectorAll('.tab').forEach(tab=>{tab.onclick=()=>{activeView=tab.dataset.view;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===tab));$('registryView').classList.toggle('active',activeView==='registry');$('ganttView').classList.toggle('active',activeView==='gantt');if(activeView==='gantt')renderGantt()}});
 window.addEventListener('beforeunload',e=>{if((state.project.name||state.stages.length)&&J.fingerprint(state)!==savedSnapshot){e.preventDefault();e.returnValue=''}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-backdrop.open').forEach(m=>closeModal(m.id))});
 syncForm();render();

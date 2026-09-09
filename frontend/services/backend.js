@@ -50,6 +50,10 @@
     if(!native())return null;
     return fromSnapshot(await invoke('production_load_snapshot',{orderNo:String(orderNo||'').trim()}));
   }
+  async function listProjects(){
+    if(!native())return [];
+    return invoke('production_list_projects');
+  }
   async function exportPair(state){
     if(!native())return X.exportPair(state);
     const bundle=await invoke('production_export_txt',{snapshot:toSnapshot(state)});
@@ -70,5 +74,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,load,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,load,listProjects,exportPair,report});
 })();

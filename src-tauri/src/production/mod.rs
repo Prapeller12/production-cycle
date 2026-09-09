@@ -116,6 +116,19 @@ pub struct ProductionReport {
     pub generated_at:String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSummary {
+    pub order_no:String,
+    pub name:String,
+    pub enterprise:String,
+    pub deadline:String,
+    pub updated_at:String,
+    pub stage_count:usize,
+    pub done_count:usize,
+    pub done_percent:u8,
+}
+
 pub struct ProductionDb { conn: Mutex<Connection> }
 impl ProductionDb {
     pub fn open(path:&Path) -> Result<Self> {
@@ -143,6 +156,20 @@ impl ProductionDb {
     pub fn load_snapshot(&self, order_no:&str) -> Result<Option<ProductionSnapshot>> {
         let conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
         load_snapshot_conn(&conn,order_no)
+    }
+    pub fn list_projects(&self) -> Result<Vec<ProjectSummary>> {
+        let conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
+        let mut stmt=conn.prepare(
+            "SELECT c.order_no,c.name,c.enterprise,c.deadline,c.updated_at,COUNT(s.id),COALESCE(SUM(CASE WHEN s.status='done' THEN 1 ELSE 0 END),0) \
+             FROM production_cycle c LEFT JOIN production_stage s ON s.cycle_id=c.id \
+             GROUP BY c.id ORDER BY c.updated_at DESC,c.order_no"
+        )?;
+        let rows=stmt.query_map([],|r|{
+            let stage_count:i64=r.get(5)?;let done_count:i64=r.get(6)?;
+            let done_percent=if stage_count>0{((done_count*100+stage_count/2)/stage_count) as u8}else{0};
+            Ok(ProjectSummary{order_no:r.get(0)?,name:r.get(1)?,enterprise:r.get(2)?,deadline:r.get(3)?,updated_at:r.get(4)?,stage_count:stage_count as usize,done_count:done_count as usize,done_percent})
+        })?;
+        rows.collect::<std::result::Result<Vec<_>,_>>().map_err(ProductionError::from)
     }
 }
 
@@ -235,6 +262,8 @@ pub fn production_save_snapshot(snapshot:ProductionSnapshot,db:State<'_,Producti
 #[tauri::command]
 pub fn production_load_snapshot(order_no:String,db:State<'_,ProductionDb>)->std::result::Result<Option<ProductionSnapshot>,String>{db.load_snapshot(&order_no).map_err(|e|e.to_string())}
 #[tauri::command]
+pub fn production_list_projects(db:State<'_,ProductionDb>)->std::result::Result<Vec<ProjectSummary>,String>{db.list_projects().map_err(|e|e.to_string())}
+#[tauri::command]
 pub fn production_export_txt(snapshot:ProductionSnapshot)->std::result::Result<TxtExportBundle,String>{build_txt_export(&snapshot).map_err(|e|e.to_string())}
 #[tauri::command]
 pub fn production_get_management_report(snapshot:ProductionSnapshot)->std::result::Result<ProductionReport,String>{build_report(&snapshot,Local::now().date_naive()).map_err(|e|e.to_string())}
@@ -245,6 +274,7 @@ mod tests{
     fn sample()->ProductionSnapshot{ProductionSnapshot{project:ProductionProjectInput{name:"Изделие".into(),order_no:"916".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-10-01".into()},stages:vec![ProductionStageInput{uid:"a".into(),seq:1,sort:1,parent_uid:None,title:"A".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-01".into(),deadline:"2026-09-20".into(),status:StageStatus::Work},ProductionStageInput{uid:"b".into(),seq:2,sort:1,parent_uid:Some("a".into()),title:"B".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-02".into(),deadline:"2026-09-18".into(),status:StageStatus::Done}],next_seq:3}}
     #[test]fn txt_contract_and_empty_link(){let b=build_txt_export(&sample()).unwrap();assert_eq!(OUT_HEADER.len(),9);assert_eq!(IN_HEADER.len(),8);let incoming:Vec<_>=b.incoming_text.split("\r\n").collect();assert!(incoming[1].ends_with('\t'));assert!(incoming[1].contains("A\t916-001"));assert!(incoming[2].contains("B\t916-002"));}
     #[test]fn sqlite_roundtrip(){let db=ProductionDb::memory().unwrap();let s=sample();db.save_snapshot(&s).unwrap();let loaded=db.load_snapshot("916").unwrap().unwrap();assert_eq!(loaded.project.enterprise,"Предприятие");assert_eq!(loaded.stages.len(),2);assert_eq!(loaded.stages[1].parent_uid.as_deref(),Some("a"));}
+    #[test]fn project_list_has_progress_and_latest_metadata(){let db=ProductionDb::memory().unwrap();db.save_snapshot(&sample()).unwrap();let list=db.list_projects().unwrap();assert_eq!(list.len(),1);assert_eq!(list[0].order_no,"916");assert_eq!(list[0].stage_count,2);assert_eq!(list[0].done_count,1);assert_eq!(list[0].done_percent,50);}
     #[test]fn status_is_derived(){let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let start=NaiveDate::from_ymd_opt(2026,9,1).unwrap();let deadline=NaiveDate::from_ymd_opt(2026,9,7).unwrap();assert_eq!(visual_status(StageStatus::Work,today,start,deadline),StageVisualStatus::Overdue);assert_eq!(visual_status(StageStatus::Done,today,start,deadline),StageVisualStatus::Done);}
     #[test]fn report_contains_management_risks(){let mut s=sample();s.project.deadline="2026-09-07".into();s.stages[0].status=StageStatus::Hold;s.stages[0].deadline="2026-09-07".into();let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let r=build_report(&s,today).unwrap();assert_eq!(r.overdue_held,1);assert_eq!(r.project_days,-1);assert!(r.project_overdue);assert_eq!(r.status,StageVisualStatus::Work);}
     #[test]fn cycle_is_rejected(){let mut s=sample();s.stages[0].parent_uid=Some("b".into());let r=validate_snapshot(&s).unwrap();assert!(!r.valid);assert!(r.errors.iter().any(|e|e.code=="CYCLE"));}
