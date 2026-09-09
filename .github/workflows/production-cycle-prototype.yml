@@ -33,6 +33,7 @@ jobs:
           path: |
             /tmp/production-cycle-*.png
             /tmp/production-cycle-report.pdf
+            /tmp/production-cycle-gantt-print-a3.pdf
   windows-host:
     runs-on: windows-latest
     timeout-minutes: 30
