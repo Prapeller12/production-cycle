@@ -131,6 +131,18 @@ pub struct ProjectSummary {
     pub done_percent:u8,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DictionaryKind { Enterprise, Executor, Initiator, ProjectName, StageTitle }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryEntry { pub value:String, pub usage_count:usize, pub project_count:usize }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryReplaceResult { pub affected_project_rows:usize, pub affected_stage_rows:usize }
+
 pub struct ProductionDb { conn: Mutex<Connection> }
 fn initialize_schema(conn:&Connection)->Result<()> {
     conn.execute_batch("PRAGMA foreign_keys=ON;")?;
@@ -179,6 +191,34 @@ impl ProductionDb {
             Ok(ProjectSummary{order_no:r.get(0)?,name:r.get(1)?,enterprise:r.get(2)?,deadline:r.get(3)?,updated_at:r.get(4)?,stage_count:stage_count as usize,done_count:done_count as usize,done_percent})
         })?;
         rows.collect::<std::result::Result<Vec<_>,_>>().map_err(ProductionError::from)
+    }
+    pub fn list_dictionary(&self,kind:DictionaryKind)->Result<Vec<DictionaryEntry>>{
+        let conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
+        let sql=match kind{
+            DictionaryKind::Enterprise=>"SELECT value,COUNT(*),COUNT(DISTINCT cycle_id) FROM (SELECT id cycle_id,enterprise value FROM production_cycle UNION ALL SELECT cycle_id,addressees FROM production_stage) WHERE TRIM(value)<>'' GROUP BY value ORDER BY value",
+            DictionaryKind::Executor=>"SELECT value,COUNT(*),COUNT(DISTINCT cycle_id) FROM (SELECT id cycle_id,executor value FROM production_cycle UNION ALL SELECT cycle_id,executor FROM production_stage) WHERE TRIM(value)<>'' GROUP BY value ORDER BY value",
+            DictionaryKind::Initiator=>"SELECT initiator,COUNT(*),COUNT(*) FROM production_cycle WHERE TRIM(initiator)<>'' GROUP BY initiator ORDER BY initiator",
+            DictionaryKind::ProjectName=>"SELECT name,COUNT(*),COUNT(*) FROM production_cycle WHERE TRIM(name)<>'' GROUP BY name ORDER BY name",
+            DictionaryKind::StageTitle=>"SELECT title,COUNT(*),COUNT(DISTINCT cycle_id) FROM production_stage WHERE TRIM(title)<>'' GROUP BY title ORDER BY title",
+        };
+        let mut stmt=conn.prepare(sql)?;let rows=stmt.query_map([],|r|Ok(DictionaryEntry{value:r.get(0)?,usage_count:r.get::<_,i64>(1)? as usize,project_count:r.get::<_,i64>(2)? as usize}))?;
+        rows.collect::<std::result::Result<Vec<_>,_>>().map_err(ProductionError::from)
+    }
+    pub fn replace_dictionary_value(&self,kind:DictionaryKind,from_value:&str,to_value:&str)->Result<DictionaryReplaceResult>{
+        let from=clean(from_value);let to=clean(to_value);
+        if from.is_empty()||to.is_empty(){return Err(ProductionError::Validation("Старое и новое наименование должны быть заполнены.".into()));}
+        if has_tsv_breaker(&to){return Err(ProductionError::Validation("Новое наименование не должно содержать TAB или перенос строки.".into()));}
+        if from==to{return Err(ProductionError::Validation("Новое наименование совпадает с текущим.".into()));}
+        let mut conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;let tx=conn.transaction()?;let now=Local::now().to_rfc3339();
+        let (project_sql,stage_sql,touch_sql)=match kind{
+            DictionaryKind::Enterprise=>(Some("UPDATE production_cycle SET enterprise=?1,updated_at=?3 WHERE enterprise=?2"),Some("UPDATE production_stage SET addressees=?1,updated_at=?3 WHERE addressees=?2"),Some("UPDATE production_cycle SET updated_at=?1 WHERE id IN (SELECT DISTINCT cycle_id FROM production_stage WHERE addressees=?2)")),
+            DictionaryKind::Executor=>(Some("UPDATE production_cycle SET executor=?1,updated_at=?3 WHERE executor=?2"),Some("UPDATE production_stage SET executor=?1,updated_at=?3 WHERE executor=?2"),Some("UPDATE production_cycle SET updated_at=?1 WHERE id IN (SELECT DISTINCT cycle_id FROM production_stage WHERE executor=?2)")),
+            DictionaryKind::Initiator=>(Some("UPDATE production_cycle SET initiator=?1,updated_at=?3 WHERE initiator=?2"),None,None),
+            DictionaryKind::ProjectName=>(Some("UPDATE production_cycle SET name=?1,updated_at=?3 WHERE name=?2"),None,None),
+            DictionaryKind::StageTitle=>(None,Some("UPDATE production_stage SET title=?1,updated_at=?3 WHERE title=?2"),Some("UPDATE production_cycle SET updated_at=?1 WHERE id IN (SELECT DISTINCT cycle_id FROM production_stage WHERE title=?2)")),
+        };
+        if let Some(sql)=stage_sql{if let Some(touch)=touch_sql{tx.execute(touch,params![now,from])?;}let stage_rows=tx.execute(sql,params![to,from,now])?;let project_rows=if let Some(sql)=project_sql{tx.execute(sql,params![to,from,now])?}else{0};tx.commit()?;return Ok(DictionaryReplaceResult{affected_project_rows:project_rows,affected_stage_rows:stage_rows});}
+        let project_rows=if let Some(sql)=project_sql{tx.execute(sql,params![to,from,now])?}else{0};tx.commit()?;Ok(DictionaryReplaceResult{affected_project_rows:project_rows,affected_stage_rows:0})
     }
 }
 
@@ -273,6 +313,10 @@ pub fn production_load_snapshot(order_no:String,db:State<'_,ProductionDb>)->std:
 #[tauri::command]
 pub fn production_list_projects(db:State<'_,ProductionDb>)->std::result::Result<Vec<ProjectSummary>,String>{db.list_projects().map_err(|e|e.to_string())}
 #[tauri::command]
+pub fn production_list_dictionary(kind:DictionaryKind,db:State<'_,ProductionDb>)->std::result::Result<Vec<DictionaryEntry>,String>{db.list_dictionary(kind).map_err(|e|e.to_string())}
+#[tauri::command]
+pub fn production_replace_dictionary_value(kind:DictionaryKind,from_value:String,to_value:String,db:State<'_,ProductionDb>)->std::result::Result<DictionaryReplaceResult,String>{db.replace_dictionary_value(kind,&from_value,&to_value).map_err(|e|e.to_string())}
+#[tauri::command]
 pub fn production_export_txt(snapshot:ProductionSnapshot)->std::result::Result<TxtExportBundle,String>{build_txt_export(&snapshot).map_err(|e|e.to_string())}
 #[tauri::command]
 pub fn production_get_management_report(snapshot:ProductionSnapshot)->std::result::Result<ProductionReport,String>{build_report(&snapshot,Local::now().date_naive()).map_err(|e|e.to_string())}
@@ -285,6 +329,7 @@ mod tests{
     #[test]fn sqlite_roundtrip(){let db=ProductionDb::memory().unwrap();let s=sample();db.save_snapshot(&s).unwrap();let loaded=db.load_snapshot("916").unwrap().unwrap();assert_eq!(loaded.project.enterprise,"Предприятие");assert_eq!(loaded.stages.len(),2);assert_eq!(loaded.stages[0].comment,"Контрольный комментарий");assert_eq!(loaded.stages[1].parent_uid.as_deref(),Some("a"));}
     #[test]fn existing_database_gets_comment_column(){let conn=Connection::open_in_memory().unwrap();conn.execute_batch("CREATE TABLE production_stage(id INTEGER PRIMARY KEY,cycle_id INTEGER,parent_stage_id INTEGER,sort_order INTEGER,comment_placeholder TEXT);").unwrap();initialize_schema(&conn).unwrap();let columns=conn.prepare("PRAGMA table_info(production_stage)").unwrap().query_map([],|row|row.get::<_,String>(1)).unwrap().collect::<std::result::Result<Vec<_>,_>>().unwrap();assert!(columns.iter().any(|name|name=="comment"));}
     #[test]fn project_list_has_progress_and_latest_metadata(){let db=ProductionDb::memory().unwrap();db.save_snapshot(&sample()).unwrap();let list=db.list_projects().unwrap();assert_eq!(list.len(),1);assert_eq!(list[0].order_no,"916");assert_eq!(list[0].stage_count,2);assert_eq!(list[0].done_count,1);assert_eq!(list[0].done_percent,50);}
+    #[test]fn dictionary_merges_case_variants_in_all_enterprise_fields(){let db=ProductionDb::memory().unwrap();let mut a=sample();a.stages.truncate(1);a.project.enterprise="ООО \"фрегат\"".into();a.stages[0].addressees="ООО \"фрегат\"".into();db.save_snapshot(&a).unwrap();let mut b=sample();b.stages.truncate(1);b.project.order_no="917".into();b.project.enterprise="ООО \"Фрегат\"".into();b.stages[0].addressees="ООО \"Фрегат\"".into();db.save_snapshot(&b).unwrap();let before=db.list_dictionary(DictionaryKind::Enterprise).unwrap();assert_eq!(before.len(),2);let result=db.replace_dictionary_value(DictionaryKind::Enterprise,"ООО \"фрегат\"","ООО \"Фрегат\"").unwrap();assert_eq!(result.affected_project_rows,1);assert_eq!(result.affected_stage_rows,1);let after=db.list_dictionary(DictionaryKind::Enterprise).unwrap();assert_eq!(after,vec![DictionaryEntry{value:"ООО \"Фрегат\"".into(),usage_count:4,project_count:2}]);assert_eq!(db.load_snapshot("916").unwrap().unwrap().project.enterprise,"ООО \"Фрегат\"");}
     #[test]fn status_is_derived(){let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let start=NaiveDate::from_ymd_opt(2026,9,1).unwrap();let deadline=NaiveDate::from_ymd_opt(2026,9,7).unwrap();assert_eq!(visual_status(StageStatus::Work,today,start,deadline),StageVisualStatus::Overdue);assert_eq!(visual_status(StageStatus::Done,today,start,deadline),StageVisualStatus::Done);}
     #[test]fn report_contains_management_risks(){let mut s=sample();s.project.deadline="2026-09-07".into();s.stages[0].status=StageStatus::Hold;s.stages[0].deadline="2026-09-07".into();let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let r=build_report(&s,today).unwrap();assert_eq!(r.overdue_held,1);assert_eq!(r.project_days,-1);assert!(r.project_overdue);assert_eq!(r.status,StageVisualStatus::Work);}
     #[test]fn cycle_is_rejected(){let mut s=sample();s.stages[0].parent_uid=Some("b".into());let r=validate_snapshot(&s).unwrap();assert!(!r.valid);assert!(r.errors.iter().any(|e|e.code=="CYCLE"));}

@@ -17,6 +17,7 @@
     <button class="btn" id="newBtn">Новый проект</button>
     <button class="btn" id="saveJsonBtn">Сохранить проект</button>
     <button class="btn" id="loadJsonBtn">Все проекты</button>
+    <button class="btn" id="dictionaryBtn">Справочники</button>
     <input type="file" id="jsonFile" class="hidden-file" accept="application/json,.json" />
     <button class="btn" id="importBtn">Импорт 2 TXT</button>
     <span class="spacer"></span>
@@ -27,14 +28,14 @@
 
   <section class="project-card">
     <div class="project-grid">
-      <div class="field"><label>Название проекта *</label><input id="projectName" placeholder="Например: Изделие 5П-20К заказ №924" /></div>
+      <div class="field"><label>Название проекта *</label><input id="projectName" list="projectNameOptions" placeholder="Например: Изделие 5П-20К заказ №924" /></div>
       <div class="field"><label>Номер заказа *</label><input id="orderNo" placeholder="924" /></div>
-      <div class="field"><label>Инициатор / подписант *</label><input id="initiator" placeholder="ФИО / подразделение" /></div>
-      <div class="field"><label>Исполнитель / получатель *</label><input id="executor" placeholder="ФИО / организация" /></div>
+      <div class="field"><label>Инициатор / подписант *</label><input id="initiator" list="initiatorOptions" placeholder="ФИО / подразделение" /></div>
+      <div class="field"><label>Исполнитель / получатель *</label><input id="executor" list="executorOptions" placeholder="ФИО / организация" /></div>
       <div class="field"><label>Начало *</label><input id="projectStart" type="date" /></div>
       <div class="field"><label>Дедлайн *</label><input id="projectDeadline" type="date" /></div>
     </div>
-    <div class="project-extra"><div class="field"><label>Предприятие *</label><input id="projectAddressees" placeholder="Наименование предприятия" /></div></div>
+    <div class="project-extra"><div class="field"><label>Предприятие *</label><input id="projectAddressees" list="enterpriseOptions" placeholder="Наименование предприятия" /></div></div>
   </section>
 
   <section class="structure-card" id="structureCard">
@@ -81,10 +82,10 @@
     <div class="modal-head"><h2 id="stageModalTitle">Новый этап</h2><span class="spacer"></span><button class="btn icon" data-close="stageModal">×</button></div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="wide"><label>Название этапа / краткое содержание *</label><input id="stageTitle" placeholder="Например: Изготовление блока МЭТ" /></div>
+        <div class="wide"><label>Название этапа / краткое содержание *</label><input id="stageTitle" list="stageTitleOptions" placeholder="Например: Изготовление блока МЭТ" /></div>
         <div><label>Родитель *</label><select id="stageParent"></select><div class="help">У элемента может быть только один родитель. Для верхнего уровня выберите основной проект.</div></div>
-        <div><label>Исполнитель / корреспондент *</label><input id="stageExecutor" placeholder="ФИО / организация" /></div>
-        <div><label>Адресаты *</label><input id="stageAddressees" placeholder="ФИО / подразделение" /></div>
+        <div><label>Исполнитель / корреспондент *</label><input id="stageExecutor" list="executorOptions" placeholder="ФИО / организация" /></div>
+        <div><label>Адресаты *</label><input id="stageAddressees" list="enterpriseOptions" placeholder="ФИО / подразделение" /></div>
         <div><label>Начало / дата регистрации *</label><input id="stageStart" type="date" /></div>
         <div><label>Дедлайн / срок исполнения *</label><input id="stageDeadline" type="date" /></div>
         <div><label>Статус *</label><select id="stageStatus"><option value="new">Не начато</option><option value="work">В работе</option><option value="hold">Приостановлено</option><option value="done">Выполнено</option></select></div>
@@ -100,6 +101,20 @@
 <div class="modal-backdrop" id="projectsModal">
   <div class="modal modal-wide"><div class="modal-head"><h2>Сохранённые проекты</h2><span class="spacer"></span><button class="btn icon" data-close="projectsModal">×</button></div><div class="modal-body"><div id="projectsList" class="projects-list"></div></div><div class="modal-foot"><button class="btn" data-close="projectsModal">Закрыть</button></div></div>
 </div>
+
+<div class="modal-backdrop" id="dictionaryModal">
+  <div class="modal modal-wide"><div class="modal-head"><h2>Справочники наименований</h2><span class="spacer"></span><button class="btn icon" data-close="dictionaryModal">×</button></div>
+    <div class="modal-body">
+      <div class="dictionary-note">Справочник формируется из сохранённых проектов. Замена изменяет точное совпадение во всех проектах выбранной категории и объединяет одинаковые варианты написания.</div>
+      <div class="dictionary-toolbar"><label>Категория <select id="dictionaryKind"><option value="enterprise">Предприятия / адресаты</option><option value="executor">Исполнители / получатели</option><option value="initiator">Инициаторы / подписанты</option><option value="projectName">Названия проектов</option><option value="stageTitle">Названия этапов</option></select></label><label>Поиск <input id="dictionarySearch" placeholder="Начните вводить наименование" /></label></div>
+      <div class="dictionary-head"><span>Наименование</span><span>Использований</span><span>Проектов</span><span></span></div>
+      <div id="dictionaryList" class="dictionary-list"></div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close="dictionaryModal">Закрыть</button></div>
+  </div>
+</div>
+
+<datalist id="projectNameOptions"></datalist><datalist id="initiatorOptions"></datalist><datalist id="executorOptions"></datalist><datalist id="enterpriseOptions"></datalist><datalist id="stageTitleOptions"></datalist>
 
 <div class="modal-backdrop" id="importModal">
   <div class="modal modal-wide"><div class="modal-head"><h2>Импорт производственного цикла</h2><span class="spacer"></span><button class="btn icon" data-close="importModal">×</button></div>

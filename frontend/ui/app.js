@@ -4,7 +4,7 @@
 const {STATUS}=Production.config;
 const D=Production.domain, J=Production.projectFile, B=Production.backend;
 let state={project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};
-let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',ganttScale='week',structureCollapsed=false,importFiles={out:null,in:null},importCandidate=null,importPreviewKind='out';
+let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',ganttScale='week',structureCollapsed=false,importFiles={out:null,in:null},importCandidate=null,importPreviewKind='out',dictionaryEntries=[];
 const $=id=>document.getElementById(id);
 const els={projectName:$('projectName'),orderNo:$('orderNo'),initiator:$('initiator'),executor:$('executor'),projectAddressees:$('projectAddressees'),projectStart:$('projectStart'),projectDeadline:$('projectDeadline')};
 
@@ -93,7 +93,7 @@ function openStageModal(parentUid=null,editUid=null){editStageUid=editUid;const 
  const seq=s?s.seq:state.nextSeq;$('stageIdPreview').textContent=rootId()+'-'+String(seq).padStart(3,'0');openModal('stageModal')}
 function saveStage(){const title=clean($('stageTitle').value),executor=clean($('stageExecutor').value),addressees=clean($('stageAddressees').value),start=$('stageStart').value,deadline=$('stageDeadline').value,status=$('stageStatus').value,comment=clean($('stageComment').value),parentUid=$('stageParent').value||null;if(!title||!executor||!addressees||!start||!deadline||!status){message('err','Заполните все обязательные поля этапа.');return}if(start>deadline){message('err','У этапа дата начала не может быть позже дедлайна.');return}
  if(parentUid&&(parentUid===editStageUid||(editStageUid&&descendants(editStageUid).has(parentUid))||!byUid(parentUid))){message('err','Недопустимый родитель.');return}if(!D.validDate(start)||!D.validDate(deadline)||[title,executor,addressees].some(v=>/[\t\r\n]/.test(v))){message('err','Проверьте даты и уберите TAB/переносы строк.');return}
- if(editStageUid){const s=byUid(editStageUid);Object.assign(s,{title,executor,addressees,start,deadline,status,comment,parentUid})}else{const siblings=childrenOf(parentUid);state.stages.push({uid:uid(),seq:state.nextSeq++,sort:siblings.length+1,parentUid,title,executor,addressees,start,deadline,status,comment})}closeModal('stageModal');render();message('ok','Этап сохранён.')}
+ if(editStageUid){const s=byUid(editStageUid);Object.assign(s,{title,executor,addressees,start,deadline,status,comment,parentUid})}else{const siblings=childrenOf(parentUid);state.stages.push({uid:uid(),seq:state.nextSeq++,sort:siblings.length+1,parentUid,title,executor,addressees,start,deadline,status,comment})}closeModal('stageModal');render();refreshAutocomplete();message('ok','Этап сохранён.')}
 function deleteStage(u){const s=byUid(u);if(!s)return;const kids=childrenOf(u);const msg=kids.length?`Удалить «${s.title}» и все его дочерние элементы (${kids.length}+)?`:`Удалить этап «${s.title}»?`;if(!confirm(msg))return;const del=new Set([u]);let changed=true;while(changed){changed=false;for(const x of state.stages)if(x.parentUid&&del.has(x.parentUid)&&!del.has(x.uid)){del.add(x.uid);changed=true}}state.stages=state.stages.filter(x=>!del.has(x.uid));render();message('ok',`Удалено элементов: ${del.size}.`)}
 
 function message(type,text){$('messageArea').innerHTML=`<div class="notice ${type}">${escapeHtml(text)}</div>`;setTimeout(()=>{if($('messageArea').textContent===text)$('messageArea').innerHTML=''},6500)}
@@ -126,13 +126,43 @@ async function downloadText(name,txt,mime='text/plain;charset=utf-8'){
 async function openExport(){const v=await showValidation();if(v.errors.length)return;try{exportCache=await exportData();previewKind='out';document.querySelectorAll('.preview-tab').forEach(x=>x.classList.toggle('active',x.dataset.preview==='out'));const suffix=fileSafe(state.project.orderNo);$('outFileName').textContent=exportCache.outFileName||`Список исх. Заказ ${suffix}.txt`;$('inFileName').textContent=exportCache.inFileName||`Список вхд. Заказ ${suffix}.txt`;updatePreview();$('exportValidation').innerHTML=v.warnings.length?`<div class="notice warn">${v.warnings.map(escapeHtml).join('<br>')}</div>`:'';openModal('exportModal')}catch(e){message('err','Ошибка формирования TXT: '+e)}}
 function updatePreview(){if(exportCache)$('txtPreview').textContent=previewText(exportCache[previewKind])}
 
+const dictionaryKinds=['projectName','initiator','executor','enterprise','stageTitle'];
+const dictionaryLists={projectName:'projectNameOptions',initiator:'initiatorOptions',executor:'executorOptions',enterprise:'enterpriseOptions',stageTitle:'stageTitleOptions'};
+async function refreshAutocomplete(){
+ try{const groups=await Promise.all(dictionaryKinds.map(kind=>B.listDictionary(kind,state)));groups.forEach((items,i)=>{$(dictionaryLists[dictionaryKinds[i]]).innerHTML=items.map(x=>`<option value="${escapeHtml(x.value)}"></option>`).join('')})}catch(_e){}
+}
+function renderDictionary(){
+ const query=clean($('dictionarySearch').value).toLocaleLowerCase('ru'),items=dictionaryEntries.filter(x=>x.value.toLocaleLowerCase('ru').includes(query));
+ $('dictionaryList').innerHTML=items.length?items.map(x=>{const index=dictionaryEntries.indexOf(x);return `<div class="dictionary-row"><strong title="${escapeHtml(x.value)}">${escapeHtml(x.value)}</strong><span>${x.usageCount}</span><span>${x.projectCount}</span><button class="btn small" data-dictionary-index="${index}">Изменить</button></div>`}).join(''):'<div class="projects-empty">Наименования не найдены.</div>';
+ $('dictionaryList').querySelectorAll('[data-dictionary-index]').forEach(button=>button.onclick=()=>renameDictionaryValue(Number(button.dataset.dictionaryIndex)));
+}
+async function loadDictionary(){
+ $('dictionaryList').innerHTML='<div class="projects-empty">Загрузка…</div>';
+ try{dictionaryEntries=await B.listDictionary($('dictionaryKind').value,state);renderDictionary()}catch(e){$('dictionaryList').innerHTML=`<div class="notice err">Не удалось прочитать справочник: ${escapeHtml(e)}</div>`}
+}
+function replaceCurrentDictionaryValue(kind,from,to){
+ const replace=(object,key)=>{if(object[key]===from)object[key]=to};
+ if(kind==='projectName')replace(state.project,'name');
+ if(kind==='initiator')replace(state.project,'initiator');
+ if(kind==='executor'){replace(state.project,'executor');state.stages.forEach(s=>replace(s,'executor'))}
+ if(kind==='enterprise'){replace(state.project,'addressees');state.stages.forEach(s=>replace(s,'addressees'))}
+ if(kind==='stageTitle')state.stages.forEach(s=>replace(s,'title'));
+}
+async function renameDictionaryValue(index){
+ const entry=dictionaryEntries[index];if(!entry)return;const kind=$('dictionaryKind').value,to=clean(prompt('Введите единое корректное написание:',entry.value));if(!to||to===entry.value)return;
+ if(/[\t\r\n]/.test(to)){message('err','Наименование не должно содержать TAB или перенос строки.');return}
+ if(!confirm(`Заменить «${entry.value}» на «${to}» во всех сохранённых проектах выбранной категории?`))return;
+ try{const wasSaved=J.fingerprint(state)===savedSnapshot,result=await B.replaceDictionaryValue(kind,entry.value,to);replaceCurrentDictionaryValue(kind,entry.value,to);syncForm();render();if(wasSaved)savedSnapshot=J.fingerprint(state);updateSavedState();await refreshAutocomplete();await loadDictionary();const total=(result.affectedProjectRows||0)+(result.affectedStageRows||0);message('ok',B.native()?`Наименование заменено в ${total} строках базы данных.`:'Наименование заменено в текущем проекте.')}catch(e){message('err','Не удалось изменить справочник: '+e)}
+}
+function openDictionary(){openModal('dictionaryModal');$('dictionarySearch').value='';loadDictionary()}
+
 let savedSnapshot=null;
 function updateSavedState(){if($('saveState'))$('saveState').textContent=J.fingerprint(state)===savedSnapshot?'Проект сохранён':'Есть несохранённые изменения'}
-async function saveProject(){try{const snapshot=J.fingerprint(state);if(B.native()){const v=await B.validate(state);if(v.errors.length){await showValidation();return}await B.save(state);savedSnapshot=snapshot;updateSavedState();message('ok','Проект сохранён в локальной базе данных.');return}const payload=J.stringify(state);const confirmed=await downloadText(`Производственный цикл ${fileSafe(state.project.orderNo)}.json`,payload,'application/json;charset=utf-8');if(confirmed){savedSnapshot=snapshot;updateSavedState()}else message('ok','JSON передан браузеру для сохранения. Проверьте папку загрузок.')}catch(e){message('err','Не удалось сохранить: '+e)}}
-function loadJsonFile(f){const r=new FileReader();r.onerror=()=>message('err','Не удалось прочитать файл.');r.onload=()=>{try{const candidate=J.parse(String(r.result));if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из файла?'))return;state=candidate;savedSnapshot=J.fingerprint(state);syncForm();render();message('ok','Проект загружен.')}catch(e){message('err','Не удалось открыть проект: '+e.message)}};r.readAsText(f,'utf-8')}
-async function openProject(){if(!B.native()){$('jsonFile').click();return}const orderNo=clean(prompt('Введите номер ранее сохранённого заказа:',state.project.orderNo||''));if(!orderNo)return;try{const candidate=await B.load(orderNo);if(!candidate){message('err','Проект с таким номером заказа не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;savedSnapshot=J.fingerprint(state);syncForm();render();message('ok','Проект загружен из локальной базы данных.')}catch(e){message('err','Не удалось открыть проект: '+e)}}
+async function saveProject(){try{const snapshot=J.fingerprint(state);if(B.native()){const v=await B.validate(state);if(v.errors.length){await showValidation();return}await B.save(state);savedSnapshot=snapshot;updateSavedState();await refreshAutocomplete();message('ok','Проект сохранён в локальной базе данных.');return}const payload=J.stringify(state);const confirmed=await downloadText(`Производственный цикл ${fileSafe(state.project.orderNo)}.json`,payload,'application/json;charset=utf-8');if(confirmed){savedSnapshot=snapshot;updateSavedState()}else message('ok','JSON передан браузеру для сохранения. Проверьте папку загрузок.');await refreshAutocomplete()}catch(e){message('err','Не удалось сохранить: '+e)}}
+function loadJsonFile(f){const r=new FileReader();r.onerror=()=>message('err','Не удалось прочитать файл.');r.onload=()=>{try{const candidate=J.parse(String(r.result));if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из файла?'))return;state=candidate;savedSnapshot=J.fingerprint(state);syncForm();render();refreshAutocomplete();message('ok','Проект загружен.')}catch(e){message('err','Не удалось открыть проект: '+e.message)}};r.readAsText(f,'utf-8')}
+async function openProject(){if(!B.native()){$('jsonFile').click();return}const orderNo=clean(prompt('Введите номер ранее сохранённого заказа:',state.project.orderNo||''));if(!orderNo)return;try{const candidate=await B.load(orderNo);if(!candidate){message('err','Проект с таким номером заказа не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;savedSnapshot=J.fingerprint(state);syncForm();render();await refreshAutocomplete();message('ok','Проект загружен из локальной базы данных.')}catch(e){message('err','Не удалось открыть проект: '+e)}}
 
-async function loadProjectByOrder(orderNo){try{const candidate=await B.load(orderNo);if(!candidate){message('err','Проект не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;savedSnapshot=J.fingerprint(state);syncForm();closeModal('projectsModal');render();message('ok',`Открыт проект: заказ № ${orderNo}.`)}catch(e){message('err','Не удалось открыть проект: '+e)}}
+async function loadProjectByOrder(orderNo){try{const candidate=await B.load(orderNo);if(!candidate){message('err','Проект не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;savedSnapshot=J.fingerprint(state);syncForm();closeModal('projectsModal');render();await refreshAutocomplete();message('ok',`Открыт проект: заказ № ${orderNo}.`)}catch(e){message('err','Не удалось открыть проект: '+e)}}
 async function showProjects(){
  if(!B.native()){$('jsonFile').click();return}
  openModal('projectsModal');$('projectsList').innerHTML='<div class="projects-empty">Загрузка…</div>';
@@ -150,7 +180,7 @@ async function updateImportPreview(){
  }catch(e){$('importValidation').innerHTML=`<div class="notice err"><b>Импорт невозможен:</b> ${escapeHtml(e.message||e)}</div>`;$('importPreview').textContent='Исправьте файлы и выберите их повторно.'}
 }
 function openImport(){importFiles={out:null,in:null};importCandidate=null;$('importOutFile').value='';$('importInFile').value='';$('importOutName').textContent='Выберите TXT (9 колонок)';$('importInName').textContent='Выберите TXT (8 колонок)';$('confirmImportBtn').disabled=true;$('importValidation').innerHTML='';$('importPreview').textContent='Выберите оба файла для проверки.';openModal('importModal')}
-async function confirmImport(){if(!importCandidate)return;const candidate=importCandidate.state;if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект импортированными данными?'))return;try{if(B.native())await B.save(candidate);state=candidate;savedSnapshot=B.native()?J.fingerprint(state):null;syncForm();closeModal('importModal');render();message('ok',`Импортирован и сохранён заказ № ${state.project.orderNo}. Статусы этапов установлены «Не начато».`)}catch(e){message('err','Не удалось сохранить импортированный проект: '+e)}}
+async function confirmImport(){if(!importCandidate)return;const candidate=importCandidate.state;if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект импортированными данными?'))return;try{if(B.native())await B.save(candidate);state=candidate;savedSnapshot=B.native()?J.fingerprint(state):null;syncForm();closeModal('importModal');render();await refreshAutocomplete();message('ok',`Импортирован и сохранён заказ № ${state.project.orderNo}. Статусы этапов установлены «Не начато».`)}catch(e){message('err','Не удалось сохранить импортированный проект: '+e)}}
 
 function renderGantt(){
  const box=$('ganttChart'),items=D.preorder(state).filter(x=>stageMatchesFilter(x.stage));
@@ -182,7 +212,7 @@ function printGantt(size){
  requestAnimationFrame(()=>requestAnimationFrame(()=>{void $('ganttPrint').offsetWidth;if(window.__TAURI__)window.__TAURI__.core.invoke('print_report').catch(e=>{restore();message('err','Не удалось открыть печать: '+e)});else window.print()}))
 }
 
-function newProject(){if((state.project.name||state.stages.length)&&!confirm('Очистить текущий проект и начать новый?'))return;state={project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};syncForm();render();message('ok','Создан новый пустой проект.')}
+function newProject(){if((state.project.name||state.stages.length)&&!confirm('Очистить текущий проект и начать новый?'))return;state={project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};syncForm();render();refreshAutocomplete();message('ok','Создан новый пустой проект.')}
 function loadDemo(){if((state.project.name||state.stages.length)&&!confirm('Заменить текущий проект демонстрационным?'))return;state={project:{name:'Демонстрационный заказ №924',orderNo:'924',initiator:'Производственная дирекция',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-06-01',deadline:'2026-11-30'},nextSeq:9,collapsed:{},stages:[
 {uid:'d1',seq:1,sort:1,parentUid:null,title:'Модуль А',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-06-01',deadline:'2026-06-30',status:'work'},
 {uid:'d2',seq:2,sort:2,parentUid:null,title:'Модуль Б',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-06-01',deadline:'2026-06-30',status:'work'},
@@ -191,10 +221,11 @@ function loadDemo(){if((state.project.name||state.stages.length)&&!confirm('За
 {uid:'d5',seq:5,sort:2,parentUid:'d3',title:'Комплект ЗИП',executor:'Исполнитель В',addressees:'Производственная дирекция',start:'2026-06-15',deadline:'2026-08-10',status:'work'},
 {uid:'d6',seq:6,sort:4,parentUid:null,title:'Блок В',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-06-10',deadline:'2026-09-15',status:'work'},
 {uid:'d7',seq:7,sort:5,parentUid:null,title:'Узел Г',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-07-01',deadline:'2026-10-30',status:'new'},
-{uid:'d8',seq:8,sort:6,parentUid:null,title:'Привода',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-07-15',deadline:'2026-11-30',status:'new'}]};syncForm();render();message('ok','Загружен демонстрационный производственный цикл.')}
+{uid:'d8',seq:8,sort:6,parentUid:null,title:'Привода',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-07-15',deadline:'2026-11-30',status:'new'}]};syncForm();render();refreshAutocomplete();message('ok','Загружен демонстрационный производственный цикл.')}
 function openModal(id){$(id).classList.add('open')}function closeModal(id){$(id).classList.remove('open')}
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('mousedown',e=>{if(e.target===m)closeModal(m.id)}));
-$('saveStageBtn').onclick=saveStage;$('pdfReportBtn').onclick=printPdfReport;$('validateBtn').onclick=showValidation;$('exportBtn').onclick=openExport;$('saveJsonBtn').onclick=saveProject;$('loadJsonBtn').onclick=showProjects;$('importBtn').onclick=openImport;$('jsonFile').onchange=e=>{if(e.target.files[0])loadJsonFile(e.target.files[0]);e.target.value=''};$('newBtn').onclick=newProject;$('demoBtn').onclick=loadDemo;
+$('saveStageBtn').onclick=saveStage;$('pdfReportBtn').onclick=printPdfReport;$('validateBtn').onclick=showValidation;$('exportBtn').onclick=openExport;$('saveJsonBtn').onclick=saveProject;$('loadJsonBtn').onclick=showProjects;$('dictionaryBtn').onclick=openDictionary;$('importBtn').onclick=openImport;$('jsonFile').onchange=e=>{if(e.target.files[0])loadJsonFile(e.target.files[0]);e.target.value=''};$('newBtn').onclick=newProject;$('demoBtn').onclick=loadDemo;
+$('dictionaryKind').onchange=loadDictionary;$('dictionarySearch').oninput=renderDictionary;
 $('completionFilter').onchange=e=>{completionFilter=e.target.value;render()};
 $('toggleStructureBtn').onclick=toggleStructure;$('printStructureBtn').onclick=printStructure;$('ganttScale').onchange=e=>{ganttScale=e.target.value;renderGantt()};$('printGanttA4Btn').onclick=()=>printGantt('A4');$('printGanttA3Btn').onclick=()=>printGantt('A3');
 $('importOutFile').onchange=e=>{importFiles.out=e.target.files[0]||null;$('importOutName').textContent=importFiles.out?importFiles.out.name:'Выберите TXT (9 колонок)';updateImportPreview()};$('importInFile').onchange=e=>{importFiles.in=e.target.files[0]||null;$('importInName').textContent=importFiles.in?importFiles.in.name:'Выберите TXT (8 колонок)';updateImportPreview()};$('confirmImportBtn').onclick=confirmImport;
@@ -205,5 +236,5 @@ $('downloadOutBtn').onclick=async()=>{try{const d=exportCache||await exportData(
 document.querySelectorAll('.tab').forEach(tab=>{tab.onclick=()=>{activeView=tab.dataset.view;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===tab));$('registryView').classList.toggle('active',activeView==='registry');$('ganttView').classList.toggle('active',activeView==='gantt');if(activeView==='gantt')renderGantt()}});
 window.addEventListener('beforeunload',e=>{if((state.project.name||state.stages.length)&&J.fingerprint(state)!==savedSnapshot){e.preventDefault();e.returnValue=''}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-backdrop.open').forEach(m=>closeModal(m.id))});
-syncForm();render();
+syncForm();render();refreshAutocomplete();
 })();
