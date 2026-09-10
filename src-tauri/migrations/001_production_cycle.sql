@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS production_cycle (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_no        TEXT NOT NULL UNIQUE,
+    order_no        TEXT NOT NULL,
     root_reg_number TEXT NOT NULL,
     name            TEXT NOT NULL,
     initiator       TEXT NOT NULL,
@@ -38,3 +38,4 @@ CREATE TABLE IF NOT EXISTS production_stage (
 CREATE INDEX IF NOT EXISTS idx_production_stage_cycle ON production_stage(cycle_id);
 CREATE INDEX IF NOT EXISTS idx_production_stage_parent ON production_stage(parent_stage_id);
 CREATE INDEX IF NOT EXISTS idx_production_stage_cycle_sort ON production_stage(cycle_id,parent_stage_id,sort_order);
+CREATE INDEX IF NOT EXISTS idx_production_cycle_order ON production_cycle(order_no);

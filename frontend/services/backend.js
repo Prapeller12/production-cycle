@@ -5,6 +5,7 @@
   const invoke=(command,args={})=>window.__TAURI__.core.invoke(command,args);
   function toSnapshot(state){
     return {
+      databaseId:Number.isSafeInteger(state.databaseId)?state.databaseId:null,
       project:{
         name:state.project.name,
         orderNo:state.project.orderNo,
@@ -21,6 +22,7 @@
   function fromSnapshot(snapshot){
     if(!snapshot)return null;
     return {
+      databaseId:Number.isSafeInteger(snapshot.databaseId)?snapshot.databaseId:null,
       project:{
         name:snapshot.project.name,
         orderNo:snapshot.project.orderNo,
@@ -43,12 +45,15 @@
   }
   async function save(state){
     if(!native())return false;
-    await invoke('production_save_snapshot',{snapshot:toSnapshot(state)});
-    return true;
+    return invoke('production_save_snapshot',{snapshot:toSnapshot(state)});
   }
   async function load(orderNo){
     if(!native())return null;
     return fromSnapshot(await invoke('production_load_snapshot',{orderNo:String(orderNo||'').trim()}));
+  }
+  async function loadById(projectId){
+    if(!native())return null;
+    return fromSnapshot(await invoke('production_load_snapshot_by_id',{projectId:Number(projectId)}));
   }
   async function listProjects(){
     if(!native())return [];
@@ -89,5 +94,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,load,listProjects,listDictionary,replaceDictionaryValue,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,load,loadById,listProjects,listDictionary,replaceDictionaryValue,exportPair,report});
 })();
