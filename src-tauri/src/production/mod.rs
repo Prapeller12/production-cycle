@@ -76,6 +76,8 @@ pub struct ProductionStageInput {
     pub start: String,
     pub deadline: String,
     pub status: StageStatus,
+    #[serde(default)]
+    pub comment: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,18 +132,25 @@ pub struct ProjectSummary {
 }
 
 pub struct ProductionDb { conn: Mutex<Connection> }
+fn initialize_schema(conn:&Connection)->Result<()> {
+    conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+    conn.execute_batch(MIGRATION)?;
+    let mut stmt=conn.prepare("PRAGMA table_info(production_stage)")?;
+    let columns=stmt.query_map([],|row|row.get::<_,String>(1))?.collect::<std::result::Result<Vec<_>,_>>()?;
+    drop(stmt);
+    if !columns.iter().any(|name|name=="comment") {conn.execute_batch("ALTER TABLE production_stage ADD COLUMN comment TEXT NOT NULL DEFAULT '';")?;}
+    Ok(())
+}
 impl ProductionDb {
     pub fn open(path:&Path) -> Result<Self> {
         let conn=Connection::open(path)?;
-        conn.execute_batch("PRAGMA foreign_keys=ON;")?;
-        conn.execute_batch(MIGRATION)?;
+        initialize_schema(&conn)?;
         Ok(Self{conn:Mutex::new(conn)})
     }
     #[cfg(test)]
     fn memory() -> Result<Self> {
         let conn=Connection::open_in_memory()?;
-        conn.execute_batch("PRAGMA foreign_keys=ON;")?;
-        conn.execute_batch(MIGRATION)?;
+        initialize_schema(&conn)?;
         Ok(Self{conn:Mutex::new(conn)})
     }
     pub fn save_snapshot(&self, snapshot:&ProductionSnapshot) -> Result<()> {
@@ -245,13 +254,13 @@ fn save_snapshot_tx(tx:&Transaction<'_>,snapshot:&ProductionSnapshot)->Result<()
     let existing:Option<i64>=tx.query_row("SELECT id FROM production_cycle WHERE order_no=?1",[clean(&snapshot.project.order_no)],|r|r.get(0)).optional()?;
     let cycle_id=if let Some(id)=existing{tx.execute("UPDATE production_cycle SET name=?1,initiator=?2,executor=?3,enterprise=?4,start_date=?5,deadline=?6,updated_at=?7 WHERE id=?8",params![clean(&snapshot.project.name),clean(&snapshot.project.initiator),clean(&snapshot.project.executor),clean(&snapshot.project.enterprise),snapshot.project.start,snapshot.project.deadline,now,id])?;tx.execute("DELETE FROM production_stage WHERE cycle_id=?1",[id])?;id}else{tx.execute("INSERT INTO production_cycle(order_no,root_reg_number,name,initiator,executor,enterprise,start_date,deadline,created_at,updated_at) VALUES(?1,?1,?2,?3,?4,?5,?6,?7,?8,?8)",params![clean(&snapshot.project.order_no),clean(&snapshot.project.name),clean(&snapshot.project.initiator),clean(&snapshot.project.executor),clean(&snapshot.project.enterprise),snapshot.project.start,snapshot.project.deadline,now])?;tx.last_insert_rowid()};
     let mut id_by_uid=HashMap::<String,i64>::new();
-    for (s,_) in preorder(&snapshot.stages){let parent_id=s.parent_uid.as_ref().and_then(|u|id_by_uid.get(u)).copied();tx.execute("INSERT INTO production_stage(cycle_id,uid,seq,reg_number,parent_stage_id,sort_order,title,executor,addressees,start_date,deadline,status,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?13)",params![cycle_id,s.uid,s.seq,stage_reg(&snapshot.project.order_no,s.seq),parent_id,s.sort,clean(&s.title),clean(&s.executor),clean(&s.addressees),s.start,s.deadline,s.status.as_str(),now])?;id_by_uid.insert(s.uid,tx.last_insert_rowid());}
+    for (s,_) in preorder(&snapshot.stages){let parent_id=s.parent_uid.as_ref().and_then(|u|id_by_uid.get(u)).copied();tx.execute("INSERT INTO production_stage(cycle_id,uid,seq,reg_number,parent_stage_id,sort_order,title,executor,addressees,start_date,deadline,status,comment,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?14)",params![cycle_id,s.uid,s.seq,stage_reg(&snapshot.project.order_no,s.seq),parent_id,s.sort,clean(&s.title),clean(&s.executor),clean(&s.addressees),s.start,s.deadline,s.status.as_str(),clean(&s.comment),now])?;id_by_uid.insert(s.uid,tx.last_insert_rowid());}
     Ok(())
 }
 
 fn load_snapshot_conn(conn:&Connection,order_no:&str)->Result<Option<ProductionSnapshot>>{
     let project=conn.query_row("SELECT id,name,order_no,initiator,executor,enterprise,start_date,deadline FROM production_cycle WHERE order_no=?1",[clean(order_no)],|r|Ok((r.get::<_,i64>(0)?,ProductionProjectInput{name:r.get(1)?,order_no:r.get(2)?,initiator:r.get(3)?,executor:r.get(4)?,enterprise:r.get(5)?,start:r.get(6)?,deadline:r.get(7)?}))).optional()?;let Some((cycle_id,project))=project else{return Ok(None)};
-    let mut stmt=conn.prepare("SELECT id,uid,seq,sort_order,parent_stage_id,title,executor,addressees,start_date,deadline,status FROM production_stage WHERE cycle_id=?1 ORDER BY seq")?;let rows=stmt.query_map([cycle_id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?,r.get::<_,String>(10)?)))?;let mut raw=Vec::new();let mut uid_by_id=HashMap::new();for row in rows{let v=row?;uid_by_id.insert(v.0,v.1.clone());raw.push(v)}let mut stages=Vec::new();let mut max_seq=0;for (_id,uid,seq,sort,parent,title,executor,addressees,start,deadline,status) in raw{max_seq=max_seq.max(seq);stages.push(ProductionStageInput{uid,seq,sort,parent_uid:parent.and_then(|p|uid_by_id.get(&p).cloned()),title,executor,addressees,start,deadline,status:StageStatus::parse(&status)?});}
+    let mut stmt=conn.prepare("SELECT id,uid,seq,sort_order,parent_stage_id,title,executor,addressees,start_date,deadline,status,comment FROM production_stage WHERE cycle_id=?1 ORDER BY seq")?;let rows=stmt.query_map([cycle_id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?,r.get::<_,String>(10)?,r.get::<_,String>(11)?)))?;let mut raw=Vec::new();let mut uid_by_id=HashMap::new();for row in rows{let v=row?;uid_by_id.insert(v.0,v.1.clone());raw.push(v)}let mut stages=Vec::new();let mut max_seq=0;for (_id,uid,seq,sort,parent,title,executor,addressees,start,deadline,status,comment) in raw{max_seq=max_seq.max(seq);stages.push(ProductionStageInput{uid,seq,sort,parent_uid:parent.and_then(|p|uid_by_id.get(&p).cloned()),title,executor,addressees,start,deadline,status:StageStatus::parse(&status)?,comment});}
     Ok(Some(ProductionSnapshot{project,stages,next_seq:max_seq+1}))
 }
 
@@ -271,9 +280,10 @@ pub fn production_get_management_report(snapshot:ProductionSnapshot)->std::resul
 #[cfg(test)]
 mod tests{
     use super::*;
-    fn sample()->ProductionSnapshot{ProductionSnapshot{project:ProductionProjectInput{name:"Изделие".into(),order_no:"916".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-10-01".into()},stages:vec![ProductionStageInput{uid:"a".into(),seq:1,sort:1,parent_uid:None,title:"A".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-01".into(),deadline:"2026-09-20".into(),status:StageStatus::Work},ProductionStageInput{uid:"b".into(),seq:2,sort:1,parent_uid:Some("a".into()),title:"B".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-02".into(),deadline:"2026-09-18".into(),status:StageStatus::Done}],next_seq:3}}
+    fn sample()->ProductionSnapshot{ProductionSnapshot{project:ProductionProjectInput{name:"Изделие".into(),order_no:"916".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-10-01".into()},stages:vec![ProductionStageInput{uid:"a".into(),seq:1,sort:1,parent_uid:None,title:"A".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-01".into(),deadline:"2026-09-20".into(),status:StageStatus::Work,comment:"Контрольный комментарий".into()},ProductionStageInput{uid:"b".into(),seq:2,sort:1,parent_uid:Some("a".into()),title:"B".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-02".into(),deadline:"2026-09-18".into(),status:StageStatus::Done,comment:String::new()}],next_seq:3}}
     #[test]fn txt_contract_and_empty_link(){let b=build_txt_export(&sample()).unwrap();assert_eq!(OUT_HEADER.len(),9);assert_eq!(IN_HEADER.len(),8);let incoming:Vec<_>=b.incoming_text.split("\r\n").collect();assert!(incoming[1].ends_with('\t'));assert!(incoming[1].contains("A\t916-001"));assert!(incoming[2].contains("B\t916-002"));}
-    #[test]fn sqlite_roundtrip(){let db=ProductionDb::memory().unwrap();let s=sample();db.save_snapshot(&s).unwrap();let loaded=db.load_snapshot("916").unwrap().unwrap();assert_eq!(loaded.project.enterprise,"Предприятие");assert_eq!(loaded.stages.len(),2);assert_eq!(loaded.stages[1].parent_uid.as_deref(),Some("a"));}
+    #[test]fn sqlite_roundtrip(){let db=ProductionDb::memory().unwrap();let s=sample();db.save_snapshot(&s).unwrap();let loaded=db.load_snapshot("916").unwrap().unwrap();assert_eq!(loaded.project.enterprise,"Предприятие");assert_eq!(loaded.stages.len(),2);assert_eq!(loaded.stages[0].comment,"Контрольный комментарий");assert_eq!(loaded.stages[1].parent_uid.as_deref(),Some("a"));}
+    #[test]fn existing_database_gets_comment_column(){let conn=Connection::open_in_memory().unwrap();conn.execute_batch("CREATE TABLE production_stage(id INTEGER PRIMARY KEY,cycle_id INTEGER,parent_stage_id INTEGER,sort_order INTEGER,comment_placeholder TEXT);").unwrap();initialize_schema(&conn).unwrap();let columns=conn.prepare("PRAGMA table_info(production_stage)").unwrap().query_map([],|row|row.get::<_,String>(1)).unwrap().collect::<std::result::Result<Vec<_>,_>>().unwrap();assert!(columns.iter().any(|name|name=="comment"));}
     #[test]fn project_list_has_progress_and_latest_metadata(){let db=ProductionDb::memory().unwrap();db.save_snapshot(&sample()).unwrap();let list=db.list_projects().unwrap();assert_eq!(list.len(),1);assert_eq!(list[0].order_no,"916");assert_eq!(list[0].stage_count,2);assert_eq!(list[0].done_count,1);assert_eq!(list[0].done_percent,50);}
     #[test]fn status_is_derived(){let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let start=NaiveDate::from_ymd_opt(2026,9,1).unwrap();let deadline=NaiveDate::from_ymd_opt(2026,9,7).unwrap();assert_eq!(visual_status(StageStatus::Work,today,start,deadline),StageVisualStatus::Overdue);assert_eq!(visual_status(StageStatus::Done,today,start,deadline),StageVisualStatus::Done);}
     #[test]fn report_contains_management_risks(){let mut s=sample();s.project.deadline="2026-09-07".into();s.stages[0].status=StageStatus::Hold;s.stages[0].deadline="2026-09-07".into();let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let r=build_report(&s,today).unwrap();assert_eq!(r.overdue_held,1);assert_eq!(r.project_days,-1);assert!(r.project_overdue);assert_eq!(r.status,StageVisualStatus::Work);}

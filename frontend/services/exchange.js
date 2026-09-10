@@ -50,7 +50,7 @@
       const parentUid=item.parentId===tree.rootId?null:uidById.get(item.parentId);
       if(item.parentId!==tree.rootId&&!parentUid)throw Error('Родитель этапа не найден: '+item.parentId);
       const sort=(siblingSort.get(parentUid)||0)+1;siblingSort.set(parentUid,sort);
-      stages.push({uid,seq,sort,parentUid,title:row[1].trim(),executor:row[4].trim(),addressees:row[5].trim(),start:isoDate(row[3]),deadline:isoDate(row[6]),status:'new'});
+      stages.push({uid,seq,sort,parentUid,title:row[1].trim(),executor:row[4].trim(),addressees:row[5].trim(),start:isoDate(row[3]),deadline:isoDate(row[6]),status:'new',comment:''});
     }
     const state={project:{name:root[4].trim(),orderNo:root[1].trim(),initiator:root[5].trim(),executor:root[3].trim(),addressees:root[7].trim(),start:isoDate(root[2],true),deadline:isoDate(root[6])},stages,nextSeq:Math.max(0,...stages.map(s=>s.seq))+1,collapsed:{}};
     const validation=D.validate(state);if(validation.errors.length)throw Error(validation.errors.join(' '));

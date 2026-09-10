@@ -7,7 +7,7 @@
     const candidate={project:{...obj.project},stages:obj.stages.map(s=>({...s})),nextSeq:obj.nextSeq,collapsed:{}};
     // Legacy optional enterprise fields can be empty drafts, but must not be guessed.
     if(candidate.project.addressees===undefined)candidate.project.addressees='';
-    for(const s of candidate.stages)if(s.addressees===undefined)s.addressees='';
+    for(const s of candidate.stages){if(s.addressees===undefined)s.addressees='';if(s.comment===undefined)s.comment=''}
     const check=D.validate(candidate,{draft:true});if(check.errors.length)throw Error(check.errors.join(' '));
     let max=0;for(const s of candidate.stages)max=Math.max(max,s.seq);
     if(candidate.nextSeq===undefined)candidate.nextSeq=max+1;

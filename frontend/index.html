@@ -56,7 +56,7 @@
     <div class="table-wrap">
       <table class="tree-table">
         <thead><tr>
-          <th class="col-actions">Действия</th><th class="col-id">ID</th><th class="col-title">Название / этап</th><th class="col-exec">Исполнитель</th><th class="col-init">Инициатор</th><th class="col-status">Статус</th><th class="col-date">Начало</th><th class="col-date">Дедлайн</th><th class="col-left">Осталось</th>
+          <th class="col-actions">Действия</th><th class="col-id">ID</th><th class="col-title">Название / этап</th><th class="col-exec">Исполнитель</th><th class="col-init">Инициатор / адресат</th><th class="col-status">Статус</th><th class="col-date">Начало</th><th class="col-date">Дедлайн</th><th class="col-left">Осталось</th>
         </tr></thead>
         <tbody id="treeBody"></tbody>
       </table>
@@ -89,6 +89,7 @@
         <div><label>Дедлайн / срок исполнения *</label><input id="stageDeadline" type="date" /></div>
         <div><label>Статус *</label><select id="stageStatus"><option value="new">Не начато</option><option value="work">В работе</option><option value="hold">Приостановлено</option><option value="done">Выполнено</option></select></div>
         <div><label>ID этапа — автоматически</label><div id="stageIdPreview" class="auto-value"></div><div class="help">ID сохраняется за этапом. Изменение родителя не меняет ID.</div></div>
+        <div class="wide"><label>Комментарий</label><textarea id="stageComment" rows="3" placeholder="Дополнительные сведения по этапу"></textarea></div>
       </div>
       <div class="required-hint">Все поля со знаком * обязательны. Количество прямых детей рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
     </div>

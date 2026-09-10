@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS production_stage (
     start_date      TEXT NOT NULL,
     deadline        TEXT NOT NULL,
     status          TEXT NOT NULL CHECK(status IN ('new','work','hold','done')),
+    comment         TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
     FOREIGN KEY(cycle_id) REFERENCES production_cycle(id) ON DELETE CASCADE,
