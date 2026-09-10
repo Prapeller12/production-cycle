@@ -28,6 +28,8 @@
 | frontend/styles | Экранные, адаптивные и печатные стили |
 | src-tauri/src/commands | Локальные команды сохранения и печати |
 | src-tauri/src/infrastructure | Portable-пути и запись файлов |
+| production-cycle.exe | Основной пользовательский запуск в готовой Windows-поставке |
+| app/start.cmd | Резервный служебный сценарий запуска в готовой Windows-поставке |
 | config | Расположение runtime, данных и ресурсов |
 | scripts | Сборка полного ZIP из EXE и Fixed Runtime |
 | tests | Проверки дерева, импорта JSON, TXT и отчёта |
@@ -70,7 +72,7 @@ Workflow `Production cycle prototype checks` проверяет код, подп
 ./scripts/package-windows.ps1 -FixedRuntimePath C:\Build\WebView2Fixed -OutputPath C:\Build\Prototype1
 ```
 
-Распакуйте полный ZIP в локальную доступную для записи папку и запустите `start.cmd`.
+Распакуйте полный ZIP в локальную доступную для записи папку и запустите `production-cycle.exe` из корня папки `ProductionCycle`. Устанавливать программу не требуется. Резервный сценарий `app/start.cmd` оставлен для технической диагностики и обычному пользователю не нужен.
 Установщик, права администратора, системный Python/Node и установку WebView2 программа не запрашивает.
 Если bundled runtime отсутствует, запуск прекращается с сообщением.
 

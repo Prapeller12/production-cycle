@@ -13,6 +13,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   await page.click('#demoBtn');
   assert.equal(await page.locator('#structureTree .structure-node').count(),9);
   await page.click('#toggleStructureBtn');assert.equal(await page.getAttribute('#toggleStructureBtn','aria-expanded'),'false');assert.ok(await page.locator('#structureContent').evaluate(e=>e.classList.contains('collapsed')));
+  await page.evaluate(()=>{window.__printed=false;window.print=()=>{window.__printed=document.body.classList.contains('print-structure')}});await page.click('#printStructureBtn');await page.waitForFunction(()=>window.__printed);assert.equal(await page.locator('#structurePrint .structure-print-row').count(),9);assert.match(await page.locator('#structurePrint').innerText(),/Подчинён: 924-003/);await page.emulateMedia({media:'print'});await page.pdf({path:path.join(process.env.PROTOTYPE_QA_DIR||'/tmp','production-cycle-structure-print.pdf'),preferCSSPageSize:true,printBackground:true});await page.emulateMedia({media:'screen'});await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
   await page.click('#toggleStructureBtn');assert.equal(await page.getAttribute('#toggleStructureBtn','aria-expanded'),'true');
   assert.equal(await page.locator('#treeBody tr').count(),8); // root + 7 active; completed is hidden by default
   await page.selectOption('#completionFilter','all');assert.equal(await page.locator('#treeBody tr').count(),9);
@@ -37,6 +38,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   assert.match(await page.locator('#treeBody').innerText(),/Этап после редактирования/);
   await page.evaluate(()=>{window.print=()=>{window.__printed=true}});await page.click('#pdfReportBtn');await page.waitForFunction(()=>window.__printed);
   assert.equal(await page.locator('#pdfReport .report-stage-table tbody tr').count(),8);
+  assert.ok(parseFloat(await page.locator('#pdfReport').evaluate(e=>getComputedStyle(e).fontSize))>=18.5);
   const pair=await page.evaluate(()=>Production.exchange.exportPair({project:{name:'Импорт',orderNo:'777',initiator:'Инициатор',executor:'Исполнитель',addressees:'Предприятие',start:'2026-09-01',deadline:'2026-09-30'},stages:[{uid:'i1',seq:1,sort:1,parentUid:null,title:'Входящий этап',executor:'Исполнитель',addressees:'Предприятие',start:'2026-09-01',deadline:'2026-09-20',status:'work'}],nextSeq:2,collapsed:{}}));
   await page.click('#importBtn');await page.locator('#importOutFile').setInputFiles({name:'Список исх.txt',mimeType:'text/plain',buffer:Buffer.from('\ufeff'+pair.out)});await page.locator('#importInFile').setInputFiles({name:'Список вхд.txt',mimeType:'text/plain',buffer:Buffer.from('\ufeff'+pair.in)});await page.waitForSelector('#confirmImportBtn:not([disabled])');await page.click('#confirmImportBtn');assert.equal(await page.inputValue('#orderNo'),'777');assert.match(await page.locator('#treeBody').innerText(),/Входящий этап/);
   await page.screenshot({path:path.join(process.env.PROTOTYPE_QA_DIR||'/tmp','production-cycle-desktop.png'),fullPage:true});

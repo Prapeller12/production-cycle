@@ -1,7 +1,9 @@
 param([Parameter(Mandatory=$true)][string]$Root)
 $ErrorActionPreference='Stop'
 $Root=(Resolve-Path $Root).Path
-$exe=Join-Path $Root 'app/backend/production-cycle.exe'
+$exe=Join-Path $Root 'production-cycle.exe'
+if(-not (Test-Path (Join-Path $Root 'app/start.cmd'))){throw 'Missing reserve launcher app/start.cmd'}
+if(Test-Path (Join-Path $Root 'start.cmd')){throw 'CMD launcher must not be exposed in the portable root'}
 $report=Join-Path $Root 'temp/self-test.json'
 $p=Start-Process -FilePath $exe -ArgumentList '--smoke-test' -WorkingDirectory $env:TEMP -PassThru
 if (-not $p.WaitForExit(120000)) {

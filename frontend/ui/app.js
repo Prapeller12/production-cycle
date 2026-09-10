@@ -41,6 +41,20 @@ function renderStructure(){
 }
 function toggleStructure(){structureCollapsed=!structureCollapsed;$('structureContent').classList.toggle('collapsed',structureCollapsed);$('toggleStructureBtn').textContent=structureCollapsed?'Развернуть':'Свернуть';$('toggleStructureBtn').setAttribute('aria-expanded',String(!structureCollapsed))}
 
+function buildStructurePrint(){
+ const p=state.project,rootLabel=`Заказ № ${rootId()||'—'}`;
+ const rows=[`<div class="structure-print-row root" style="--depth:0"><div class="structure-print-node"><span class="structure-print-id">${escapeHtml(rootLabel)}</span><strong>${escapeHtml(p.name||'Без названия')}</strong><span>${escapeHtml(p.executor||'Исполнитель не указан')}</span><span>до ${escapeHtml(fullDate(p.deadline)||'—')}</span></div></div>`];
+ for(const {stage:s,depth} of D.preorder(state)){const parent=s.parentUid?stageId(byUid(s.parentUid)):rootLabel,visual=derivedStageVisualStatus(s);rows.push(`<div class="structure-print-row" style="--depth:${depth+1}"><div class="structure-print-connector">↳</div><div class="structure-print-node"><span class="structure-print-id">${escapeHtml(stageId(s))}</span><strong>${escapeHtml(s.title)}</strong><span>${escapeHtml(s.executor)}</span><span>${escapeHtml(statusText(visual))}</span><span>до ${escapeHtml(fullDate(s.deadline))}</span><small>Подчинён: ${escapeHtml(parent)}</small></div></div>`)}
+ $('structurePrint').innerHTML=`<div class="structure-print-header"><div><h1>Структура подчинённости</h1><div>${escapeHtml(rootLabel)} · ${escapeHtml(p.name||'Без названия')}</div></div><div>Сформировано: ${reportGeneratedAt()}<br>Этапов: ${state.stages.length}</div></div><div class="structure-print-tree">${rows.join('')}</div>`;
+}
+function printStructure(){
+ if(!state.project.name&&!state.project.orderNo&&!state.stages.length){message('err','Заполните проект для печати структуры подчинённости.');return}
+ buildStructurePrint();const oldTitle=document.title;document.body.classList.add('print-structure');document.title=`Структура Заказ ${fileSafe(state.project.orderNo)}`;
+ let restored=false;const restore=()=>{if(restored)return;restored=true;document.body.classList.remove('print-structure');$('structurePrint').innerHTML='';document.title=oldTitle;window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);
+ message('ok','Структура подчинённости подготовлена к печати в A4, альбомная ориентация.');
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{void $('structurePrint').offsetWidth;if(window.__TAURI__)window.__TAURI__.core.invoke('print_report').catch(e=>{restore();message('err','Не удалось открыть печать: '+e)});else window.print()}))
+}
+
 function render(showMessage=false){
  updateSavedState();
  $('taskCounter').textContent=`${state.stages.length+1} элемент(ов)`;renderStructure();
@@ -181,7 +195,7 @@ function openModal(id){$(id).classList.add('open')}function closeModal(id){$(id)
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('mousedown',e=>{if(e.target===m)closeModal(m.id)}));
 $('saveStageBtn').onclick=saveStage;$('pdfReportBtn').onclick=printPdfReport;$('validateBtn').onclick=showValidation;$('exportBtn').onclick=openExport;$('saveJsonBtn').onclick=saveProject;$('loadJsonBtn').onclick=showProjects;$('importBtn').onclick=openImport;$('jsonFile').onchange=e=>{if(e.target.files[0])loadJsonFile(e.target.files[0]);e.target.value=''};$('newBtn').onclick=newProject;$('demoBtn').onclick=loadDemo;
 $('completionFilter').onchange=e=>{completionFilter=e.target.value;render()};
-$('toggleStructureBtn').onclick=toggleStructure;$('ganttScale').onchange=e=>{ganttScale=e.target.value;renderGantt()};$('printGanttA4Btn').onclick=()=>printGantt('A4');$('printGanttA3Btn').onclick=()=>printGantt('A3');
+$('toggleStructureBtn').onclick=toggleStructure;$('printStructureBtn').onclick=printStructure;$('ganttScale').onchange=e=>{ganttScale=e.target.value;renderGantt()};$('printGanttA4Btn').onclick=()=>printGantt('A4');$('printGanttA3Btn').onclick=()=>printGantt('A3');
 $('importOutFile').onchange=e=>{importFiles.out=e.target.files[0]||null;$('importOutName').textContent=importFiles.out?importFiles.out.name:'Выберите TXT (9 колонок)';updateImportPreview()};$('importInFile').onchange=e=>{importFiles.in=e.target.files[0]||null;$('importInName').textContent=importFiles.in?importFiles.in.name:'Выберите TXT (8 колонок)';updateImportPreview()};$('confirmImportBtn').onclick=confirmImport;
 document.querySelectorAll('[data-import-preview]').forEach(b=>b.onclick=()=>{importPreviewKind=b.dataset.importPreview;document.querySelectorAll('[data-import-preview]').forEach(x=>x.classList.toggle('active',x===b));if(importCandidate)$('importPreview').textContent=previewText(importPreviewKind==='out'?importCandidate.outText:importCandidate.inText)});
 document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>{previewKind=b.dataset.preview;document.querySelectorAll('.preview-tab').forEach(x=>x.classList.toggle('active',x===b));updatePreview()});

@@ -33,6 +33,7 @@ jobs:
           path: |
             /tmp/production-cycle-*.png
             /tmp/production-cycle-report.pdf
+            /tmp/production-cycle-structure-print.pdf
             /tmp/production-cycle-gantt-print-a3.pdf
             /tmp/production-cycle-gantt-print-a4.pdf
   windows-host:
