@@ -26,8 +26,18 @@
 - `node --check tests/browser.cjs` — успешно;
 - `git diff --check` — успешно;
 - локальная Rust-проверка недоступна: `cargo` отсутствует в рабочей среде;
-- браузерная, Rust, миграционная и Windows portable-проверки будут дополнены после публикации коммита и завершения GitHub Actions.
+- браузерная, Rust, миграционная и Windows portable-проверки выполнены после публикации коммита.
 
 ## GitHub Actions
 
-Статус: ожидает публикации коммита.
+Итоговый коммит реализации: `4dd35936cd825c0e5a288e589c7bdfc771393d5e`.
+
+Итоговый запуск: [Production cycle prototype checks №25](https://github.com/Prapeller12/production-cycle/actions/runs/34492714703) — успешно.
+
+- `contracts`: 30 из 30 модульных тестов и полный браузерный сценарий — успешно;
+- браузерный сценарий проверил две записи заказа №924, поиск проекта по названию, открытие по внутреннему ID и повторное сохранение той же записи;
+- `windows-host`: 12 из 12 Rust-тестов — успешно;
+- `duplicate_order_numbers_are_distinct_and_resave_by_database_id` — успешно;
+- `legacy_unique_order_schema_migrates_without_losing_project` — успешно;
+- portable-запуск из пути с кириллицей и пробелами — успешно;
+- автономный запуск со встроенным WebView2, без Python и Node.js в `PATH`, с блокировкой исходящего трафика — успешно.
