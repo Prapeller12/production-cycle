@@ -3,20 +3,23 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Конструктор производственного цикла v8 → TXT и PDF</title>
+<title>Производственный цикл</title>
 <link rel="stylesheet" href="styles/app.css">
 </head>
 <body>
-<div class="appbar"><strong>Конструктор производственного цикла</strong><span class="muted">макет №1 · локальная работа</span><span class="spacer"></span><span class="save-state" id="saveState">Изменения не сохранены</span><span id="taskCounter">0 элементов</span></div>
-<div class="tabs" aria-label="Навигация"><div class="tab active">Реестр цикла</div><div class="tab">TXT-контракт</div><div class="tab">Проверка</div></div>
+<div class="appbar"><strong>Производственный цикл</strong><span class="spacer"></span><span class="save-state" id="saveState">Изменения не сохранены</span><span id="taskCounter">0 элементов</span></div>
+<div class="tabs" aria-label="Навигация"><button class="tab active" data-view="registry">Реестр цикла</button><button class="tab" data-view="gantt">Диаграмма Ганта</button></div>
 <div class="shell">
+ <div id="registryView" class="workspace-view active">
   <div class="toolbar">
     <h1>Производственный цикл</h1>
     <button class="btn" id="demoBtn">Демо</button>
     <button class="btn" id="newBtn">Новый проект</button>
     <button class="btn" id="saveJsonBtn">Сохранить проект</button>
-    <button class="btn" id="loadJsonBtn">Открыть проект</button>
+    <button class="btn" id="loadJsonBtn">Все проекты</button>
+    <button class="btn" id="dictionaryBtn">Справочники</button>
     <input type="file" id="jsonFile" class="hidden-file" accept="application/json,.json" />
+    <button class="btn" id="importBtn">Импорт 2 TXT</button>
     <span class="spacer"></span>
     <button class="btn" id="pdfReportBtn">Отчёт PDF</button>
     <button class="btn" id="validateBtn">Проверить</button>
@@ -25,29 +28,19 @@
 
   <section class="project-card">
     <div class="project-grid">
-      <div class="field"><label>Название проекта *</label><input id="projectName" placeholder="Например: Изделие 5П-20К заказ №924" /></div>
+      <div class="field"><label>Название проекта *</label><input id="projectName" list="projectNameOptions" placeholder="Например: Изделие 5П-20К заказ №924" /></div>
       <div class="field"><label>Номер заказа *</label><input id="orderNo" placeholder="924" /></div>
-      <div class="field"><label>Инициатор / подписант *</label><input id="initiator" placeholder="ФИО / подразделение" /></div>
-      <div class="field"><label>Исполнитель / получатель *</label><input id="executor" placeholder="ФИО / организация" /></div>
+      <div class="field"><label>Инициатор / подписант *</label><input id="initiator" list="initiatorOptions" placeholder="ФИО / подразделение" /></div>
+      <div class="field"><label>Исполнитель / получатель *</label><input id="executor" list="executorOptions" placeholder="ФИО / организация" /></div>
       <div class="field"><label>Начало *</label><input id="projectStart" type="date" /></div>
       <div class="field"><label>Дедлайн *</label><input id="projectDeadline" type="date" /></div>
     </div>
-    <div class="project-extra">
-      <div class="field"><label>Предприятие *</label><input id="projectAddressees" placeholder="Наименование предприятия" /><div class="field-map-note">Поле «Адресаты» в исходящем TXT.</div></div>
-      <div class="required-hint">Поля со знаком * обязательны. Служебные поля «Количество связей» и «Ссылка» программа формирует автоматически и не требует ручного ввода.</div>
-    </div>
-    <div class="meta-line">
-      <span>Основной проект: <code id="rootId">Заказ № —</code></span>
-      <span>TXT: основной проект → <b>исходящий</b></span>
-      <span>TXT: этапы → <b>входящие</b></span>
-      <span>Один элемент → один родитель</span>
-      <span class="muted-text">Номер заказа после первого импорта следует считать идентификатором.</span>
-    </div>
+    <div class="project-extra"><div class="field"><label>Предприятие *</label><input id="projectAddressees" list="enterpriseOptions" placeholder="Наименование предприятия" /></div></div>
   </section>
 
-  <section class="structure-card">
-    <div class="structure-head"><strong>Структура вложенности</strong><span>Основной заказ → этап → дочерний этап. Один элемент — один родитель.</span></div>
-    <div id="structureTree" class="structure-tree"></div>
+  <section class="structure-card" id="structureCard">
+    <div class="structure-head"><div><strong>Структура подчинённости</strong><span>Основной заказ → этап → дочерний этап</span></div><div class="structure-actions"><button class="btn small" id="printStructureBtn">Печать структуры</button><button class="btn small structure-toggle" id="toggleStructureBtn" aria-expanded="true">Свернуть</button></div></div>
+    <div id="structureContent" class="structure-content"><div id="structureTree" class="structure-tree"></div></div>
   </section>
 
   <section class="panel">
@@ -58,11 +51,13 @@
       <span class="summary-chip"><span class="status-dot overdue"></span>Просрочено <b id="sumOverdue">0</b></span>
       <span class="summary-chip"><span class="status-dot new"></span>Не начато <b id="sumNew">0</b></span>
       <span class="summary-chip"><span class="status-dot hold"></span>Приостановлено <b id="sumHold">0</b></span>
+      <span class="spacer"></span>
+      <label class="filter-control">Показать <select id="completionFilter"><option value="active">Только невыполненные</option><option value="all">Все этапы</option><option value="done">Только выполненные</option></select></label>
     </div>
     <div class="table-wrap">
       <table class="tree-table">
         <thead><tr>
-          <th class="col-actions">Действия</th><th class="col-id">ID</th><th class="col-title">Название / этап</th><th class="col-exec">Исполнитель</th><th class="col-init">Инициатор</th><th class="col-status">Статус</th><th class="col-date">Начало</th><th class="col-date">Дедлайн</th><th class="col-left">Осталось</th>
+          <th class="col-actions">Действия</th><th class="col-id">ID</th><th class="col-title">Название / этап</th><th class="col-exec">Исполнитель</th><th class="col-init">Инициатор / адресат</th><th class="col-status">Статус</th><th class="col-date">Начало</th><th class="col-date">Дедлайн</th><th class="col-left">Осталось</th>
         </tr></thead>
         <tbody id="treeBody"></tbody>
       </table>
@@ -72,46 +67,62 @@
   </section>
 
   <div id="messageArea"></div>
-
-  <div class="bottom-grid">
-    <section class="info-card"><h3>Как данные попадут в стандартные TXT</h3>
-      <table class="mapping"><thead><tr><th>Поле утилиты</th><th>Исходящие / основной проект</th><th>Входящие / этап</th></tr></thead><tbody>
-        <tr><td>Название</td><td>Заголовок</td><td>Краткое содержание</td></tr>
-        <tr><td>ID</td><td>Регистрационный номер</td><td>Рег. номер</td></tr>
-        <tr><td>Начало</td><td>Дата</td><td>Дата регистрации</td></tr>
-        <tr><td>Исполнитель</td><td>Получатель исходящего</td><td>Корреспондент</td></tr>
-        <tr><td>Инициатор</td><td>Подписант</td><td>—</td></tr>
-        <tr><td>Адресаты</td><td>Адресаты</td><td>Адресаты</td></tr>
-        <tr><td>Дедлайн</td><td>Срок исполнения</td><td>Срок исполнения</td></tr>
-        <tr><td>Вложенность</td><td colspan="2">Поле «Ссылка» не используется для служебных данных. Если ссылки нет — ячейка остаётся пустой. Иерархия передаётся порядком строк и числом прямых дочерних связей в первой колонке.</td></tr>
-      </tbody></table>
-    </section>
-    <section class="info-card"><h3>Инвариант интеграции с Реестром</h3>
-      <div class="notice warn" style="margin:0">Производственная вложенность <b>не должна</b> записываться в существующий статусный <code>LINK</code>. Иначе первый входящий этап переведёт основной исходящий проект в «Выполнено». Служебная метка предназначена только для построения дерева производственного цикла.</div>
-      <div class="footer-note">Оба файла сохраняют штатные заголовки: 9 колонок для исходящих и 8 для входящих, TAB-разделитель, UTF-8 с BOM, CRLF. Существующий импорт сможет прочитать их как документы. Для автоматического восстановления вложенности Реестр должен читать строки этапов в порядке дерева и использовать первую колонку как количество прямых дочерних элементов.</div>
-    </section>
-  </div>
+ </div>
+ <div id="ganttView" class="workspace-view">
+   <section class="panel gantt-panel"><div class="panel-head"><span class="title">Диаграмма Ганта</span><span class="muted-text" id="ganttPeriod"></span><span class="spacer"></span><label class="filter-control">Масштаб <select id="ganttScale"><option value="day">По дням</option><option value="week" selected>По неделям</option><option value="month">По месяцам</option></select></label><button class="btn small" id="printGanttA4Btn">Печать А4</button><button class="btn small" id="printGanttA3Btn">Печать А3</button></div><div id="ganttChart" class="gantt-chart"></div></section>
+ </div>
 </div>
 
 <section id="pdfReport" class="pdf-report" aria-hidden="true"></section>
+<section id="ganttPrint" class="gantt-print" aria-hidden="true"></section>
+<section id="structurePrint" class="structure-print" aria-hidden="true"></section>
 
 <div class="modal-backdrop" id="stageModal">
   <div class="modal">
     <div class="modal-head"><h2 id="stageModalTitle">Новый этап</h2><span class="spacer"></span><button class="btn icon" data-close="stageModal">×</button></div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="wide"><label>Название этапа / краткое содержание *</label><input id="stageTitle" placeholder="Например: Изготовление блока МЭТ" /></div>
+        <div class="wide"><label>Название этапа / краткое содержание *</label><input id="stageTitle" list="stageTitleOptions" placeholder="Например: Изготовление блока МЭТ" /></div>
         <div><label>Родитель *</label><select id="stageParent"></select><div class="help">У элемента может быть только один родитель. Для верхнего уровня выберите основной проект.</div></div>
-        <div><label>Исполнитель / корреспондент *</label><input id="stageExecutor" placeholder="ФИО / организация" /></div>
-        <div><label>Адресаты *</label><input id="stageAddressees" placeholder="ФИО / подразделение" /></div>
+        <div><label>Исполнитель / корреспондент *</label><input id="stageExecutor" list="executorOptions" placeholder="ФИО / организация" /></div>
+        <div><label>Адресаты *</label><input id="stageAddressees" list="enterpriseOptions" placeholder="ФИО / подразделение" /></div>
         <div><label>Начало / дата регистрации *</label><input id="stageStart" type="date" /></div>
         <div><label>Дедлайн / срок исполнения *</label><input id="stageDeadline" type="date" /></div>
         <div><label>Статус *</label><select id="stageStatus"><option value="new">Не начато</option><option value="work">В работе</option><option value="hold">Приостановлено</option><option value="done">Выполнено</option></select></div>
         <div><label>ID этапа — автоматически</label><div id="stageIdPreview" class="auto-value"></div><div class="help">ID сохраняется за этапом. Изменение родителя не меняет ID.</div></div>
+        <div class="wide"><label>Комментарий</label><textarea id="stageComment" rows="3" placeholder="Дополнительные сведения по этапу"></textarea></div>
       </div>
       <div class="required-hint">Все поля со знаком * обязательны. Количество прямых детей рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
     </div>
     <div class="modal-foot"><button class="btn" data-close="stageModal">Отмена</button><button class="btn primary" id="saveStageBtn">Сохранить</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="projectsModal">
+  <div class="modal modal-wide"><div class="modal-head"><h2>Сохранённые проекты</h2><span class="spacer"></span><button class="btn icon" data-close="projectsModal">×</button></div><div class="modal-body"><label class="projects-search">Номер заказа или название <input id="projectsSearch" placeholder="Например: 924" /></label><div class="project-list-help">Проекты с одинаковым номером заказа сохраняются раздельно. Выберите нужное название из списка.</div><div id="projectsList" class="projects-list"></div></div><div class="modal-foot"><button class="btn" data-close="projectsModal">Закрыть</button></div></div>
+</div>
+
+<div class="modal-backdrop" id="dictionaryModal">
+  <div class="modal modal-wide"><div class="modal-head"><h2>Справочники наименований</h2><span class="spacer"></span><button class="btn icon" data-close="dictionaryModal">×</button></div>
+    <div class="modal-body">
+      <div class="dictionary-note">Справочник формируется из сохранённых проектов. Замена изменяет точное совпадение во всех проектах выбранной категории и объединяет одинаковые варианты написания.</div>
+      <div class="dictionary-toolbar"><label>Категория <select id="dictionaryKind"><option value="enterprise">Предприятия / адресаты</option><option value="executor">Исполнители / получатели</option><option value="initiator">Инициаторы / подписанты</option><option value="projectName">Названия проектов</option><option value="stageTitle">Названия этапов</option></select></label><label>Поиск <input id="dictionarySearch" placeholder="Начните вводить наименование" /></label></div>
+      <div class="dictionary-head"><span>Наименование</span><span>Использований</span><span>Проектов</span><span></span></div>
+      <div id="dictionaryList" class="dictionary-list"></div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close="dictionaryModal">Закрыть</button></div>
+  </div>
+</div>
+
+<datalist id="projectNameOptions"></datalist><datalist id="initiatorOptions"></datalist><datalist id="executorOptions"></datalist><datalist id="enterpriseOptions"></datalist><datalist id="stageTitleOptions"></datalist>
+
+<div class="modal-backdrop" id="importModal">
+  <div class="modal modal-wide"><div class="modal-head"><h2>Импорт производственного цикла</h2><span class="spacer"></span><button class="btn icon" data-close="importModal">×</button></div>
+    <div class="modal-body"><div class="import-files">
+      <label class="import-file"><strong>Исходящие — основной проект</strong><span id="importOutName">Выберите TXT (9 колонок)</span><input type="file" id="importOutFile" accept="text/plain,.txt"></label>
+      <label class="import-file"><strong>Входящие — этапы</strong><span id="importInName">Выберите TXT (8 колонок)</span><input type="file" id="importInFile" accept="text/plain,.txt"></label>
+    </div><div id="importValidation" class="import-validation"></div><div class="preview-tabs"><button class="preview-tab active" data-import-preview="out">Исходящие</button><button class="preview-tab" data-import-preview="in">Входящие</button></div><div class="preview-box" id="importPreview">Выберите оба файла для проверки.</div></div>
+    <div class="modal-foot"><button class="btn" data-close="importModal">Отмена</button><button class="btn primary" id="confirmImportBtn" disabled>Импортировать и сохранить</button></div>
   </div>
 </div>
 
@@ -134,6 +145,7 @@
 <script defer src="config/contracts.js"></script>
 <script defer src="domain/cycle.js"></script>
 <script defer src="services/exchange.js"></script>
+<script defer src="services/backend.js"></script>
 <script defer src="services/project-file.js"></script>
 <script defer src="ui/app.js"></script>
 </body>

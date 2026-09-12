@@ -50,7 +50,7 @@
     fields(state.project,['name','orderNo','initiator','executor','addressees','start','deadline'],'Проект');
     function dates(obj,label){for(const key of ['start','deadline'])if(obj[key]&&!validDate(obj[key]))errors.push(label+': неверная дата '+key);if(validDate(obj.start)&&validDate(obj.deadline)&&obj.start>obj.deadline)errors.push(label+': начало позже дедлайна')}
     dates(state.project,'Проект');
-    for(const s of state.stages){fields(s,['title','executor','addressees','start','deadline'],'Этап '+s.seq);dates(s,'Этап '+s.seq);if(!Object.hasOwn(STATUS,s.status))errors.push('Некорректный статус этапа '+s.seq)}
+    for(const s of state.stages){fields(s,['title','executor','addressees','start','deadline'],'Этап '+s.seq);if(s.comment!==undefined&&typeof s.comment!=='string')errors.push('Этап '+s.seq+': неверный тип comment');dates(s,'Этап '+s.seq);if(!Object.hasOwn(STATUS,s.status))errors.push('Некорректный статус этапа '+s.seq)}
     if(!state.stages.length)warnings.push('Проект не содержит этапов: входящий TXT будет содержать только заголовок.');
     if(!draft&&orderToken(state.project.orderNo)==='—')errors.push('Некорректный номер заказа.');
     return{errors,warnings};

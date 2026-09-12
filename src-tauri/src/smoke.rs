@@ -14,14 +14,21 @@ pub const SCRIPT:&str=r#"
 (async()=>{
  let error=null;
  try{
-  for(let i=0;i<100&&!window.Production?.projectFile;i++)await new Promise(r=>setTimeout(r,100));
+  for(let i=0;i<100&&!window.Production?.backend;i++)await new Promise(r=>setTimeout(r,100));
   if(!window.__TAURI__?.core?.invoke)throw Error('Native IPC is unavailable');
   const invoke=window.__TAURI__.core.invoke;
-  const p={project:{orderNo:'SMOKE-1',name:'Проверка запуска',initiator:'Тест',executor:'Тест',addressees:'Тест',start:'2026-09-01',deadline:'2026-09-30'},stages:[],nextSeq:1,collapsed:{}};
+  const p={project:{orderNo:'SMOKE-1',name:'Проверка запуска',initiator:'Тест',executor:'Тест',addressees:'Тест',start:'2026-09-01',deadline:'2026-09-30'},stages:[{uid:'smoke-stage',seq:1,sort:1,parentUid:null,title:'Этап проверки',executor:'Тест',addressees:'Тест',start:'2026-09-01',deadline:'2026-09-15',status:'done',comment:'Проверка комментария'}],nextSeq:2,collapsed:{}};
+  const validation=await Production.backend.validate(p);
+  if(validation.errors.length)throw Error('Backend validation failed');
+  await Production.backend.save(p);
+  const loaded=await Production.backend.load('SMOKE-1');
+  if(!loaded||loaded.stages.length!==1||loaded.project.addressees!=='Тест'||loaded.stages[0].comment!=='Проверка комментария')throw Error('SQLite roundtrip failed');
+  const report=await Production.backend.report(p);
+  if(report.total!==1||report.donePercent!==100)throw Error('Backend report failed');
   const json=Production.projectFile.stringify(p);
   const saved=await invoke('save_file',{name:'Проверка.json',text:json});
   if(!saved.endsWith('Проверка.json'))throw Error('Native save failed');
-  const pair=Production.exchange.exportPair(p);
+  const pair=await Production.backend.exportPair(p);
   await invoke('save_file',{name:'Исходящий.txt',text:pair.out});
   await invoke('save_file',{name:'Входящий.txt',text:pair.in});
   if(!document.getElementById('saveJsonBtn'))throw Error('UI did not load');

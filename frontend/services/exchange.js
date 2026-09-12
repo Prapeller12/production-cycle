@@ -18,6 +18,12 @@
     return result;
   }
   function count(s){if(s==='')return 0;if(!/^\d+$/.test(s)||!Number.isSafeInteger(Number(s)))throw Error('Некорректное количество детей.');return Number(s)}
+  function isoDate(value,shortYear=false){
+    const pattern=shortYear?/^(\d{2})\.(\d{2})\.(\d{2})$/:/^(\d{2})\.(\d{2})\.(\d{4})$/;
+    const m=String(value||'').match(pattern);if(!m)throw Error('Неверный формат даты: '+value);
+    const year=shortYear?2000+Number(m[3]):Number(m[3]),iso=`${year}-${m[2]}-${m[1]}`;
+    if(!D.validDate(iso))throw Error('Несуществующая дата: '+value);return iso;
+  }
   // Structural preview only: manual statuses cannot be recovered from this contract.
   // Never call the normal Registry parser and never create a status LINK.
   function previewPair(outgoing,incoming){
@@ -34,5 +40,21 @@
     while(stack.length&&!stack.at(-1).remaining)stack.pop();if(stack.length)throw Error('Недостаточно дочерних строк.');
     return{rootId,stages,manualStatusAvailable:false};
   }
-  Production.exchange=Object.freeze({toTsv,exportPair,previewPair});
+  function importPair(outgoing,incoming){
+    const outRows=rows(outgoing,OUT_HEADER),inRows=rows(incoming,IN_HEADER);
+    if(outRows.length!==1)throw Error('В исходящем TXT должен быть один основной проект.');
+    const tree=previewPair(outgoing,incoming),root=outRows[0],uidById=new Map(),siblingSort=new Map(),stages=[];
+    for(const item of tree.stages){
+      const row=item.row,seq=Number(item.id.slice(tree.rootId.length+1)),uid=`import-${seq}`;
+      uidById.set(item.id,uid);
+      const parentUid=item.parentId===tree.rootId?null:uidById.get(item.parentId);
+      if(item.parentId!==tree.rootId&&!parentUid)throw Error('Родитель этапа не найден: '+item.parentId);
+      const sort=(siblingSort.get(parentUid)||0)+1;siblingSort.set(parentUid,sort);
+      stages.push({uid,seq,sort,parentUid,title:row[1].trim(),executor:row[4].trim(),addressees:row[5].trim(),start:isoDate(row[3]),deadline:isoDate(row[6]),status:'new',comment:''});
+    }
+    const state={project:{name:root[4].trim(),orderNo:root[1].trim(),initiator:root[5].trim(),executor:root[3].trim(),addressees:root[7].trim(),start:isoDate(root[2],true),deadline:isoDate(root[6])},stages,nextSeq:Math.max(0,...stages.map(s=>s.seq))+1,collapsed:{}};
+    const validation=D.validate(state);if(validation.errors.length)throw Error(validation.errors.join(' '));
+    return{state,preview:tree,warnings:['Статусы отсутствуют в TXT-контракте: импортированные этапы установлены в статус «Не начато».']};
+  }
+  Production.exchange=Object.freeze({toTsv,exportPair,previewPair,importPair});
 })();

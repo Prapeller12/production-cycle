@@ -3,6 +3,9 @@ on:
   push:
     branches: [main, codex/production-cycle-prototype]
     paths: ['frontend/**', 'src-tauri/**', 'scripts/**', 'config/**', '.cargo/**', 'tests/**', '.github/workflows/production-cycle-prototype.yml']
+  pull_request:
+    branches: [main]
+    paths: ['frontend/**', 'src-tauri/**', 'scripts/**', 'config/**', '.cargo/**', 'tests/**', '.github/workflows/production-cycle-prototype.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,6 +33,9 @@ jobs:
           path: |
             /tmp/production-cycle-*.png
             /tmp/production-cycle-report.pdf
+            /tmp/production-cycle-structure-print.pdf
+            /tmp/production-cycle-gantt-print-a3.pdf
+            /tmp/production-cycle-gantt-print-a4.pdf
   windows-host:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -83,6 +89,7 @@ jobs:
             dist/portable/*.sha256
           if-no-files-found: error
       - name: Publish portable prerelease
+        if: github.event_name == 'push'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

@@ -23,9 +23,13 @@ fn inside(root: &Path, relative: &str) -> Result<PathBuf, String> {
 }
 impl Paths {
     pub fn load() -> Result<Self, String> {
-        // ZIP layout: root/app/backend/production-cycle.exe; never use current working directory.
+        // Current ZIP layout: root/production-cycle.exe. The legacy app/backend layout
+        // remains readable so an existing unpacked copy can still start after an update.
+        // Never use the current working directory to resolve portable data.
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let root = exe.parent().and_then(Path::parent).and_then(Path::parent).ok_or("Invalid application layout")?.canonicalize().map_err(|e| e.to_string())?;
+        let direct = exe.parent().ok_or("Invalid application layout")?;
+        let legacy = exe.parent().and_then(Path::parent).and_then(Path::parent);
+        let root = if direct.join("config/portable.json").is_file() { direct } else { legacy.filter(|p| p.join("config/portable.json").is_file()).ok_or("Invalid application layout: config/portable.json was not found beside the program")? }.canonicalize().map_err(|e| e.to_string())?;
         let c: Config = serde_json::from_slice(&fs::read(root.join("config/portable.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         if c.technical_logging { return Err("Technical logging is not implemented in this prototype".into()); }
         let result = Self {frontend: inside(&root,&c.frontend)?, runtime: inside(&root,&c.webview_runtime)?,webview:inside(&root,&c.webview_data)?,data:inside(&root,&c.working_data)?,exports:inside(&root,&c.exports)?,smoke_report:inside(&root,"temp")?.join("self-test.json")};

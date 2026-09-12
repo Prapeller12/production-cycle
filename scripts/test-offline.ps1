@@ -4,7 +4,7 @@ if($env:GITHUB_ACTIONS -ne 'true'){throw 'This network-isolation check is only f
 $root=Join-Path $env:RUNNER_TEMP 'Offline check'
 Expand-Archive $Zip $root
 $app=Join-Path $root 'ProductionCycle'
-$programs=@((Join-Path $app 'app/backend/production-cycle.exe'),(Join-Path $app 'runtime/webview2/msedgewebview2.exe'))
+$programs=@((Join-Path $app 'production-cycle.exe'),(Join-Path $app 'runtime/webview2/msedgewebview2.exe'))
 $rules=@()
 $originalPath=$env:PATH
 try {
