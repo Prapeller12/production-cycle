@@ -21,7 +21,7 @@ foreach($path in $required){if(-not(Test-Path (Join-Path $root $path))){throw "M
 foreach($module in @('ReportingSystem','ProductionCycle')) {
  foreach($dir in @('data','temp','backups','exports','imports/inbox','attachments')) {
   $path=Join-Path $root "modules/$module/$dir"
-  if((Test-Path $path) -and (Get-ChildItem $path -File -Recurse | Where-Object {$_.Name -notin @('.gitkeep','.keep') })){throw "Nonempty user-data directory in build input: $path"}
+  if((Test-Path $path) -and (Get-ChildItem $path -File -Recurse | Where-Object {$_.Name -notin @('.gitkeep','.keep','.portable-dir') })){throw "Nonempty user-data directory in build input: $path"}
  }
 }
 $manifest=[ordered]@{
