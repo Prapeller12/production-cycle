@@ -1,0 +1,52 @@
+name: Transfer verified frame archive
+on:
+  push:
+    branches: [codex/unified-frame]
+    paths: ['.github/workflows/frame-transfer.yml']
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  transfer:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Retrieve already verified build and split transfer payload
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Invoke-WebRequest -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} 'https://api.github.com/repos/Prapeller12/production-cycle/actions/artifacts/10304432061/zip' -OutFile frame-artifact.zip
+          if((Get-FileHash frame-artifact.zip -Algorithm SHA256).Hash.ToLower() -ne '26e2ceae44922f71f98d5114012b19d373636d246be71559b54a587ec99d1c06'){throw 'Verified artifact digest mismatch'}
+          Expand-Archive frame-artifact.zip payload
+          $zip=Get-ChildItem payload -Filter '*.zip' -Recurse
+          if(@($zip).Count -ne 1){throw 'Expected one ZIP'}
+          New-Item -ItemType Directory transfer0,transfer1 -Force | Out-Null
+          (Get-FileHash $zip.FullName -Algorithm SHA256).Hash | Set-Content transfer0/archive.sha256 -Encoding ascii
+          $stream=[IO.File]::OpenRead($zip.FullName)
+          try {
+            $buffer=New-Object byte[] (1MB)
+            for($part=0; $part -lt 2; $part++){
+              $output=[IO.File]::Create("$pwd/transfer$part/archive.part$part")
+              try {
+                [long]$remaining=400MB
+                while($remaining -gt 0){
+                  $read=$stream.Read($buffer,0,[int][Math]::Min($buffer.Length,$remaining))
+                  if($read -eq 0){break}
+                  $output.Write($buffer,0,$read); $remaining-=$read
+                }
+              } finally {$output.Dispose()}
+            }
+            if($stream.Position -ne $stream.Length){throw 'Transfer chunk capacity exceeded'}
+          } finally {$stream.Dispose()}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: frame-transfer-0
+          compression-level: 0
+          path: transfer0/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: frame-transfer-1
+          compression-level: 0
+          path: transfer1/*
