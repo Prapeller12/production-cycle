@@ -52,6 +52,8 @@ void selectModule(int index) {
         return;
     }
     selected = index;
+    for (int i = 0; i < 2; ++i) SendMessageW(buttons[i], BM_SETSTYLE,
+        i == selected ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON, TRUE);
     try {
         auto& m = modules[selected];
         if (!m.alive()) { m.launch(fixtureTest, selected); notice = L"Запуск: " + m.name; }
@@ -122,7 +124,12 @@ void testTick() {
     case 1:
         if (IsWindowVisible(modules[0].window)) { exitCode = 1; break; }
         evidence(host, L"frame-cycle.bmp");
-        SetWindowPos(host, nullptr, 20, 20, 1200, 820, SWP_NOZORDER);
+        {
+            RECT work{}; SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+            SetWindowPos(host, nullptr, work.left, work.top,
+                std::min(1200L, work.right - work.left),
+                std::min(820L, work.bottom - work.top), SWP_NOZORDER);
+        }
         ++testStep; stepStarted = 0; break;
     case 2:
         ++testStep; stepStarted = 0; selectModule(0); break;
@@ -191,7 +198,9 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
     }
     case WM_GETMINMAXINFO: {
         auto* m = reinterpret_cast<MINMAXINFO*>(l);
-        m->ptMinTrackSize.x = 1100; m->ptMinTrackSize.y = 800; return 0;
+        RECT work{}; SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+        m->ptMinTrackSize.x = std::min(1100L, work.right - work.left);
+        m->ptMinTrackSize.y = std::min(800L, work.bottom - work.top); return 0;
     }
     case WM_CLOSE: beginClose(!(fixtureTest || realTest)); return 0;
     case WM_DESTROY:
@@ -243,7 +252,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
             CloseHandle(mutex); return 2;
         }
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        if (SetThreadDpiHostingBehavior(DPI_HOSTING_BEHAVIOR_MIXED) == DPI_HOSTING_BEHAVIOR_INVALID)
+        auto previousHosting = SetThreadDpiHostingBehavior(DPI_HOSTING_BEHAVIOR_MIXED);
+        if (previousHosting == DPI_HOSTING_BEHAVIOR_INVALID)
             throw std::runtime_error("Mixed DPI hosting requires Windows 10 1803 or newer");
         modules[0].name = L"Производственная отчётность";
         modules[1].name = L"Производственный цикл";
@@ -256,9 +266,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
         WNDCLASSW c{}; c.lpfnWndProc = procedure; c.hInstance = instance; c.lpszClassName = kClass;
         c.hCursor = LoadCursorW(nullptr, IDC_ARROW); c.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
         RegisterClassW(&c);
+        RECT work{}; SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
         HWND w = CreateWindowExW(WS_EX_CONTROLPARENT, kClass, L"Производственный контур — отчётность и цикл",
-            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 1500, 980,
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, work.left, work.top,
+            std::min(1500L, work.right - work.left), std::min(980L, work.bottom - work.top),
             nullptr, nullptr, instance, nullptr);
+        SetThreadDpiHostingBehavior(previousHosting);
         if (!w) throw std::runtime_error("Cannot create frame window");
         ShowWindow(w, show); UpdateWindow(w); testStarted = GetTickCount64(); selectModule(0);
         MSG msg{};
