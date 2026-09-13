@@ -1,0 +1,76 @@
+name: Unified portable frame
+on:
+  push:
+    branches: [codex/unified-frame]
+    paths: ['integration/production-frame/**', '.github/workflows/unified-frame.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compile standalone frame
+        shell: pwsh
+        run: ./integration/production-frame/scripts/build.ps1 -Output ./dist/frame
+      - name: Check mixed DPI and lifecycle with disposable fixture processes
+        shell: pwsh
+        run: ./integration/production-frame/scripts/test.ps1 -Root ./dist/frame
+      - name: Verify version selection and configuration transactions
+        shell: pwsh
+        run: ./integration/production-frame/scripts/test-versions.ps1
+      - name: Prepare small frame update
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory ./dist/frame-update | Out-Null
+          Copy-Item ./dist/frame/ProductionFrame.exe ./dist/frame-update/
+          Copy-Item ./integration/production-frame/docs/versions.md ./dist/frame-update/INSTRUCTIONS.md
+          Compress-Archive ./dist/frame-update/* ./dist/Frame-updater.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Frame-updater
+          path: dist/Frame-updater.zip
+      - name: Download pinned complete application builds
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory ./dist/inputs -Force | Out-Null
+          Invoke-WebRequest 'https://github.com/Prapeller12/otchet/releases/download/test-v0.1.0-dev.20/ReportingSystem-0.1.0-dev.20-windows-x64.zip' -OutFile ./dist/inputs/reporting.zip
+          if((Get-FileHash ./dist/inputs/reporting.zip -Algorithm SHA256).Hash.ToLower() -ne 'df761cd3591b57bc07fb0717dede6951e0b93c2b2a68a66bfa0dddb8abdc7a52'){throw 'Reporting build digest mismatch'}
+          Invoke-WebRequest -Headers @{Authorization="Bearer $env:GH_TOKEN";Accept='application/vnd.github+json'} 'https://api.github.com/repos/Prapeller12/production-cycle/actions/artifacts/10158831168/zip' -OutFile ./dist/inputs/cycle-artifact.zip
+          if((Get-FileHash ./dist/inputs/cycle-artifact.zip -Algorithm SHA256).Hash.ToLower() -ne '289d5c71e002fe87fb74696d0bd57d824459042ebe6048ffb1901d9f7006e5c3'){throw 'Cycle artifact digest mismatch'}
+          Expand-Archive ./dist/inputs/cycle-artifact.zip ./dist/inputs/cycle
+      - name: Assemble clean portable folder
+        shell: pwsh
+        run: |
+          $cycle=Get-ChildItem ./dist/inputs/cycle -Filter '*.zip' -Recurse
+          if(@($cycle).Count -ne 1){throw 'Expected exactly one complete cycle ZIP'}
+          ./integration/production-frame/scripts/package.ps1 -Frame ./dist/frame -ReportingZip ./dist/inputs/reporting.zip -CycleZip $cycle.FullName -Output ./dist/combined
+      - name: Verify actual windows on a disposable Cyrillic copy
+        shell: pwsh
+        run: |
+          $testRoot=Join-Path $env:RUNNER_TEMP 'Проверка общего окна'
+          Expand-Archive ./dist/combined/ProductionFrame-0.1-windows-x64-preview.zip $testRoot
+          ./integration/production-frame/scripts/test.ps1 -Root (Join-Path $testRoot 'ProductionFrame') -RealWindows
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ProductionFrame-window-evidence
+          path: |
+            dist/frame/temp/*
+            ${{ runner.temp }}/Проверка общего окна/ProductionFrame/temp/*
+          if-no-files-found: ignore
+      - name: Upload complete ZIP only after successful checks
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ProductionFrame-0.1-windows-x64-preview
+          compression-level: 0
+          path: dist/combined/ProductionFrame-0.1-windows-x64-preview.zip
+          if-no-files-found: error
