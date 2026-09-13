@@ -21,6 +21,20 @@ jobs:
       - name: Check mixed DPI and lifecycle with disposable fixture processes
         shell: pwsh
         run: ./integration/production-frame/scripts/test.ps1 -Root ./dist/frame
+      - name: Verify version selection and configuration transactions
+        shell: pwsh
+        run: ./integration/production-frame/scripts/test-versions.ps1
+      - name: Prepare small frame update
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory ./dist/frame-update | Out-Null
+          Copy-Item ./dist/frame/ProductionFrame.exe ./dist/frame-update/
+          Copy-Item ./integration/production-frame/docs/versions.md ./dist/frame-update/INSTRUCTIONS.md
+          Compress-Archive ./dist/frame-update/* ./dist/Frame-updater.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Frame-updater
+          path: dist/Frame-updater.zip
       - name: Download pinned complete application builds
         shell: pwsh
         env:

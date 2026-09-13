@@ -56,7 +56,7 @@ void selectModule(int index) {
         i == selected ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON, TRUE);
     try {
         auto& m = modules[selected];
-        if (!m.alive()) { m.launch(fixtureTest, selected); notice = L"Запуск: " + m.name; }
+        if (!m.alive()) { if (!fixtureTest) validateVersion(m.relative, selected); m.launch(fixtureTest, selected); notice = L"Запуск: " + m.name; }
         else notice = m.name;
     } catch (const std::exception& e) {
         modules[selected].failed = true; notice = L"Не удалось запустить раздел";
@@ -68,6 +68,38 @@ void selectModule(int index) {
         // WM_MOUSEACTIVATE and real mouse/keyboard focus continue to be handled by the module.
         PostMessageW(modules[selected].window, WM_ACTIVATE, WA_ACTIVE, 0);
     }
+}
+void manageVersion(int action) {
+    auto& m = modules[selected];
+    try {
+        const auto current = std::filesystem::path(root()) / m.relative;
+        if (action == 203) {
+            const auto text = m.name + L"\n\nПрограмма:\n" + current.wstring() +
+                L"\n\nДанные этой версии:\n" + (current.parent_path() / L"data").wstring() +
+                L"\n\nВерсии используют свои папки данных. При возврате данные новой версии не переносятся назад.";
+            MessageBoxW(host, text.c_str(), L"Подключённая версия", MB_OK); return;
+        }
+        if (m.alive()) {
+            if (MessageBoxW(host, L"Сначала сохраните работу в выбранном разделе.\n\nЗакрыть его для смены версии? После закрытия повторите выбор в меню «Версии».",
+                L"Смена версии", MB_YESNO | MB_DEFBUTTON2) == IDYES) {
+                if (!m.window) m.discover();
+                if (IsWindow(m.window)) PostMessageW(m.window, WM_CLOSE, 0, 0);
+            }
+            return;
+        }
+        m.release();
+        const auto key = selected == 0 ? L"reporting" : L"cycle";
+        const auto next = action == 202 ? readSetting(key, L"previous_executable") : chooseVersion(host, selected);
+        if (next.empty()) return;
+        validateVersion(next, selected);
+        const auto message = L"Подключить:\n" + next +
+            L"\n\nБудут открыты данные из папки выбранной версии. Текущая папка и её данные сохранятся.\n"
+            L"Перенос данных выполняйте отдельно на копии, средствами программы. Продолжить?";
+        if (MessageBoxW(host, message.c_str(), L"Подключение версии", MB_YESNO | MB_DEFBUTTON2 | MB_ICONQUESTION) != IDYES) return;
+        saveVersion(key, next, m.relative);
+        m.relative = next;
+        SetWindowTextW(status, L"Версия подключена. Нажмите «Открыть раздел». Меню «Версии» показывает путь и позволяет вернуться.");
+    } catch (const std::exception& e) { showError(e); }
 }
 void writeResult(bool ok) {
     CreateDirectoryW((root() + L"\\temp").c_str(), nullptr);
@@ -143,6 +175,14 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
     switch (message) {
     case WM_CREATE:
         host = window;
+        {
+            auto menu = CreateMenu(); auto versions = CreatePopupMenu();
+            AppendMenuW(versions, MF_STRING, 201, L"Подключить другую версию выбранного раздела…");
+            AppendMenuW(versions, MF_STRING, 202, L"Вернуться к предыдущей версии…");
+            AppendMenuW(versions, MF_STRING, 203, L"Текущая версия и папка данных…");
+            AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(versions), L"Версии");
+            SetMenu(window, menu);
+        }
         font = CreateFontW(-scale(16), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
             DEFAULT_PITCH, L"Segoe UI");
@@ -157,6 +197,9 @@ LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM w, LPARAM l) {
         for (HWND c : {buttons[0], buttons[1], retry, status}) SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         SetTimer(window, 1, 100, nullptr); return 0;
     case WM_COMMAND:
+        if (closing < 0 && LOWORD(w) >= 201 && LOWORD(w) <= 203) {
+            manageVersion(LOWORD(w)); return 0;
+        }
         if (closing < 0 && HIWORD(w) == BN_CLICKED) {
             if (LOWORD(w) == 101) selectModule(0);
             if (LOWORD(w) == 102) selectModule(1);

@@ -18,6 +18,9 @@ std::wstring errorText(DWORD code);
 std::wstring readSetting(const wchar_t* section, const wchar_t* key);
 std::wstring portableFile(const std::wstring& relative);
 void checkLayout();
+std::wstring chooseVersion(HWND owner, int index);
+void validateVersion(const std::wstring& relative, int index);
+void saveVersion(const wchar_t* section, const std::wstring& next, const std::wstring& previous);
 void evidence(HWND window, const wchar_t* name);
 
 struct Module {

@@ -61,12 +61,8 @@ void checkLayout() {
         GetDriveTypeW(base.substr(0, 3).c_str()) == DRIVE_REMOTE)
         throw std::runtime_error("Use a local writable folder, not a network drive");
     portableFile(L"config\\frame.ini");
-    for (auto key : {L"reporting", L"cycle"}) {
-        auto relative = readSetting(key, L"executable");
-        portableFile(relative);
-        auto parent = std::filesystem::path(relative).parent_path();
-        portableFile((parent / L"runtime/webview2/msedgewebview2.exe").wstring());
-    }
+    // Module validation happens on launch/selection so a missing module can be repaired in the UI.
+
 }
 void evidence(HWND window, const wchar_t* name) {
     // Only explicitly requested test mode creates evidence; ordinary launch writes nothing.
