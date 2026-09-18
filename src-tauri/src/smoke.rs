@@ -22,7 +22,7 @@ pub const SCRIPT:&str=r#"
   if(validation.errors.length)throw Error('Backend validation failed');
   const users=await Production.backend.listAuditUsers();
   const signer=users[0]||await Production.backend.createAuditUser({displayName:'Администратор проверки',pin:'739201',isAdmin:true,adminUserId:null,adminPin:null});
-  const savedProject=await Production.backend.saveSigned(p,{userId:signer.id,pin:'739201',comment:'Автоматическая проверка подписанного сохранения',evidence:{documentType:'Акт приёмки',documentReference:'SMOKE-ACT-1 от 01.09.2026',comment:'Проверка обязательного подтверждения выполнения'}});
+  const savedProject=await Production.backend.saveSigned(p,{userId:signer.id,pin:'739201',comment:'Автоматическая проверка подписанного сохранения',evidence:{documentType:'Акт приёмки',documentReference:'SMOKE-ACT-1 от 01.09.2026',comment:'Проверка обязательного подтверждения выполнения',stageUids:['smoke-stage']}});
   p.databaseId=savedProject.projectId;
   const loaded=await Production.backend.load('SMOKE-1');
   if(!loaded||loaded.stages.length!==1||loaded.project.addressees!=='Тест'||loaded.stages[0].comment!=='Проверка комментария')throw Error('SQLite roundtrip failed');
