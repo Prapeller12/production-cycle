@@ -94,6 +94,8 @@ pub struct CompletionEvidenceInput {
     pub document_type: String,
     pub document_reference: String,
     pub comment: String,
+    #[serde(default)]
+    pub stage_uids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -573,13 +575,21 @@ impl ProductionDb {
                     && old_statuses.get(&stage.uid).map(String::as_str) != Some("done")
             })
             .collect();
+        let completed_uids = completed.iter().map(|stage| stage.uid.as_str()).collect::<std::collections::HashSet<_>>();
         let evidence = if completed.is_empty() {
+            if evidence.as_ref().is_some_and(|value| !value.stage_uids.is_empty()) {
+                return Err("Указаны этапы для завершения, но их статус не изменён на «Выполнено».".into());
+            }
             None
         } else {
             let value = evidence.ok_or_else(|| {
                 "Для перевода этапа в «Выполнено» укажите официальный документ и комментарий."
                     .to_string()
             })?;
+            let requested_uids = value.stage_uids.iter().map(String::as_str).collect::<std::collections::HashSet<_>>();
+            if requested_uids.len() != value.stage_uids.len() || requested_uids != completed_uids {
+                return Err("Состав подтверждаемых этапов не совпадает с фактическими изменениями. Закройте один этап либо явно выберите закрытие всей родительской ветки.".into());
+            }
             let document_type = clean(&value.document_type);
             let document_reference = validate_comment(&value.document_reference, "Номер и дата документа")?;
             let evidence_comment = validate_comment(&value.comment, "Основание выполнения")?;
@@ -847,13 +857,30 @@ mod tests {
         let created=db.save_signed_snapshot(&initial,owner.id,"739201","Создание",None).unwrap();
         initial.database_id=Some(created.project_id);initial.stages[0].status=StageStatus::Done;
         assert!(db.save_signed_snapshot(&initial,owner.id,"739201","Завершение",None).is_err());
-        let saved=db.save_signed_snapshot(&initial,owner.id,"739201","Завершение",Some(CompletionEvidenceInput{document_type:"Акт приёмки".into(),document_reference:"№15 от 18.09.2026".into(),comment:"Работы приняты".into()})).unwrap();
+        let saved=db.save_signed_snapshot(&initial,owner.id,"739201","Завершение",Some(CompletionEvidenceInput{document_type:"Акт приёмки".into(),document_reference:"№15 от 18.09.2026".into(),comment:"Работы приняты".into(),stage_uids:vec!["stage-1".into()]})).unwrap();
         assert_eq!(saved.completion_event_ids.len(),1);
         let report=db.verify_audit_log(owner.id,"739201",Some(saved.project_id)).unwrap();
         assert_eq!(report.invalid_events,0);assert_eq!(report.checked_events,3);
         let mut printable=crate::production::build_report(&initial,chrono::NaiveDate::from_ymd_opt(2026,9,18).unwrap()).unwrap();
         attach_completion_confirmations(&db,saved.project_id,&mut printable).unwrap();
         assert!(printable.stages[0].completion_confirmation.as_ref().unwrap().signature_valid);
+    }
+
+    #[test]
+    fn completion_scope_must_match_exactly_and_branch_requires_explicit_targets() {
+        let db=ProductionDb::memory().unwrap();let owner=admin(&db);
+        let mut snapshot=sample(StageStatus::Work);
+        snapshot.stages.push(ProductionStageInput { uid:"stage-2".into(),seq:2,sort:1,parent_uid:Some("stage-1".into()),title:"Дочерний этап".into(),executor:"Исполнитель".into(),addressees:"Предприятие".into(),start:"2026-09-02".into(),deadline:"2026-09-19".into(),status:StageStatus::Work,comment:String::new() });
+        snapshot.next_seq=3;
+        let created=db.save_signed_snapshot(&snapshot,owner.id,"739201","Создание",None).unwrap();
+        snapshot.database_id=Some(created.project_id);
+        snapshot.stages.iter_mut().for_each(|stage| stage.status=StageStatus::Done);
+        let one_stage=CompletionEvidenceInput { document_type:"Акт приёмки".into(),document_reference:"№16".into(),comment:"Подтверждён один этап".into(),stage_uids:vec!["stage-1".into()] };
+        let error=db.save_signed_snapshot(&snapshot,owner.id,"739201","Завершение",Some(one_stage)).unwrap_err();
+        assert!(error.contains("Состав подтверждаемых этапов"));
+        let branch=CompletionEvidenceInput { document_type:"Акт приёмки".into(),document_reference:"№17".into(),comment:"Подтверждена вся ветка".into(),stage_uids:vec!["stage-1".into(),"stage-2".into()] };
+        let saved=db.save_signed_snapshot(&snapshot,owner.id,"739201","Завершение ветки",Some(branch)).unwrap();
+        assert_eq!(saved.completion_event_ids.len(),2);
     }
 
     #[test]

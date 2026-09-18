@@ -91,6 +91,11 @@
         <div><label>Дедлайн / срок исполнения *</label><input id="stageDeadline" type="date" /></div>
         <div><label>Статус *</label><select id="stageStatus"><option value="new">Не начато</option><option value="work">В работе</option><option value="hold">Приостановлено</option><option value="done">Выполнено</option></select></div>
         <div><label>ID этапа — автоматически</label><div id="stageIdPreview" class="auto-value"></div><div class="help">ID сохраняется за этапом. Изменение родителя не меняет ID.</div></div>
+        <div id="completionScopeField" class="wide completion-scope">
+          <label>Объём завершения *</label>
+          <select id="completionScope"><option value="stage">Только выбранный этап</option><option value="branch">Вся родительская ветка</option></select>
+          <div id="completionScopeHelp" class="help"></div>
+        </div>
         <div class="wide"><label>Комментарий</label><textarea id="stageComment" rows="3" placeholder="Дополнительные сведения по этапу"></textarea></div>
       </div>
       <div class="required-hint">Все поля со знаком * обязательны. Количество прямых детей рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
@@ -160,6 +165,7 @@
       </div>
       <section id="completionEvidence" class="completion-evidence">
         <h3>Основание выполнения этапа</h3>
+        <div id="completionTargetSummary" class="completion-target-summary"></div>
         <div class="form-grid">
           <div><label>Официальный документ *</label><select id="evidenceType"><option value="">Выберите документ</option><option>Входящее письмо</option><option>Инвойс</option><option>Накладная</option><option>Акт приёмки</option><option>Иной официальный документ</option></select></div>
           <div><label>Номер, дата или реквизиты *</label><input id="evidenceReference" placeholder="Например: акт №15 от 18.09.2026" /></div>
