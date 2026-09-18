@@ -618,10 +618,11 @@ impl ProductionDb {
         };
         let project_ids = {
             let mut stmt = conn.prepare(project_query).map_err(|e| e.to_string())?;
-            stmt.query_map([&from], |row| row.get::<_, i64>(0))
+            let values = stmt.query_map([&from], |row| row.get::<_, i64>(0))
                 .map_err(|e| e.to_string())?
                 .collect::<std::result::Result<Vec<_>, _>>()
-                .map_err(|e| e.to_string())?
+                .map_err(|e| e.to_string())?;
+            values
         };
         if project_ids.is_empty() {
             return Err("Совпадающие записи справочника не найдены.".into());
