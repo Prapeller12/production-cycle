@@ -42,6 +42,13 @@ pub fn initialize_audit_schema(conn: &Connection) -> std::result::Result<(), Str
     if !users || !events {
         return Err("Не удалось создать таблицы пользователей и журнала подтверждений.".into());
     }
+    let mut stmt = conn.prepare("PRAGMA table_info(audit_event)").map_err(|e| e.to_string())?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1)).map_err(|e| e.to_string())?
+        .collect::<std::result::Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    drop(stmt);
+    if !columns.iter().any(|name| name == "changes_json") {
+        conn.execute_batch("ALTER TABLE audit_event ADD COLUMN changes_json TEXT NOT NULL DEFAULT '[]';").map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -95,6 +102,8 @@ pub struct SignedSaveResult {
     pub project_id: i64,
     pub change_event_id: String,
     pub completion_event_ids: Vec<String>,
+    pub backup: Option<crate::backup::BackupSummary>,
+    pub backup_warning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -111,7 +120,18 @@ pub struct AuditEventSummary {
     pub comment: String,
     pub evidence_type: Option<String>,
     pub evidence_reference: Option<String>,
+    pub changes: Vec<AuditChange>,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditChange {
+    pub entity: String,
+    pub entity_id: Option<String>,
+    pub field: String,
+    pub before: String,
+    pub after: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -151,6 +171,7 @@ struct AuditPayload<'a> {
     comment: &'a str,
     evidence_type: Option<&'a str>,
     evidence_reference: Option<&'a str>,
+    changes: &'a [AuditChange],
     snapshot_hash: &'a str,
     previous_hash: &'a str,
     created_at: &'a str,
@@ -170,6 +191,8 @@ struct StoredAuditPayload {
     comment: String,
     evidence_type: Option<String>,
     evidence_reference: Option<String>,
+    #[serde(default)]
+    changes: Vec<AuditChange>,
     snapshot_hash: String,
     previous_hash: String,
     created_at: String,
@@ -188,6 +211,97 @@ fn validate_comment(value: &str, label: &str) -> std::result::Result<String, Str
         return Err(format!("Поле «{label}» не должно превышать 2000 символов."));
     }
     Ok(value)
+}
+
+fn shown(value: &str) -> String {
+    let value = clean(value);
+    if value.is_empty() { "—".into() } else { value }
+}
+
+fn status_label(status: StageStatus) -> &'static str {
+    match status {
+        StageStatus::New => "Не начато",
+        StageStatus::Work => "В работе",
+        StageStatus::Hold => "Приостановлено",
+        StageStatus::Done => "Выполнено",
+    }
+}
+
+fn stage_number(snapshot: &ProductionSnapshot, uid: &str) -> String {
+    snapshot.stages.iter().find(|stage| stage.uid == uid)
+        .map(|stage| format!("{}-{:03}", clean(&snapshot.project.order_no), stage.seq))
+        .unwrap_or_else(|| uid.to_string())
+}
+
+fn parent_label(snapshot: &ProductionSnapshot, parent_uid: Option<&str>) -> String {
+    parent_uid.map(|uid| stage_number(snapshot, uid))
+        .unwrap_or_else(|| format!("Заказ № {}", clean(&snapshot.project.order_no)))
+}
+
+fn add_change(changes: &mut Vec<AuditChange>, entity: &str, entity_id: Option<String>, field: &str, before: String, after: String) {
+    if before != after {
+        changes.push(AuditChange { entity: entity.into(), entity_id, field: field.into(), before, after });
+    }
+}
+
+fn snapshot_changes(previous: Option<&ProductionSnapshot>, current: &ProductionSnapshot) -> Vec<AuditChange> {
+    let Some(previous) = previous else {
+        return vec![AuditChange {
+            entity: "Проект".into(),
+            entity_id: None,
+            field: "Создание".into(),
+            before: "—".into(),
+            after: shown(&current.project.name),
+        }];
+    };
+    let mut changes = Vec::new();
+    let before_project = &previous.project;
+    let after_project = &current.project;
+    for (field, before, after) in [
+        ("Название", before_project.name.as_str(), after_project.name.as_str()),
+        ("Номер заказа", before_project.order_no.as_str(), after_project.order_no.as_str()),
+        ("Инициатор / подписант", before_project.initiator.as_str(), after_project.initiator.as_str()),
+        ("Исполнитель / получатель", before_project.executor.as_str(), after_project.executor.as_str()),
+        ("Предприятие", before_project.enterprise.as_str(), after_project.enterprise.as_str()),
+        ("Начало", before_project.start.as_str(), after_project.start.as_str()),
+        ("Дедлайн", before_project.deadline.as_str(), after_project.deadline.as_str()),
+    ] {
+        add_change(&mut changes, "Проект", None, field, shown(before), shown(after));
+    }
+    let before_by_uid = previous.stages.iter().map(|stage| (stage.uid.as_str(), stage)).collect::<HashMap<_, _>>();
+    let after_by_uid = current.stages.iter().map(|stage| (stage.uid.as_str(), stage)).collect::<HashMap<_, _>>();
+    for stage in &current.stages {
+        let entity_id = Some(stage_number(current, &stage.uid));
+        let Some(before) = before_by_uid.get(stage.uid.as_str()).copied() else {
+            changes.push(AuditChange { entity: "Этап".into(), entity_id, field: "Создание".into(), before: "—".into(), after: shown(&stage.title) });
+            continue;
+        };
+        for (field, old, new) in [
+            ("Название", shown(&before.title), shown(&stage.title)),
+            ("Родитель", parent_label(previous, before.parent_uid.as_deref()), parent_label(current, stage.parent_uid.as_deref())),
+            ("Исполнитель", shown(&before.executor), shown(&stage.executor)),
+            ("Адресат", shown(&before.addressees), shown(&stage.addressees)),
+            ("Начало", shown(&before.start), shown(&stage.start)),
+            ("Дедлайн", shown(&before.deadline), shown(&stage.deadline)),
+            ("Статус", status_label(before.status).into(), status_label(stage.status).into()),
+            ("Комментарий", shown(&before.comment), shown(&stage.comment)),
+            ("Порядок", before.sort.to_string(), stage.sort.to_string()),
+        ] {
+            add_change(&mut changes, "Этап", entity_id.clone(), field, old, new);
+        }
+    }
+    for stage in &previous.stages {
+        if !after_by_uid.contains_key(stage.uid.as_str()) {
+            changes.push(AuditChange {
+                entity: "Этап".into(),
+                entity_id: Some(stage_number(previous, &stage.uid)),
+                field: "Удаление".into(),
+                before: shown(&stage.title),
+                after: "Удалён".into(),
+            });
+        }
+    }
+    changes
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -296,6 +410,10 @@ fn authenticate(
     Ok((user, signing_key))
 }
 
+pub(crate) fn authenticate_admin(conn: &Connection, user_id: i64, pin: &str) -> std::result::Result<(), String> {
+    authenticate(conn, user_id, pin, true).map(|_| ())
+}
+
 fn snapshot_hash(snapshot: &ProductionSnapshot) -> std::result::Result<String, String> {
     serde_json::to_vec(snapshot)
         .map(|bytes| sha256_hex(&bytes))
@@ -313,6 +431,7 @@ fn append_event(
     comment: &str,
     evidence_type: Option<&str>,
     evidence_reference: Option<&str>,
+    changes: &[AuditChange],
     snapshot_hash: &str,
 ) -> std::result::Result<String, String> {
     let previous_hash: String = tx
@@ -338,6 +457,7 @@ fn append_event(
         comment,
         evidence_type,
         evidence_reference,
+        changes,
         snapshot_hash,
         previous_hash: &previous_hash,
         created_at: &created_at,
@@ -347,9 +467,10 @@ fn append_event(
     digest_input.extend_from_slice(payload_json.as_bytes());
     let event_hash = sha256_hex(&digest_input);
     let signature = signing_key.sign(event_hash.as_bytes());
+    let changes_json = serde_json::to_string(changes).map_err(|e| e.to_string())?;
     tx.execute(
-        "INSERT INTO audit_event(event_id,project_id,stage_uid,stage_reg_number,event_type,actor_user_id,actor_name,key_fingerprint,comment,evidence_type,evidence_reference,snapshot_hash,previous_hash,event_hash,payload_json,signature,public_key,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
-        params![event_id,project_id,stage_uid,stage_reg_number,event_type,user.id,user.display_name,user.key_fingerprint,comment,evidence_type,evidence_reference,snapshot_hash,previous_hash,event_hash,payload_json,B64.encode(signature.to_bytes()),user.public_key,created_at],
+        "INSERT INTO audit_event(event_id,project_id,stage_uid,stage_reg_number,event_type,actor_user_id,actor_name,key_fingerprint,comment,evidence_type,evidence_reference,changes_json,snapshot_hash,previous_hash,event_hash,payload_json,signature,public_key,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+        params![event_id,project_id,stage_uid,stage_reg_number,event_type,user.id,user.display_name,user.key_fingerprint,comment,evidence_type,evidence_reference,changes_json,snapshot_hash,previous_hash,event_hash,payload_json,B64.encode(signature.to_bytes()),user.public_key,created_at],
     ).map_err(|e| e.to_string())?;
     Ok(event_id)
 }
@@ -436,19 +557,14 @@ impl ProductionDb {
         let comment = validate_comment(comment, "Комментарий к изменению")?;
         let mut conn = self.conn.lock().map_err(|_| "База данных занята".to_string())?;
         let (user, signing_key) = authenticate(&conn, user_id, pin, false)?;
-        let old_statuses: HashMap<String, String> = if let Some(project_id) = snapshot.database_id {
-            let mut stmt = conn
-                .prepare("SELECT uid,status FROM production_stage WHERE cycle_id=?1")
-                .map_err(|e| e.to_string())?;
-            let values = stmt
-                .query_map([project_id], |row| Ok((row.get(0)?, row.get(1)?)))
-                .map_err(|e| e.to_string())?
-                .collect::<std::result::Result<Vec<(String, String)>, _>>()
-                .map_err(|e| e.to_string())?;
-            values.into_iter().collect()
-        } else {
-            HashMap::new()
+        let previous = match snapshot.database_id {
+            Some(project_id) => load_snapshot_by_id_conn(&conn, project_id).map_err(|e| e.to_string())?,
+            None => None,
         };
+        let old_statuses = previous.as_ref().map(|value| value.stages.iter()
+            .map(|stage| (stage.uid.clone(), stage.status.as_str().to_string())).collect::<HashMap<_, _>>())
+            .unwrap_or_default();
+        let changes = snapshot_changes(previous.as_ref(), snapshot);
         let completed: Vec<_> = snapshot
             .stages
             .iter()
@@ -489,6 +605,7 @@ impl ProductionDb {
             &comment,
             None,
             None,
+            &changes,
             &hash,
         )?;
         let mut completion_event_ids = Vec::new();
@@ -506,12 +623,18 @@ impl ProductionDb {
                     &evidence_comment,
                     Some(&document_type),
                     Some(&document_reference),
+                    &[],
                     &hash,
                 )?);
             }
         }
         tx.commit().map_err(|e| e.to_string())?;
-        Ok(SignedSaveResult { project_id, change_event_id, completion_event_ids })
+        drop(conn);
+        let (backup, backup_warning) = match self.create_backup("auto-save") {
+            Ok(value) => (Some(value), None),
+            Err(error) => (None, Some(format!("Проект сохранён, но резервная копия не создана: {error}"))),
+        };
+        Ok(SignedSaveResult { project_id, change_event_id, completion_event_ids, backup, backup_warning })
     }
 
     pub fn list_audit_events(
@@ -519,7 +642,7 @@ impl ProductionDb {
         project_id: Option<i64>,
     ) -> std::result::Result<Vec<AuditEventSummary>, String> {
         let conn = self.conn.lock().map_err(|_| "База данных занята".to_string())?;
-        let sql = "SELECT seq,event_id,project_id,stage_uid,stage_reg_number,event_type,actor_name,key_fingerprint,comment,evidence_type,evidence_reference,created_at FROM audit_event WHERE (?1 IS NULL OR project_id=?1) ORDER BY seq DESC";
+        let sql = "SELECT seq,event_id,project_id,stage_uid,stage_reg_number,event_type,actor_name,key_fingerprint,comment,evidence_type,evidence_reference,changes_json,created_at FROM audit_event WHERE (?1 IS NULL OR project_id=?1) ORDER BY seq DESC";
         let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![project_id], |row| {
@@ -535,7 +658,8 @@ impl ProductionDb {
                     comment: row.get(8)?,
                     evidence_type: row.get(9)?,
                     evidence_reference: row.get(10)?,
-                    created_at: row.get(11)?,
+                    changes: serde_json::from_str(&row.get::<_, String>(11)?).unwrap_or_default(),
+                    created_at: row.get(12)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -551,13 +675,13 @@ impl ProductionDb {
     ) -> std::result::Result<AuditVerificationReport, String> {
         let conn = self.conn.lock().map_err(|_| "База данных занята".to_string())?;
         authenticate(&conn, admin_user_id, admin_pin, true)?;
-        let mut stmt = conn.prepare("SELECT seq,project_id,event_id,stage_uid,stage_reg_number,event_type,actor_user_id,actor_name,key_fingerprint,comment,evidence_type,evidence_reference,snapshot_hash,previous_hash,event_hash,payload_json,signature,public_key,created_at FROM audit_event WHERE (?1 IS NULL OR project_id=?1) ORDER BY project_id,seq").map_err(|e| e.to_string())?;
-        let events = stmt.query_map(params![project_id], |row| Ok((row.get::<_,i64>(0)?,row.get::<_,i64>(1)?,row.get::<_,String>(2)?,row.get::<_,Option<String>>(3)?,row.get::<_,Option<String>>(4)?,row.get::<_,String>(5)?,row.get::<_,i64>(6)?,row.get::<_,String>(7)?,row.get::<_,String>(8)?,row.get::<_,String>(9)?,row.get::<_,Option<String>>(10)?,row.get::<_,Option<String>>(11)?,row.get::<_,String>(12)?,row.get::<_,String>(13)?,row.get::<_,String>(14)?,row.get::<_,String>(15)?,row.get::<_,String>(16)?,row.get::<_,String>(17)?,row.get::<_,String>(18)?))).map_err(|e| e.to_string())?.collect::<std::result::Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT seq,project_id,event_id,stage_uid,stage_reg_number,event_type,actor_user_id,actor_name,key_fingerprint,comment,evidence_type,evidence_reference,changes_json,snapshot_hash,previous_hash,event_hash,payload_json,signature,public_key,created_at FROM audit_event WHERE (?1 IS NULL OR project_id=?1) ORDER BY project_id,seq").map_err(|e| e.to_string())?;
+        let events = stmt.query_map(params![project_id], |row| Ok((row.get::<_,i64>(0)?,row.get::<_,i64>(1)?,row.get::<_,String>(2)?,row.get::<_,Option<String>>(3)?,row.get::<_,Option<String>>(4)?,row.get::<_,String>(5)?,row.get::<_,i64>(6)?,row.get::<_,String>(7)?,row.get::<_,String>(8)?,row.get::<_,String>(9)?,row.get::<_,Option<String>>(10)?,row.get::<_,Option<String>>(11)?,row.get::<_,String>(12)?,row.get::<_,String>(13)?,row.get::<_,String>(14)?,row.get::<_,String>(15)?,row.get::<_,String>(16)?,row.get::<_,String>(17)?,row.get::<_,String>(18)?,row.get::<_,String>(19)?))).map_err(|e| e.to_string())?.collect::<std::result::Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
         let mut previous_by_project = HashMap::<i64, String>::new();
         let mut snapshot_by_project = HashMap::<i64, String>::new();
         let mut valid_events = 0usize;
         let mut errors = Vec::new();
-        for (seq,pid,event_id,stage_uid,stage_reg_number,event_type,actor_user_id,actor_name,key_fingerprint,comment,evidence_type,evidence_reference,snapshot_hash,previous_hash,event_hash,payload_json,signature,public_key,created_at) in &events {
+        for (seq,pid,event_id,stage_uid,stage_reg_number,event_type,actor_user_id,actor_name,key_fingerprint,comment,evidence_type,evidence_reference,changes_json,snapshot_hash,previous_hash,event_hash,payload_json,signature,public_key,created_at) in &events {
             let expected_previous = previous_by_project.get(pid).cloned().unwrap_or_default();
             let mut event_errors = Vec::new();
             if *previous_hash != expected_previous { event_errors.push("нарушена цепочка предыдущих хешей".to_string()); }
@@ -565,8 +689,9 @@ impl ProductionDb {
             digest_input.extend_from_slice(payload_json.as_bytes());
             if sha256_hex(&digest_input) != *event_hash { event_errors.push("контрольная сумма события не совпадает".to_string()); }
             if verify_signature(event_hash, signature, public_key).is_err() { event_errors.push("криптографическая подпись недействительна".to_string()); }
+            let stored_changes = serde_json::from_str::<Vec<AuditChange>>(changes_json).ok();
             match serde_json::from_str::<StoredAuditPayload>(payload_json) {
-                Ok(payload) if payload.event_id==event_id.as_str()&&payload.project_id==*pid&&payload.stage_uid.as_deref()==stage_uid.as_deref()&&payload.stage_reg_number.as_deref()==stage_reg_number.as_deref()&&payload.event_type==event_type.as_str()&&payload.actor_user_id==*actor_user_id&&payload.actor_name==actor_name.as_str()&&payload.key_fingerprint==key_fingerprint.as_str()&&payload.comment==comment.as_str()&&payload.evidence_type.as_deref()==evidence_type.as_deref()&&payload.evidence_reference.as_deref()==evidence_reference.as_deref()&&payload.snapshot_hash==snapshot_hash.as_str()&&payload.previous_hash==previous_hash.as_str()&&payload.created_at==created_at.as_str() => {},
+                Ok(payload) if payload.event_id==event_id.as_str()&&payload.project_id==*pid&&payload.stage_uid.as_deref()==stage_uid.as_deref()&&payload.stage_reg_number.as_deref()==stage_reg_number.as_deref()&&payload.event_type==event_type.as_str()&&payload.actor_user_id==*actor_user_id&&payload.actor_name==actor_name.as_str()&&payload.key_fingerprint==key_fingerprint.as_str()&&payload.comment==comment.as_str()&&payload.evidence_type.as_deref()==evidence_type.as_deref()&&payload.evidence_reference.as_deref()==evidence_reference.as_deref()&&stored_changes.as_ref()==Some(&payload.changes)&&payload.snapshot_hash==snapshot_hash.as_str()&&payload.previous_hash==previous_hash.as_str()&&payload.created_at==created_at.as_str() => {},
                 Ok(_) => event_errors.push("поля журнала не совпадают с подписанными данными".to_string()),
                 Err(_) => event_errors.push("подписанные данные события повреждены".to_string()),
             }
@@ -640,10 +765,11 @@ impl ProductionDb {
         let affected_stage_rows = if let Some(sql) = stage_sql { tx.execute(sql, params![to, from, now]).map_err(|e| e.to_string())? } else { 0 };
         let affected_project_rows = if let Some(sql) = project_sql { tx.execute(sql, params![to, from, now]).map_err(|e| e.to_string())? } else { 0 };
         let kind_name = match kind { DictionaryKind::Enterprise=>"предприятие/адресат",DictionaryKind::Executor=>"исполнитель",DictionaryKind::Initiator=>"инициатор",DictionaryKind::ProjectName=>"название проекта",DictionaryKind::StageTitle=>"название этапа" };
+        let dictionary_change = vec![AuditChange { entity:"Справочник".into(),entity_id:None,field:kind_name.into(),before:from.clone(),after:to.clone() }];
         for project_id in project_ids {
             let snapshot = load_snapshot_by_id_conn(&tx, project_id).map_err(|e| e.to_string())?.ok_or_else(|| "Изменённый проект не найден.".to_string())?;
             let hash = snapshot_hash(&snapshot)?;
-            append_event(&tx,&user,&signing_key,project_id,None,None,"dictionary_replaced",&format!("{comment} [{kind_name}: «{from}» → «{to}»]"),None,None,&hash)?;
+            append_event(&tx,&user,&signing_key,project_id,None,None,"dictionary_replaced",&format!("{comment} [{kind_name}: «{from}» → «{to}»]"),None,None,&dictionary_change,&hash)?;
         }
         tx.commit().map_err(|e| e.to_string())?;
         Ok(DictionaryReplaceResult { affected_project_rows, affected_stage_rows })
@@ -739,5 +865,24 @@ mod tests {
         { let conn=db.conn.lock().unwrap();conn.execute("UPDATE audit_event SET comment='Подмена' WHERE event_id=?1",[saved.change_event_id]).unwrap(); }
         let report=db.verify_audit_log(owner.id,"739201",Some(saved.project_id)).unwrap();
         assert_eq!(report.invalid_events,1);assert!(report.errors[0].contains("не совпадают"));
+    }
+
+    #[test]
+    fn signed_change_event_contains_automatic_before_after_values() {
+        let db=ProductionDb::memory().unwrap();let owner=admin(&db);
+        let mut snapshot=sample(StageStatus::Work);
+        let created=db.save_signed_snapshot(&snapshot,owner.id,"739201","Создание",None).unwrap();
+        snapshot.database_id=Some(created.project_id);
+        snapshot.project.deadline="2026-10-15".into();
+        snapshot.stages[0].executor="Новый исполнитель".into();
+        snapshot.stages[0].comment="Получено письмо".into();
+        db.save_signed_snapshot(&snapshot,owner.id,"739201","Уточнение графика",None).unwrap();
+        let events=db.list_audit_events(Some(created.project_id)).unwrap();
+        let changed=&events[0];
+        assert!(changed.changes.iter().any(|change|change.entity=="Проект"&&change.field=="Дедлайн"&&change.before=="2026-09-30"&&change.after=="2026-10-15"));
+        assert!(changed.changes.iter().any(|change|change.entity=="Этап"&&change.field=="Исполнитель"&&change.before=="Исполнитель"&&change.after=="Новый исполнитель"));
+        assert!(changed.changes.iter().any(|change|change.entity=="Этап"&&change.field=="Комментарий"&&change.before=="—"&&change.after=="Получено письмо"));
+        let report=db.verify_audit_log(owner.id,"739201",Some(created.project_id)).unwrap();
+        assert_eq!(report.invalid_events,0);
     }
 }

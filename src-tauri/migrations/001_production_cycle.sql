@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS audit_event (
     comment            TEXT NOT NULL,
     evidence_type      TEXT NULL,
     evidence_reference TEXT NULL,
+    changes_json       TEXT NOT NULL DEFAULT '[]',
     snapshot_hash      TEXT NOT NULL,
     previous_hash      TEXT NOT NULL,
     event_hash         TEXT NOT NULL UNIQUE,

@@ -79,6 +79,22 @@
     if(!native())return [];
     return invoke('production_list_projects');
   }
+  async function listDeadlineControl(){
+    if(!native())return [];
+    return (await invoke('production_list_deadline_control'))||[];
+  }
+  async function listBackups(){
+    if(!native())return [];
+    return (await invoke('backup_list'))||[];
+  }
+  async function createBackup(adminUserId,adminPin){
+    if(!native())throw Error('Резервные копии доступны только в Windows-приложении.');
+    return invoke('backup_create',{adminUserId:Number(adminUserId),adminPin});
+  }
+  async function restoreBackup(fileName,adminUserId,adminPin){
+    if(!native())throw Error('Восстановление доступно только в Windows-приложении.');
+    return invoke('backup_restore',{fileName,adminUserId:Number(adminUserId),adminPin});
+  }
   function localDictionary(kind,state){
     const values=[];
     if(kind==='projectName')values.push(state.project.name);
@@ -115,5 +131,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDictionary,replaceDictionaryValue,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,listDictionary,replaceDictionaryValue,exportPair,report});
 })();

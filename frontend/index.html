@@ -100,7 +100,12 @@
 </div>
 
 <div class="modal-backdrop" id="projectsModal">
-  <div class="modal modal-wide"><div class="modal-head"><h2>Сохранённые проекты</h2><span class="spacer"></span><button class="btn icon" data-close="projectsModal">×</button></div><div class="modal-body"><label class="projects-search">Номер заказа или название <input id="projectsSearch" placeholder="Например: 924" /></label><div class="project-list-help">Проекты с одинаковым номером заказа сохраняются раздельно. Выберите нужное название из списка.</div><div id="projectsList" class="projects-list"></div></div><div class="modal-foot"><button class="btn" data-close="projectsModal">Закрыть</button></div></div>
+  <div class="modal modal-wide"><div class="modal-head"><h2>Сохранённые проекты</h2><span class="spacer"></span><button class="btn icon" data-close="projectsModal">×</button></div><div class="modal-body">
+    <div class="projects-tabs"><button class="preview-tab active" data-projects-view="projects">Проекты</button><button class="preview-tab" data-projects-view="deadlines">Контроль сроков <span id="deadlineRiskCount"></span></button></div>
+    <label class="projects-search">Номер заказа, проект или этап <input id="projectsSearch" placeholder="Например: 924" /></label>
+    <section id="projectsListPane"><div class="project-list-help">Проекты с одинаковым номером заказа сохраняются раздельно. Выберите нужное название из списка.</div><div id="projectsList" class="projects-list"></div></section>
+    <section id="deadlineControlPane" class="hidden-pane"><div class="project-list-help">Показаны невыполненные этапы: просроченные, со сроком сегодня и в ближайшие 7 дней.</div><div id="deadlineControlList" class="deadline-control-list"></div></section>
+  </div><div class="modal-foot"><button class="btn" data-close="projectsModal">Закрыть</button></div></div>
 </div>
 
 <div class="modal-backdrop" id="dictionaryModal">
@@ -181,6 +186,7 @@
       </section>
       <section class="audit-section"><div class="audit-section-head"><h3>Журнал</h3><button class="btn small" id="refreshAuditBtn">Обновить</button></div><div id="auditEvents" class="audit-events"></div></section>
       <section class="audit-section"><h3>Проверка администратором</h3><div class="audit-verify-row"><select id="verifyAdmin"></select><input id="verifyAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="verifyAuditBtn">Проверить подписи и цепочку</button></div><div id="auditVerification"></div></section>
+      <section class="audit-section"><div class="audit-section-head"><h3>Резервные копии базы</h3><button class="btn small" id="refreshBackupsBtn">Обновить</button></div><div class="backup-note">Копия создаётся автоматически после каждого подписанного сохранения. Хранятся 10 последних копий.</div><div class="audit-verify-row"><select id="backupAdmin"></select><input id="backupAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="createBackupBtn">Создать копию сейчас</button></div><div id="backupResult"></div><div id="backupList" class="backup-list"></div></section>
     </div>
     <div class="modal-foot"><button class="btn" data-close="auditModal">Закрыть</button></div>
   </div>

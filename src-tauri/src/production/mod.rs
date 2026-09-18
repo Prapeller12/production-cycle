@@ -1,10 +1,11 @@
 use chrono::{Local, NaiveDate};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
-use std::{collections::{HashMap, HashSet}, path::Path, sync::Mutex};
+use std::{collections::{HashMap, HashSet}, path::{Path, PathBuf}, sync::Mutex};
 use tauri::State;
 
 const MIGRATION: &str = include_str!("../../migrations/001_production_cycle.sql");
+pub(crate) const SCHEMA_VERSION: i64 = 3;
 
 pub const OUT_HEADER: [&str; 9] = [
     "Количество связей, поясняющих суть документа",
@@ -43,7 +44,7 @@ type Result<T> = std::result::Result<T, ProductionError>;
 #[serde(rename_all = "snake_case")]
 pub enum StageStatus { New, Work, Hold, Done }
 impl StageStatus {
-    fn as_str(self) -> &'static str { match self { Self::New=>"new", Self::Work=>"work", Self::Hold=>"hold", Self::Done=>"done" } }
+    pub(crate) fn as_str(self) -> &'static str { match self { Self::New=>"new", Self::Work=>"work", Self::Hold=>"hold", Self::Done=>"done" } }
     fn parse(v:&str) -> Result<Self> { match v { "new"=>Ok(Self::New), "work"=>Ok(Self::Work), "hold"=>Ok(Self::Hold), "done"=>Ok(Self::Done), _=>Err(ProductionError::Validation(format!("Неизвестный статус: {v}"))) } }
 }
 
@@ -141,6 +142,22 @@ pub struct ProjectSummary {
     pub done_percent:u8,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeadlineControlItem {
+    pub project_id:i64,
+    pub order_no:String,
+    pub project_name:String,
+    pub stage_uid:String,
+    pub stage_reg_number:String,
+    pub stage_title:String,
+    pub executor:String,
+    pub deadline:String,
+    pub visual_status:StageVisualStatus,
+    pub days_remaining:i64,
+    pub risk_group:String,
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum DictionaryKind { Enterprise, Executor, Initiator, ProjectName, StageTitle }
@@ -153,7 +170,10 @@ pub struct DictionaryEntry { pub value:String, pub usage_count:usize, pub projec
 #[serde(rename_all = "camelCase")]
 pub struct DictionaryReplaceResult { pub affected_project_rows:usize, pub affected_stage_rows:usize }
 
-pub struct ProductionDb { pub(crate) conn: Mutex<Connection> }
+pub struct ProductionDb {
+    pub(crate) conn: Mutex<Connection>,
+    pub(crate) backup_dir: Option<PathBuf>,
+}
 fn has_unique_order_index(conn:&Connection)->Result<bool>{
     let mut stmt=conn.prepare("PRAGMA index_list('production_cycle')")?;let indexes=stmt.query_map([],|r|Ok((r.get::<_,String>(1)?,r.get::<_,i64>(2)?)))?.collect::<std::result::Result<Vec<_>,_>>()?;drop(stmt);
     for (name,unique) in indexes{if unique!=1{continue}let quoted=name.replace('"',"\"\"");let mut info=conn.prepare(&format!("PRAGMA index_info(\"{quoted}\")"))?;let columns=info.query_map([],|r|r.get::<_,String>(2))?.collect::<std::result::Result<Vec<_>,_>>()?;if columns==["order_no"]{return Ok(true)}}Ok(false)
@@ -163,7 +183,25 @@ fn allow_duplicate_orders(conn:&Connection)->Result<()>{
     let migration="PRAGMA foreign_keys=OFF;PRAGMA legacy_alter_table=ON;BEGIN IMMEDIATE;ALTER TABLE production_cycle RENAME TO production_cycle_unique_legacy;CREATE TABLE production_cycle(id INTEGER PRIMARY KEY AUTOINCREMENT,order_no TEXT NOT NULL,root_reg_number TEXT NOT NULL,name TEXT NOT NULL,initiator TEXT NOT NULL,executor TEXT NOT NULL,enterprise TEXT NOT NULL,start_date TEXT NOT NULL,deadline TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);INSERT INTO production_cycle(id,order_no,root_reg_number,name,initiator,executor,enterprise,start_date,deadline,created_at,updated_at) SELECT id,order_no,root_reg_number,name,initiator,executor,enterprise,start_date,deadline,created_at,updated_at FROM production_cycle_unique_legacy;DROP TABLE production_cycle_unique_legacy;COMMIT;PRAGMA legacy_alter_table=OFF;PRAGMA foreign_keys=ON;CREATE INDEX IF NOT EXISTS idx_production_cycle_order ON production_cycle(order_no);";
     if let Err(error)=conn.execute_batch(migration){let _=conn.execute_batch("ROLLBACK;PRAGMA legacy_alter_table=OFF;PRAGMA foreign_keys=ON;");return Err(error.into())}Ok(())
 }
-fn initialize_schema(conn:&Connection)->Result<()> {
+fn table_exists(conn:&Connection,name:&str)->Result<bool>{
+    Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",[name],|row|row.get(0))?)
+}
+fn table_has_column(conn:&Connection,table:&str,column:&str)->Result<bool>{
+    if !table_exists(conn,table)?{return Ok(false)}
+    let quoted=table.replace('"',"\"\"");
+    let mut stmt=conn.prepare(&format!("PRAGMA table_info(\"{quoted}\")"))?;
+    let columns=stmt.query_map([],|row|row.get::<_,String>(1))?.collect::<std::result::Result<Vec<_>,_>>()?;
+    Ok(columns.iter().any(|name|name==column))
+}
+fn schema_needs_migration(conn:&Connection)->Result<bool>{
+    if !table_exists(conn,"production_cycle")?{return Ok(false)}
+    let version:i64=conn.query_row("PRAGMA user_version",[],|row|row.get(0))?;
+    Ok(version<SCHEMA_VERSION
+        || !table_has_column(conn,"production_stage","comment")?
+        || !table_has_column(conn,"audit_event","changes_json")?
+        || has_unique_order_index(conn)?)
+}
+pub(crate) fn initialize_schema(conn:&Connection)->Result<()> {
     conn.execute_batch("PRAGMA foreign_keys=ON;")?;
     conn.execute_batch(MIGRATION)?;
     let mut stmt=conn.prepare("PRAGMA table_info(production_stage)")?;
@@ -172,19 +210,25 @@ fn initialize_schema(conn:&Connection)->Result<()> {
     if !columns.iter().any(|name|name=="comment") {conn.execute_batch("ALTER TABLE production_stage ADD COLUMN comment TEXT NOT NULL DEFAULT '';")?;}
     allow_duplicate_orders(conn)?;
     crate::audit::initialize_audit_schema(conn).map_err(ProductionError::Validation)?;
+    conn.pragma_update(None,"user_version",SCHEMA_VERSION)?;
     Ok(())
 }
 impl ProductionDb {
     pub fn open(path:&Path) -> Result<Self> {
+        let existed=path.is_file()&&std::fs::metadata(path).map(|value|value.len()>0).unwrap_or(false);
         let conn=Connection::open(path)?;
+        let backup_dir=path.parent().map(|parent|parent.join("backups"));
+        if existed&&schema_needs_migration(&conn)?{
+            if let Some(dir)=backup_dir.as_deref(){crate::backup::create_backup_from_connection(&conn,dir,"before-migration",true).map_err(ProductionError::Validation)?;}
+        }
         initialize_schema(&conn)?;
-        Ok(Self{conn:Mutex::new(conn)})
+        Ok(Self{conn:Mutex::new(conn),backup_dir})
     }
     #[cfg(test)]
     pub(crate) fn memory() -> Result<Self> {
         let conn=Connection::open_in_memory()?;
         initialize_schema(&conn)?;
-        Ok(Self{conn:Mutex::new(conn)})
+        Ok(Self{conn:Mutex::new(conn),backup_dir:None})
     }
     pub fn save_snapshot(&self, snapshot:&ProductionSnapshot) -> Result<i64> {
         let validation=validate_snapshot(snapshot)?;
@@ -215,6 +259,25 @@ impl ProductionDb {
             Ok(ProjectSummary{project_id:r.get(0)?,order_no:r.get(1)?,name:r.get(2)?,enterprise:r.get(3)?,deadline:r.get(4)?,updated_at:r.get(5)?,stage_count:stage_count as usize,done_count:done_count as usize,done_percent})
         })?;
         rows.collect::<std::result::Result<Vec<_>,_>>().map_err(ProductionError::from)
+    }
+    pub fn list_deadline_control(&self,today:NaiveDate)->Result<Vec<DeadlineControlItem>>{
+        let conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
+        let mut stmt=conn.prepare(
+            "SELECT c.id,c.order_no,c.name,s.uid,s.reg_number,s.title,s.executor,s.start_date,s.deadline,s.status \
+             FROM production_stage s JOIN production_cycle c ON c.id=s.cycle_id WHERE s.status<>'done'"
+        )?;
+        let rows=stmt.query_map([],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?,row.get::<_,String>(4)?,row.get::<_,String>(5)?,row.get::<_,String>(6)?,row.get::<_,String>(7)?,row.get::<_,String>(8)?,row.get::<_,String>(9)?)))?;
+        let mut items=Vec::new();
+        for row in rows{
+            let (project_id,order_no,project_name,stage_uid,stage_reg_number,stage_title,executor,start,deadline,status)=row?;
+            let deadline_date=parse_date(&deadline)?;let days=(deadline_date-today).num_days();let parsed_status=StageStatus::parse(&status)?;
+            let visual=visual_status(parsed_status,today,parse_date(&start)?,deadline_date);
+            let risk_group=if parsed_status==StageStatus::Hold&&days<0{"held_overdue"}else if days<0{"overdue"}else if days==0{"today"}else if days<=7{"next_7_days"}else{continue};
+            items.push(DeadlineControlItem{project_id,order_no,project_name,stage_uid,stage_reg_number,stage_title,executor,deadline,visual_status:visual,days_remaining:days,risk_group:risk_group.into()});
+        }
+        let rank=|value:&str|match value{"held_overdue"=>0,"overdue"=>1,"today"=>2,"next_7_days"=>3,_=>4};
+        items.sort_by(|a,b|(rank(&a.risk_group),a.deadline.as_str(),a.order_no.as_str(),a.stage_reg_number.as_str()).cmp(&(rank(&b.risk_group),b.deadline.as_str(),b.order_no.as_str(),b.stage_reg_number.as_str())));
+        Ok(items)
     }
     pub fn list_dictionary(&self,kind:DictionaryKind)->Result<Vec<DictionaryEntry>>{
         let conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
@@ -341,6 +404,8 @@ pub fn production_load_snapshot_by_id(project_id:i64,db:State<'_,ProductionDb>)-
 #[tauri::command]
 pub fn production_list_projects(db:State<'_,ProductionDb>)->std::result::Result<Vec<ProjectSummary>,String>{db.list_projects().map_err(|e|e.to_string())}
 #[tauri::command]
+pub fn production_list_deadline_control(db:State<'_,ProductionDb>)->std::result::Result<Vec<DeadlineControlItem>,String>{db.list_deadline_control(Local::now().date_naive()).map_err(|e|e.to_string())}
+#[tauri::command]
 pub fn production_list_dictionary(kind:DictionaryKind,db:State<'_,ProductionDb>)->std::result::Result<Vec<DictionaryEntry>,String>{db.list_dictionary(kind).map_err(|e|e.to_string())}
 #[tauri::command]
 pub fn production_replace_dictionary_value(kind:DictionaryKind,from_value:String,to_value:String,db:State<'_,ProductionDb>)->std::result::Result<DictionaryReplaceResult,String>{db.replace_dictionary_value(kind,&from_value,&to_value).map_err(|e|e.to_string())}
@@ -361,8 +426,9 @@ mod tests{
     #[test]fn sqlite_roundtrip(){let db=ProductionDb::memory().unwrap();let s=sample();db.save_snapshot(&s).unwrap();let loaded=db.load_snapshot("916").unwrap().unwrap();assert_eq!(loaded.project.enterprise,"Предприятие");assert_eq!(loaded.stages.len(),2);assert_eq!(loaded.stages[0].comment,"Контрольный комментарий");assert_eq!(loaded.stages[1].parent_uid.as_deref(),Some("a"));}
     #[test]fn existing_database_gets_comment_column(){let conn=Connection::open_in_memory().unwrap();conn.execute_batch("CREATE TABLE production_stage(id INTEGER PRIMARY KEY,cycle_id INTEGER,parent_stage_id INTEGER,sort_order INTEGER,comment_placeholder TEXT);").unwrap();initialize_schema(&conn).unwrap();let columns=conn.prepare("PRAGMA table_info(production_stage)").unwrap().query_map([],|row|row.get::<_,String>(1)).unwrap().collect::<std::result::Result<Vec<_>,_>>().unwrap();assert!(columns.iter().any(|name|name=="comment"));}
     #[test]fn project_list_has_progress_and_latest_metadata(){let db=ProductionDb::memory().unwrap();db.save_snapshot(&sample()).unwrap();let list=db.list_projects().unwrap();assert_eq!(list.len(),1);assert_eq!(list[0].order_no,"916");assert_eq!(list[0].stage_count,2);assert_eq!(list[0].done_count,1);assert_eq!(list[0].done_percent,50);}
+    #[test]fn deadline_control_combines_projects_and_excludes_completed_stages(){let db=ProductionDb::memory().unwrap();let mut first=sample();first.stages[0].deadline="2026-09-07".into();first.stages[0].status=StageStatus::Hold;first.stages[1].status=StageStatus::Done;db.save_snapshot(&first).unwrap();let mut second=sample();second.project.order_no="917".into();second.project.name="Второй проект".into();second.stages[0].uid="c".into();second.stages[0].seq=1;second.stages[0].deadline="2026-09-12".into();second.stages.truncate(1);db.save_snapshot(&second).unwrap();let items=db.list_deadline_control(NaiveDate::from_ymd_opt(2026,9,8).unwrap()).unwrap();assert_eq!(items.len(),2);assert_eq!(items[0].risk_group,"held_overdue");assert_eq!(items[0].order_no,"916");assert_eq!(items[0].days_remaining,-1);assert_eq!(items[1].risk_group,"next_7_days");assert_eq!(items[1].order_no,"917");assert_eq!(items[1].days_remaining,4);assert!(items.iter().all(|item|item.stage_uid!="b"));}
     #[test]fn duplicate_order_numbers_are_distinct_and_resave_by_database_id(){let db=ProductionDb::memory().unwrap();let mut first=sample();first.project.name="Проект А".into();let first_id=db.save_snapshot(&first).unwrap();let mut second=sample();second.project.name="Проект Б".into();let second_id=db.save_snapshot(&second).unwrap();assert_ne!(first_id,second_id);assert_eq!(db.list_projects().unwrap().len(),2);assert_eq!(db.load_snapshot_by_id(first_id).unwrap().unwrap().project.name,"Проект А");assert_eq!(db.load_snapshot_by_id(second_id).unwrap().unwrap().project.name,"Проект Б");first.database_id=Some(first_id);first.project.name="Проект А — изменён".into();assert_eq!(db.save_snapshot(&first).unwrap(),first_id);assert_eq!(db.list_projects().unwrap().len(),2);assert_eq!(db.load_snapshot_by_id(first_id).unwrap().unwrap().project.name,"Проект А — изменён");assert_eq!(db.load_snapshot_by_id(second_id).unwrap().unwrap().project.name,"Проект Б");}
-    #[test]fn legacy_unique_order_schema_migrates_without_losing_project(){let conn=Connection::open_in_memory().unwrap();conn.execute_batch("CREATE TABLE production_cycle(id INTEGER PRIMARY KEY AUTOINCREMENT,order_no TEXT NOT NULL UNIQUE,root_reg_number TEXT NOT NULL,name TEXT NOT NULL,initiator TEXT NOT NULL,executor TEXT NOT NULL,enterprise TEXT NOT NULL,start_date TEXT NOT NULL,deadline TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);INSERT INTO production_cycle(order_no,root_reg_number,name,initiator,executor,enterprise,start_date,deadline,created_at,updated_at) VALUES('916','916','Старый проект','И','И','П','2026-09-01','2026-09-30','2026-09-01','2026-09-01');").unwrap();initialize_schema(&conn).unwrap();assert!(!has_unique_order_index(&conn).unwrap());let db=ProductionDb{conn:Mutex::new(conn)};let new_id=db.save_snapshot(&sample()).unwrap();let list=db.list_projects().unwrap();assert_eq!(list.len(),2);assert!(list.iter().any(|p|p.name=="Старый проект"));assert_eq!(db.load_snapshot_by_id(new_id).unwrap().unwrap().project.name,"Изделие");}
+    #[test]fn legacy_unique_order_schema_migrates_without_losing_project(){let conn=Connection::open_in_memory().unwrap();conn.execute_batch("CREATE TABLE production_cycle(id INTEGER PRIMARY KEY AUTOINCREMENT,order_no TEXT NOT NULL UNIQUE,root_reg_number TEXT NOT NULL,name TEXT NOT NULL,initiator TEXT NOT NULL,executor TEXT NOT NULL,enterprise TEXT NOT NULL,start_date TEXT NOT NULL,deadline TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);INSERT INTO production_cycle(order_no,root_reg_number,name,initiator,executor,enterprise,start_date,deadline,created_at,updated_at) VALUES('916','916','Старый проект','И','И','П','2026-09-01','2026-09-30','2026-09-01','2026-09-01');").unwrap();initialize_schema(&conn).unwrap();assert!(!has_unique_order_index(&conn).unwrap());let db=ProductionDb{conn:Mutex::new(conn),backup_dir:None};let new_id=db.save_snapshot(&sample()).unwrap();let list=db.list_projects().unwrap();assert_eq!(list.len(),2);assert!(list.iter().any(|p|p.name=="Старый проект"));assert_eq!(db.load_snapshot_by_id(new_id).unwrap().unwrap().project.name,"Изделие");}
     #[test]fn dictionary_merges_case_variants_in_all_enterprise_fields(){let db=ProductionDb::memory().unwrap();let mut a=sample();a.stages.truncate(1);a.project.enterprise="ООО \"фрегат\"".into();a.stages[0].addressees="ООО \"фрегат\"".into();db.save_snapshot(&a).unwrap();let mut b=sample();b.stages.truncate(1);b.project.order_no="917".into();b.project.enterprise="ООО \"Фрегат\"".into();b.stages[0].addressees="ООО \"Фрегат\"".into();db.save_snapshot(&b).unwrap();let before=db.list_dictionary(DictionaryKind::Enterprise).unwrap();assert_eq!(before.len(),2);let result=db.replace_dictionary_value(DictionaryKind::Enterprise,"ООО \"фрегат\"","ООО \"Фрегат\"").unwrap();assert_eq!(result.affected_project_rows,1);assert_eq!(result.affected_stage_rows,1);let after=db.list_dictionary(DictionaryKind::Enterprise).unwrap();assert_eq!(after,vec![DictionaryEntry{value:"ООО \"Фрегат\"".into(),usage_count:4,project_count:2}]);assert_eq!(db.load_snapshot("916").unwrap().unwrap().project.enterprise,"ООО \"Фрегат\"");}
     #[test]fn status_is_derived(){let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let start=NaiveDate::from_ymd_opt(2026,9,1).unwrap();let deadline=NaiveDate::from_ymd_opt(2026,9,7).unwrap();assert_eq!(visual_status(StageStatus::Work,today,start,deadline),StageVisualStatus::Overdue);assert_eq!(visual_status(StageStatus::Done,today,start,deadline),StageVisualStatus::Done);}
     #[test]fn report_contains_management_risks(){let mut s=sample();s.project.deadline="2026-09-07".into();s.stages[0].status=StageStatus::Hold;s.stages[0].deadline="2026-09-07".into();let today=NaiveDate::from_ymd_opt(2026,9,8).unwrap();let r=build_report(&s,today).unwrap();assert_eq!(r.overdue_held,1);assert_eq!(r.project_days,-1);assert!(r.project_overdue);assert_eq!(r.status,StageVisualStatus::Work);}
