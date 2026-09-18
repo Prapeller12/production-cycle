@@ -106,7 +106,14 @@ pub struct TxtExportBundle { pub outgoing_file_name:String, pub outgoing_text:St
 pub struct ReportCounts { pub total:usize, pub done:usize, pub work:usize, pub overdue:usize, pub new_count:usize, pub hold:usize, pub done_percent:u8, pub due_within_7_days:usize }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ReportStageRow { pub stage:ProductionStageInput, pub depth:usize, pub visual_status:StageVisualStatus, pub days_remaining:i64 }
+pub struct ReportStageRow {
+    pub stage:ProductionStageInput,
+    pub depth:usize,
+    pub visual_status:StageVisualStatus,
+    pub days_remaining:i64,
+    #[serde(default)]
+    pub completion_confirmation:Option<crate::audit::CompletionConfirmation>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductionReport {
@@ -146,7 +153,7 @@ pub struct DictionaryEntry { pub value:String, pub usage_count:usize, pub projec
 #[serde(rename_all = "camelCase")]
 pub struct DictionaryReplaceResult { pub affected_project_rows:usize, pub affected_stage_rows:usize }
 
-pub struct ProductionDb { conn: Mutex<Connection> }
+pub struct ProductionDb { pub(crate) conn: Mutex<Connection> }
 fn has_unique_order_index(conn:&Connection)->Result<bool>{
     let mut stmt=conn.prepare("PRAGMA index_list('production_cycle')")?;let indexes=stmt.query_map([],|r|Ok((r.get::<_,String>(1)?,r.get::<_,i64>(2)?)))?.collect::<std::result::Result<Vec<_>,_>>()?;drop(stmt);
     for (name,unique) in indexes{if unique!=1{continue}let quoted=name.replace('"',"\"\"");let mut info=conn.prepare(&format!("PRAGMA index_info(\"{quoted}\")"))?;let columns=info.query_map([],|r|r.get::<_,String>(2))?.collect::<std::result::Result<Vec<_>,_>>()?;if columns==["order_no"]{return Ok(true)}}Ok(false)
@@ -164,6 +171,7 @@ fn initialize_schema(conn:&Connection)->Result<()> {
     drop(stmt);
     if !columns.iter().any(|name|name=="comment") {conn.execute_batch("ALTER TABLE production_stage ADD COLUMN comment TEXT NOT NULL DEFAULT '';")?;}
     allow_duplicate_orders(conn)?;
+    crate::audit::initialize_audit_schema(conn).map_err(ProductionError::Validation)?;
     Ok(())
 }
 impl ProductionDb {
@@ -173,7 +181,7 @@ impl ProductionDb {
         Ok(Self{conn:Mutex::new(conn)})
     }
     #[cfg(test)]
-    fn memory() -> Result<Self> {
+    pub(crate) fn memory() -> Result<Self> {
         let conn=Connection::open_in_memory()?;
         initialize_schema(&conn)?;
         Ok(Self{conn:Mutex::new(conn)})
@@ -297,7 +305,7 @@ pub fn build_txt_export(snapshot:&ProductionSnapshot)->Result<TxtExportBundle>{
 pub fn build_report(snapshot:&ProductionSnapshot,today:NaiveDate)->Result<ProductionReport>{
     let validation=validate_snapshot(snapshot)?;if !validation.valid{return Err(ProductionError::Validation("Проект не прошёл валидацию".into()));}
     let mut counts=ReportCounts{total:snapshot.stages.len(),done:0,work:0,overdue:0,new_count:0,hold:0,done_percent:0,due_within_7_days:0};let mut rows=Vec::new();let mut overdue_held=0;
-    for (s,depth) in preorder(&snapshot.stages){let deadline=parse_date(&s.deadline)?;let vs=visual_status(s.status,today,parse_date(&s.start)?,deadline);let days=(deadline-today).num_days();match vs{StageVisualStatus::Done=>counts.done+=1,StageVisualStatus::Work=>counts.work+=1,StageVisualStatus::Overdue=>counts.overdue+=1,StageVisualStatus::New=>counts.new_count+=1,StageVisualStatus::Hold=>counts.hold+=1}if vs!=StageVisualStatus::Done&&vs!=StageVisualStatus::Overdue&&days>=0&&days<=7{counts.due_within_7_days+=1;}if vs==StageVisualStatus::Hold&&days<0{overdue_held+=1;}rows.push(ReportStageRow{stage:s,depth,visual_status:vs,days_remaining:days});}
+    for (s,depth) in preorder(&snapshot.stages){let deadline=parse_date(&s.deadline)?;let vs=visual_status(s.status,today,parse_date(&s.start)?,deadline);let days=(deadline-today).num_days();match vs{StageVisualStatus::Done=>counts.done+=1,StageVisualStatus::Work=>counts.work+=1,StageVisualStatus::Overdue=>counts.overdue+=1,StageVisualStatus::New=>counts.new_count+=1,StageVisualStatus::Hold=>counts.hold+=1}if vs!=StageVisualStatus::Done&&vs!=StageVisualStatus::Overdue&&days>=0&&days<=7{counts.due_within_7_days+=1;}if vs==StageVisualStatus::Hold&&days<0{overdue_held+=1;}rows.push(ReportStageRow{stage:s,depth,visual_status:vs,days_remaining:days,completion_confirmation:None});}
     if counts.total>0{counts.done_percent=((counts.done*100+counts.total/2)/counts.total) as u8;}
     let project_start=parse_date(&snapshot.project.start)?;let project_deadline=parse_date(&snapshot.project.deadline)?;let project_days=(project_deadline-today).num_days();
     let status=if !snapshot.stages.is_empty()&&snapshot.stages.iter().all(|s|s.status==StageStatus::Done){StageVisualStatus::Done}else if counts.overdue>0{StageVisualStatus::Overdue}else if today<project_start{StageVisualStatus::New}else{StageVisualStatus::Work};
@@ -305,7 +313,7 @@ pub fn build_report(snapshot:&ProductionSnapshot,today:NaiveDate)->Result<Produc
     Ok(ProductionReport{project:snapshot.project.clone(),counts,stages:rows,status,project_days,project_overdue,overdue_held,generated_at:Local::now().to_rfc3339()})
 }
 
-fn save_snapshot_tx(tx:&Transaction<'_>,snapshot:&ProductionSnapshot)->Result<i64> {
+pub(crate) fn save_snapshot_tx(tx:&Transaction<'_>,snapshot:&ProductionSnapshot)->Result<i64> {
     let now=Local::now().to_rfc3339();
     let cycle_id=if let Some(id)=snapshot.database_id{let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM production_cycle WHERE id=?1)",[id],|r|r.get(0))?;if !exists{return Err(ProductionError::Validation("Сохраняемый проект больше не найден в базе данных.".into()))}tx.execute("UPDATE production_cycle SET order_no=?1,root_reg_number=?1,name=?2,initiator=?3,executor=?4,enterprise=?5,start_date=?6,deadline=?7,updated_at=?8 WHERE id=?9",params![clean(&snapshot.project.order_no),clean(&snapshot.project.name),clean(&snapshot.project.initiator),clean(&snapshot.project.executor),clean(&snapshot.project.enterprise),snapshot.project.start,snapshot.project.deadline,now,id])?;tx.execute("DELETE FROM production_stage WHERE cycle_id=?1",[id])?;id}else{tx.execute("INSERT INTO production_cycle(order_no,root_reg_number,name,initiator,executor,enterprise,start_date,deadline,created_at,updated_at) VALUES(?1,?1,?2,?3,?4,?5,?6,?7,?8,?8)",params![clean(&snapshot.project.order_no),clean(&snapshot.project.name),clean(&snapshot.project.initiator),clean(&snapshot.project.executor),clean(&snapshot.project.enterprise),snapshot.project.start,snapshot.project.deadline,now])?;tx.last_insert_rowid()};
     let mut id_by_uid=HashMap::<String,i64>::new();
@@ -316,7 +324,7 @@ fn save_snapshot_tx(tx:&Transaction<'_>,snapshot:&ProductionSnapshot)->Result<i6
 fn load_snapshot_conn(conn:&Connection,order_no:&str)->Result<Option<ProductionSnapshot>>{
     let id=conn.query_row("SELECT id FROM production_cycle WHERE order_no=?1 ORDER BY updated_at DESC,id DESC LIMIT 1",[clean(order_no)],|r|r.get(0)).optional()?;match id{Some(id)=>load_snapshot_by_id_conn(conn,id),None=>Ok(None)}
 }
-fn load_snapshot_by_id_conn(conn:&Connection,project_id:i64)->Result<Option<ProductionSnapshot>>{
+pub(crate) fn load_snapshot_by_id_conn(conn:&Connection,project_id:i64)->Result<Option<ProductionSnapshot>>{
     let project=conn.query_row("SELECT id,name,order_no,initiator,executor,enterprise,start_date,deadline FROM production_cycle WHERE id=?1",[project_id],|r|Ok((r.get::<_,i64>(0)?,ProductionProjectInput{name:r.get(1)?,order_no:r.get(2)?,initiator:r.get(3)?,executor:r.get(4)?,enterprise:r.get(5)?,start:r.get(6)?,deadline:r.get(7)?}))).optional()?;let Some((cycle_id,project))=project else{return Ok(None)};
     let mut stmt=conn.prepare("SELECT id,uid,seq,sort_order,parent_stage_id,title,executor,addressees,start_date,deadline,status,comment FROM production_stage WHERE cycle_id=?1 ORDER BY seq")?;let rows=stmt.query_map([cycle_id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?,r.get::<_,String>(10)?,r.get::<_,String>(11)?)))?;let mut raw=Vec::new();let mut uid_by_id=HashMap::new();for row in rows{let v=row?;uid_by_id.insert(v.0,v.1.clone());raw.push(v)}let mut stages=Vec::new();let mut max_seq=0;for (_id,uid,seq,sort,parent,title,executor,addressees,start,deadline,status,comment) in raw{max_seq=max_seq.max(seq);stages.push(ProductionStageInput{uid,seq,sort,parent_uid:parent.and_then(|p|uid_by_id.get(&p).cloned()),title,executor,addressees,start,deadline,status:StageStatus::parse(&status)?,comment});}
     Ok(Some(ProductionSnapshot{database_id:Some(cycle_id),project,stages,next_seq:max_seq+1}))
@@ -339,7 +347,11 @@ pub fn production_replace_dictionary_value(kind:DictionaryKind,from_value:String
 #[tauri::command]
 pub fn production_export_txt(snapshot:ProductionSnapshot)->std::result::Result<TxtExportBundle,String>{build_txt_export(&snapshot).map_err(|e|e.to_string())}
 #[tauri::command]
-pub fn production_get_management_report(snapshot:ProductionSnapshot)->std::result::Result<ProductionReport,String>{build_report(&snapshot,Local::now().date_naive()).map_err(|e|e.to_string())}
+pub fn production_get_management_report(snapshot:ProductionSnapshot,db:State<'_,ProductionDb>)->std::result::Result<ProductionReport,String>{
+    let mut report=build_report(&snapshot,Local::now().date_naive()).map_err(|e|e.to_string())?;
+    if let Some(project_id)=snapshot.database_id{crate::audit::attach_completion_confirmations(&db,project_id,&mut report)?;}
+    Ok(report)
+}
 
 #[cfg(test)]
 mod tests{

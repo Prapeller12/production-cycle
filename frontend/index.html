@@ -18,6 +18,7 @@
     <button class="btn" id="saveJsonBtn">Сохранить проект</button>
     <button class="btn" id="loadJsonBtn">Все проекты</button>
     <button class="btn" id="dictionaryBtn">Справочники</button>
+    <button class="btn" id="auditBtn">Подписи и журнал</button>
     <input type="file" id="jsonFile" class="hidden-file" accept="application/json,.json" />
     <button class="btn" id="importBtn">Импорт 2 TXT</button>
     <span class="spacer"></span>
@@ -139,6 +140,49 @@
       </div>
     </div>
     <div class="modal-foot"><button class="btn" data-close="exportModal">Закрыть</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="saveConfirmationModal">
+  <div class="modal">
+    <div class="modal-head"><h2>Подтверждение сохранения</h2><span class="spacer"></span><button class="btn icon" data-close="saveConfirmationModal">×</button></div>
+    <div class="modal-body">
+      <div class="audit-note">Сохранение создаёт подписанную запись в неизменяемом журнале. PIN не записывается в базу данных.</div>
+      <div class="form-grid">
+        <div><label>Подтверждающий *</label><select id="saveSigner"></select></div>
+        <div><label>PIN подписи *</label><input id="saveSignerPin" type="password" autocomplete="off" inputmode="numeric" /></div>
+        <div class="wide"><label>Комментарий к изменению *</label><textarea id="saveChangeComment" rows="3" placeholder="Что изменено и по какой причине"></textarea></div>
+      </div>
+      <section id="completionEvidence" class="completion-evidence">
+        <h3>Основание выполнения этапа</h3>
+        <div class="form-grid">
+          <div><label>Официальный документ *</label><select id="evidenceType"><option value="">Выберите документ</option><option>Входящее письмо</option><option>Инвойс</option><option>Накладная</option><option>Акт приёмки</option><option>Иной официальный документ</option></select></div>
+          <div><label>Номер, дата или реквизиты *</label><input id="evidenceReference" placeholder="Например: акт №15 от 18.09.2026" /></div>
+          <div class="wide"><label>Комментарий к подтверждению *</label><textarea id="evidenceComment" rows="3" placeholder="Что подтверждает документ"></textarea></div>
+        </div>
+      </section>
+      <div id="saveConfirmationError"></div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close="saveConfirmationModal">Отмена</button><button class="btn primary" id="confirmSignedSaveBtn">Подписать и сохранить</button></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="auditModal">
+  <div class="modal modal-wide">
+    <div class="modal-head"><h2>Подписи и журнал изменений</h2><span class="spacer"></span><button class="btn icon" data-close="auditModal">×</button></div>
+    <div class="modal-body audit-layout">
+      <section class="audit-section"><h3>Профили подписи</h3><div id="auditUsers"></div>
+        <details id="createUserDetails"><summary>Добавить профиль</summary><div class="form-grid audit-user-form">
+          <div><label>ФИО *</label><input id="newAuditUserName" /></div><div><label>PIN (не менее 6 символов) *</label><input id="newAuditUserPin" type="password" autocomplete="new-password" /></div>
+          <div><label>Роль</label><select id="newAuditUserRole"><option value="signer">Подтверждающий</option><option value="admin">Администратор</option></select></div>
+          <div><label>Текущий администратор</label><select id="authorizingAdmin"></select></div><div><label>PIN администратора</label><input id="authorizingAdminPin" type="password" autocomplete="off" /></div>
+          <div class="audit-create-action"><button class="btn primary" id="createAuditUserBtn">Создать профиль и ключ</button></div>
+        </div></details><div id="auditUserError"></div>
+      </section>
+      <section class="audit-section"><div class="audit-section-head"><h3>Журнал</h3><button class="btn small" id="refreshAuditBtn">Обновить</button></div><div id="auditEvents" class="audit-events"></div></section>
+      <section class="audit-section"><h3>Проверка администратором</h3><div class="audit-verify-row"><select id="verifyAdmin"></select><input id="verifyAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="verifyAuditBtn">Проверить подписи и цепочку</button></div><div id="auditVerification"></div></section>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close="auditModal">Закрыть</button></div>
   </div>
 </div>
 

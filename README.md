@@ -1,5 +1,7 @@
 # Производственный цикл — первый макет
 
+Подписанный журнал изменений, подтверждения выполненных этапов и административная проверка описаны в [docs/signed-audit-log.md](docs/signed-audit-log.md).
+
 Основание: предоставленный index.html v8 и [архитектура v0.2](docs/architecture-v0.2.md).
 Статус: первая self-test версия native host с подключённым Rust/SQLite backend.
 

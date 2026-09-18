@@ -47,6 +47,26 @@
     if(!native())return false;
     return invoke('production_save_snapshot',{snapshot:toSnapshot(state)});
   }
+  async function listAuditUsers(){
+    if(!native())return [];
+    return invoke('audit_list_users');
+  }
+  async function createAuditUser(input){
+    if(!native())throw Error('Профили подписи доступны только в Windows-приложении.');
+    return invoke('audit_create_user',{input});
+  }
+  async function saveSigned(state,confirmation){
+    if(!native())throw Error('Подписанное сохранение доступно только в Windows-приложении.');
+    return invoke('audit_save_snapshot',{snapshot:toSnapshot(state),userId:Number(confirmation.userId),pin:confirmation.pin,comment:confirmation.comment,evidence:confirmation.evidence||null});
+  }
+  async function listAuditEvents(projectId=null){
+    if(!native())return [];
+    return invoke('audit_list_events',{projectId:Number.isSafeInteger(projectId)?projectId:null});
+  }
+  async function verifyAuditLog(adminUserId,adminPin,projectId=null){
+    if(!native())throw Error('Проверка журнала доступна только в Windows-приложении.');
+    return invoke('audit_verify_log',{adminUserId:Number(adminUserId),adminPin,projectId:Number.isSafeInteger(projectId)?projectId:null});
+  }
   async function load(orderNo){
     if(!native())return null;
     return fromSnapshot(await invoke('production_load_snapshot',{orderNo:String(orderNo||'').trim()}));
@@ -70,9 +90,10 @@
     return [...counts].sort((a,b)=>a[0].localeCompare(b[0],'ru')).map(([value,usageCount])=>({value,usageCount,projectCount:1}));
   }
   async function listDictionary(kind,state){return native()?invoke('production_list_dictionary',{kind}):localDictionary(kind,state)}
-  async function replaceDictionaryValue(kind,fromValue,toValue){
+  async function replaceDictionaryValue(kind,fromValue,toValue,confirmation=null){
     if(!native())return {affectedProjectRows:0,affectedStageRows:0};
-    return invoke('production_replace_dictionary_value',{kind,fromValue,toValue});
+    if(!confirmation)throw Error('Для изменения справочника требуется подпись.');
+    return invoke('audit_replace_dictionary_value',{kind,fromValue,toValue,userId:Number(confirmation.userId),pin:confirmation.pin,comment:confirmation.comment});
   }
   async function exportPair(state){
     if(!native())return X.exportPair(state);
@@ -83,7 +104,7 @@
     if(!native())return D.report(state);
     const value=await invoke('production_get_management_report',{snapshot:toSnapshot(state)});
     return {
-      rows:value.stages.map(row=>({stage:row.stage,depth:row.depth,visualStatus:row.visualStatus,daysRemaining:row.daysRemaining})),
+      rows:value.stages.map(row=>({stage:row.stage,depth:row.depth,visualStatus:row.visualStatus,daysRemaining:row.daysRemaining,completionConfirmation:row.completionConfirmation||null})),
       counts:{new:value.counts.newCount,work:value.counts.work,hold:value.counts.hold,done:value.counts.done,overdue:value.counts.overdue},
       total:value.counts.total,
       donePercent:value.counts.donePercent,
@@ -94,5 +115,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,load,loadById,listProjects,listDictionary,replaceDictionaryValue,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDictionary,replaceDictionaryValue,exportPair,report});
 })();
