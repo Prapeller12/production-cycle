@@ -20,11 +20,16 @@ pub const SCRIPT:&str=r#"
   const p={project:{orderNo:'SMOKE-1',name:'Проверка запуска',initiator:'Тест',executor:'Тест',addressees:'Тест',start:'2026-09-01',deadline:'2026-09-30'},stages:[{uid:'smoke-stage',seq:1,sort:1,parentUid:null,title:'Этап проверки',executor:'Тест',addressees:'Тест',start:'2026-09-01',deadline:'2026-09-15',status:'done',comment:'Проверка комментария'}],nextSeq:2,collapsed:{}};
   const validation=await Production.backend.validate(p);
   if(validation.errors.length)throw Error('Backend validation failed');
-  await Production.backend.save(p);
+  const users=await Production.backend.listAuditUsers();
+  const signer=users[0]||await Production.backend.createAuditUser({displayName:'Администратор проверки',pin:'739201',isAdmin:true,adminUserId:null,adminPin:null});
+  const savedProject=await Production.backend.saveSigned(p,{userId:signer.id,pin:'739201',comment:'Автоматическая проверка подписанного сохранения',evidence:{documentType:'Акт приёмки',documentReference:'SMOKE-ACT-1 от 01.09.2026',comment:'Проверка обязательного подтверждения выполнения',stageUids:['smoke-stage']}});
+  p.databaseId=savedProject.projectId;
   const loaded=await Production.backend.load('SMOKE-1');
   if(!loaded||loaded.stages.length!==1||loaded.project.addressees!=='Тест'||loaded.stages[0].comment!=='Проверка комментария')throw Error('SQLite roundtrip failed');
   const report=await Production.backend.report(p);
-  if(report.total!==1||report.donePercent!==100)throw Error('Backend report failed');
+  if(report.total!==1||report.donePercent!==100||!report.rows[0].completionConfirmation?.signatureValid)throw Error('Backend signed report failed');
+  const verification=await Production.backend.verifyAuditLog(signer.id,'739201',p.databaseId);
+  if(verification.invalidEvents!==0||verification.checkedEvents<2)throw Error('Audit verification failed');
   const json=Production.projectFile.stringify(p);
   const saved=await invoke('save_file',{name:'Проверка.json',text:json});
   if(!saved.endsWith('Проверка.json'))throw Error('Native save failed');

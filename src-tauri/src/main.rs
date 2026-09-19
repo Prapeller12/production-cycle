@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod commands;
+mod audit;
+mod backup;
 mod smoke;
 mod infrastructure;
 mod production;
@@ -26,9 +28,12 @@ fn main(){
         })
         .invoke_handler(tauri::generate_handler![
             commands::save_file,commands::print_report,smoke::finish_smoke,
-            production::production_validate,production::production_save_snapshot,production::production_load_snapshot,production::production_load_snapshot_by_id,
-            production::production_list_projects,production::production_list_dictionary,production::production_replace_dictionary_value,
-            production::production_export_txt,production::production_get_management_report
+            production::production_validate,production::production_load_snapshot,production::production_load_snapshot_by_id,
+            production::production_list_projects,production::production_list_deadline_control,production::production_list_dictionary,
+            production::production_export_txt,production::production_get_management_report,
+            audit::audit_list_users,audit::audit_create_user,audit::audit_save_snapshot,
+            audit::audit_list_events,audit::audit_verify_log,audit::audit_replace_dictionary_value,
+            backup::backup_list,backup::backup_create,backup::backup_restore
         ])
         .setup(move |app|{
             let paths=app.state::<Paths>();
