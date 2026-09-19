@@ -5,7 +5,7 @@ use std::{collections::{HashMap, HashSet}, path::{Path, PathBuf}, sync::Mutex};
 use tauri::State;
 
 const MIGRATION: &str = include_str!("../../migrations/001_production_cycle.sql");
-pub(crate) const SCHEMA_VERSION: i64 = 3;
+pub(crate) const SCHEMA_VERSION: i64 = 4;
 
 pub const OUT_HEADER: [&str; 9] = [
     "Количество связей, поясняющих суть документа",

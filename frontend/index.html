@@ -7,18 +7,16 @@
 <link rel="stylesheet" href="styles/app.css">
 </head>
 <body>
-<header class="appbar"><strong>Производственный цикл</strong><span class="project-context" id="projectContext">Новый проект</span><span class="spacer"></span><span class="save-state" id="saveState">Новый проект</span><span id="taskCounter">Этапов: 0</span></header>
+<header class="appbar"><strong>Производственный цикл</strong><span class="project-context" id="projectContext">Новый проект</span><span class="spacer"></span><button class="top-action" id="onboardingBtn">Как работать</button><button class="top-action" id="auditBtn">Администратор</button><span class="save-state" id="saveState">Новый проект</span><span id="taskCounter">Этапов: 0</span></header>
 <nav class="tabs" aria-label="Разделы программы" role="tablist"><button class="tab active" id="registryTab" role="tab" aria-selected="true" aria-controls="registryView" data-view="registry">Реестр цикла</button><button class="tab" id="deadlinesTab" role="tab" aria-selected="false" aria-controls="deadlinesView" data-view="deadlines">Контроль сроков <span id="deadlineRiskCount"></span></button><button class="tab" id="ganttTab" role="tab" aria-selected="false" aria-controls="ganttView" data-view="gantt">Диаграмма Ганта</button></nav>
 <div id="messageArea" class="message-area" role="status" aria-live="polite" aria-atomic="true"></div>
 <main class="shell">
  <div id="registryView" class="workspace-view active" role="tabpanel" aria-labelledby="registryTab">
   <div class="toolbar">
     <h1 id="workspaceTitle">Новый проект</h1>
-    <div class="toolbar-group" aria-label="Проект"><span class="toolbar-label">Проект</span><button class="btn" id="newBtn">Новый</button><button class="btn" id="loadJsonBtn">Сохранённые проекты</button><button class="btn primary" id="saveJsonBtn">Подписать и сохранить</button></div>
+    <div class="toolbar-group" aria-label="Основные действия"><button class="btn" id="newBtn">Новый проект</button><button class="btn" id="loadJsonBtn">Сохранённые проекты</button><button class="btn primary" id="saveJsonBtn">Подписать и сохранить</button></div>
     <input type="file" id="jsonFile" class="hidden-file" accept="application/json,.json" />
-    <div class="toolbar-group" aria-label="Обмен данными"><span class="toolbar-label">Данные</span><button class="btn" id="importBtn">Импорт проекта</button><button class="btn" id="exportBtn">Экспорт для Реестра</button></div>
-    <div class="toolbar-group" aria-label="Отчёты"><span class="toolbar-label">Отчёты</span><button class="btn" id="pdfReportBtn">Печать отчёта / PDF</button><button class="btn" id="validateBtn">Проверить заполнение</button></div>
-    <div class="toolbar-group" aria-label="Администрирование"><span class="toolbar-label">Сервис</span><button class="btn" id="dictionaryBtn">Справочники</button><button class="btn" id="auditBtn">Администрирование</button><button class="btn secondary" id="demoBtn">Учебный пример</button></div>
+    <details class="more-actions"><summary class="btn">Ещё</summary><div class="more-actions-menu"><button class="btn" id="importBtn">Импорт проекта</button><button class="btn" id="exportBtn">Экспорт для Реестра</button><button class="btn" id="pdfReportBtn">Печать отчёта / PDF</button><button class="btn" id="validateBtn">Проверить заполнение</button><button class="btn secondary" id="demoBtn">Учебный пример</button><button class="btn danger-outline" id="completeProjectBtn">Завершить весь проект…</button></div></details>
   </div>
 
   <section class="project-card">
@@ -34,8 +32,8 @@
   </section>
 
   <section class="structure-card" id="structureCard">
-    <div class="structure-head"><div><strong>Структура подчинённости</strong><span>Основной заказ → этап → дочерний этап</span></div><div class="structure-actions"><button class="btn small" id="printStructureBtn">Печать структуры</button><button class="btn small structure-toggle" id="toggleStructureBtn" aria-expanded="true">Свернуть</button></div></div>
-    <div id="structureContent" class="structure-content"><div id="structureTree" class="structure-tree"></div></div>
+    <div class="structure-head"><div><strong>Структура подчинённости</strong><span>Основной заказ → этап → дочерний этап</span></div><div class="structure-actions"><button class="btn small" id="printStructureBtn">Печать структуры</button><button class="btn small structure-toggle" id="toggleStructureBtn" aria-expanded="false">Развернуть</button></div></div>
+    <div id="structureContent" class="structure-content collapsed"><div id="structureTree" class="structure-tree"></div></div>
   </section>
 
   <section class="panel">
@@ -69,6 +67,26 @@
  <div id="ganttView" class="workspace-view" role="tabpanel" aria-labelledby="ganttTab">
    <section class="panel gantt-panel"><div class="panel-head"><span class="title">Диаграмма Ганта</span><span class="muted-text" id="ganttPeriod"></span><span class="spacer"></span><label class="filter-control" for="ganttCompletionFilter">Показать <select id="ganttCompletionFilter"><option value="active">Только невыполненные</option><option value="all">Все этапы</option><option value="done">Только выполненные</option></select></label><label class="filter-control" for="ganttScale">Масштаб <select id="ganttScale"><option value="day">По дням</option><option value="week" selected>По неделям</option><option value="month">По месяцам</option></select></label><button class="btn small" id="printGanttA4Btn">Печать А4</button><button class="btn small" id="printGanttA3Btn">Печать А3</button></div><div class="gantt-context"><span id="ganttFilterSummary"></span><span class="gantt-legend"><i class="work"></i>В работе <i class="done"></i>Выполнено <i class="overdue"></i>Просрочено <i class="new"></i>Не начато <i class="hold"></i>Приостановлено</span></div><div id="ganttChart" class="gantt-chart"></div></section>
  </div>
+ <div id="adminView" class="workspace-view" aria-hidden="true">
+   <section class="panel admin-page" id="auditModal">
+    <div class="admin-page-head"><div><h1>Интерфейс администратора</h1><p>Пользователи, справочники, подписанный журнал и резервные копии отделены от рабочего реестра.</p></div><span class="spacer"></span><span id="adminSessionLabel" class="admin-session"></span><button class="btn" id="closeAdminBtn">Вернуться к проекту</button></div>
+    <div class="admin-tabs" role="tablist" aria-label="Разделы администрирования"><button class="preview-tab active" id="auditJournalTab" role="tab" aria-selected="true" aria-controls="auditJournalPanel" data-audit-view="journal">Журнал изменений</button><button class="preview-tab" id="auditProfilesTab" role="tab" aria-selected="false" aria-controls="auditProfilesPanel" data-audit-view="profiles">Пользователи и ключи</button><button class="preview-tab" id="dictionaryTab" role="tab" aria-selected="false" aria-controls="dictionaryPanel" data-audit-view="dictionary">Справочники</button><button class="preview-tab" id="auditVerificationTab" role="tab" aria-selected="false" aria-controls="auditVerificationPanel" data-audit-view="verification">Проверка целостности</button><button class="preview-tab" id="auditBackupsTab" role="tab" aria-selected="false" aria-controls="auditBackupsPanel" data-audit-view="backups">Резервные копии</button></div>
+    <div class="audit-layout">
+      <section class="audit-section hidden-pane" id="auditProfilesPanel" role="tabpanel" aria-labelledby="auditProfilesTab" data-audit-panel="profiles"><h2>Профили подписи</h2><div class="role-explainer"><b>Руководитель проекта</b> — обычное заполнение и сохранение. <b>Проверяющий</b> — подтверждение выполненных этапов и изменение справочников. <b>Администратор</b> — единственный владелец системы и полный контроль.</div><div id="auditUsers"></div>
+        <details id="createUserDetails"><summary>Добавить профиль</summary><div class="form-grid audit-user-form">
+          <div><label>ФИО *</label><input id="newAuditUserName" /></div><div><label>PIN (не менее 6 символов) *</label><input id="newAuditUserPin" type="password" autocomplete="new-password" /></div>
+          <div><label>Роль</label><select id="newAuditUserRole"><option value="project_manager">Руководитель проекта</option><option value="reviewer">Проверяющий</option></select></div>
+          <div><label>Текущий администратор</label><select id="authorizingAdmin"></select></div><div><label>PIN администратора</label><input id="authorizingAdminPin" type="password" autocomplete="off" /></div>
+          <div class="audit-create-action"><button class="btn primary" id="createAuditUserBtn">Создать профиль и ключ</button></div>
+        </div></details><div id="auditUserError"></div>
+      </section>
+      <section class="audit-section" id="auditJournalPanel" role="tabpanel" aria-labelledby="auditJournalTab" data-audit-panel="journal"><div class="audit-section-head"><div><h2>Журнал изменений</h2><div id="auditScope" class="audit-scope"></div></div><button class="btn small" id="refreshAuditBtn">Обновить</button></div><div id="auditEvents" class="audit-events"></div></section>
+      <section class="audit-section hidden-pane" id="dictionaryPanel" role="tabpanel" aria-labelledby="dictionaryTab" data-audit-panel="dictionary"><h2>Справочники наименований</h2><div class="dictionary-note">Замена изменяет точное совпадение во всех сохранённых проектах. Операция доступна только по ключу проверяющего или администратора и всегда попадает в подписанный журнал.</div><div class="dictionary-toolbar"><label>Категория <select id="dictionaryKind"><option value="enterprise">Предприятия / адресаты</option><option value="executor">Исполнители / получатели</option><option value="initiator">Инициаторы / подписанты</option><option value="projectName">Названия проектов</option><option value="stageTitle">Названия этапов</option></select></label><label>Поиск <input id="dictionarySearch" placeholder="Начните вводить наименование" /></label></div><div class="dictionary-head"><span>Наименование</span><span>Использований</span><span>Проектов</span><span></span></div><div id="dictionaryList" class="dictionary-list"></div></section>
+      <section class="audit-section hidden-pane" id="auditVerificationPanel" role="tabpanel" aria-labelledby="auditVerificationTab" data-audit-panel="verification"><h2>Проверка целостности журнала</h2><div id="verifyScope" class="audit-scope"></div><div class="audit-verify-row"><label class="sr-only" for="verifyAdmin">Администратор</label><select id="verifyAdmin"></select><label class="sr-only" for="verifyAdminPin">PIN администратора</label><input id="verifyAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="verifyAuditBtn">Проверить целостность журнала</button></div><div id="auditVerification"></div></section>
+      <section class="audit-section hidden-pane" id="auditBackupsPanel" role="tabpanel" aria-labelledby="auditBackupsTab" data-audit-panel="backups"><div class="audit-section-head"><h2>Резервные копии всей базы</h2><button class="btn small" id="refreshBackupsBtn">Обновить</button></div><div class="backup-note">Копия создаётся автоматически после каждого подписанного сохранения. Хранятся 10 последних копий.</div><div class="audit-verify-row"><label class="sr-only" for="backupAdmin">Администратор</label><select id="backupAdmin"></select><label class="sr-only" for="backupAdminPin">PIN администратора</label><input id="backupAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="createBackupBtn">Создать копию сейчас</button></div><div id="backupResult"></div><div id="backupList" class="backup-list"></div></section>
+    </div>
+   </section>
+ </div>
 </main>
 
 <section id="pdfReport" class="pdf-report" aria-hidden="true"></section>
@@ -98,7 +116,7 @@
       </div>
       <div class="required-hint">Все поля со знаком * обязательны. Количество прямых детей рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
     </div>
-    <div class="modal-foot modal-foot-explained"><span>Изменения будут записаны в базу после команды «Подписать и сохранить».</span><button class="btn" data-close="stageModal">Отмена</button><button class="btn primary" id="saveStageBtn">Применить изменения</button></div>
+    <div class="modal-foot modal-foot-explained"><span>Изменения будут записаны в базу после команды «Подписать и сохранить».</span><button class="btn" id="createChildStageBtn">Создать дочерний этап</button><button class="btn danger-outline" id="deleteStageBtn">Удалить этап</button><button class="btn" data-close="stageModal">Отмена</button><button class="btn primary" id="saveStageBtn">Применить изменения</button></div>
   </div>
 </div>
 
@@ -107,18 +125,6 @@
     <label class="projects-search" for="projectsSearch">Номер заказа, название или предприятие <input id="projectsSearch" placeholder="Например: 924" /></label>
     <section id="projectsListPane"><div class="project-list-help">Проекты с одинаковым номером заказа сохраняются раздельно. Выберите нужное название из списка.</div><div id="projectsList" class="projects-list"></div></section>
   </div><div class="modal-foot"><button class="btn" data-close="projectsModal">Закрыть</button></div></div>
-</div>
-
-<div class="modal-backdrop" id="dictionaryModal">
-  <div class="modal modal-wide"><div class="modal-head"><h2>Справочники наименований</h2><span class="spacer"></span><button class="btn icon" data-close="dictionaryModal">×</button></div>
-    <div class="modal-body">
-      <div class="dictionary-note">Справочник формируется из сохранённых проектов. Замена изменяет точное совпадение во всех проектах выбранной категории и объединяет одинаковые варианты написания.</div>
-      <div class="dictionary-toolbar"><label>Категория <select id="dictionaryKind"><option value="enterprise">Предприятия / адресаты</option><option value="executor">Исполнители / получатели</option><option value="initiator">Инициаторы / подписанты</option><option value="projectName">Названия проектов</option><option value="stageTitle">Названия этапов</option></select></label><label>Поиск <input id="dictionarySearch" placeholder="Начните вводить наименование" /></label></div>
-      <div class="dictionary-head"><span>Наименование</span><span>Использований</span><span>Проектов</span><span></span></div>
-      <div id="dictionaryList" class="dictionary-list"></div>
-    </div>
-    <div class="modal-foot"><button class="btn" data-close="dictionaryModal">Закрыть</button></div>
-  </div>
 </div>
 
 <datalist id="projectNameOptions"></datalist><datalist id="initiatorOptions"></datalist><datalist id="executorOptions"></datalist><datalist id="enterpriseOptions"></datalist><datalist id="stageTitleOptions"></datalist>
@@ -155,7 +161,7 @@
     <div class="modal-body">
       <div class="audit-note">Сохранение создаёт подписанную запись в неизменяемом журнале. PIN не записывается в базу данных.</div>
       <div class="form-grid">
-        <div><label>Подтверждающий *</label><select id="saveSigner"></select></div>
+        <div><label>Профиль подписи *</label><select id="saveSigner"></select></div>
         <div><label>PIN подписи *</label><input id="saveSignerPin" type="password" autocomplete="off" inputmode="numeric" /></div>
         <div class="wide"><label>Комментарий к изменению *</label><textarea id="saveChangeComment" rows="3" placeholder="Что изменено и по какой причине"></textarea></div>
       </div>
@@ -174,26 +180,9 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="auditModal" role="dialog" aria-modal="true" aria-labelledby="auditModalTitle">
-  <div class="modal modal-wide audit-modal" tabindex="-1">
-    <div class="modal-head"><h2 id="auditModalTitle">Администрирование</h2><span class="spacer"></span><button class="btn icon" data-close="auditModal" aria-label="Закрыть администрирование">×</button></div>
-    <div class="admin-tabs" role="tablist" aria-label="Разделы администрирования"><button class="preview-tab active" id="auditJournalTab" role="tab" aria-selected="true" aria-controls="auditJournalPanel" data-audit-view="journal">Журнал изменений</button><button class="preview-tab" id="auditProfilesTab" role="tab" aria-selected="false" aria-controls="auditProfilesPanel" data-audit-view="profiles">Пользователи и подписи</button><button class="preview-tab" id="auditVerificationTab" role="tab" aria-selected="false" aria-controls="auditVerificationPanel" data-audit-view="verification">Проверка целостности</button><button class="preview-tab" id="auditBackupsTab" role="tab" aria-selected="false" aria-controls="auditBackupsPanel" data-audit-view="backups">Резервные копии</button></div>
-    <div class="modal-body audit-layout">
-      <section class="audit-section hidden-pane" id="auditProfilesPanel" role="tabpanel" aria-labelledby="auditProfilesTab" data-audit-panel="profiles"><h3>Профили подписи</h3><div id="auditUsers"></div>
-        <details id="createUserDetails"><summary>Добавить профиль</summary><div class="form-grid audit-user-form">
-          <div><label>ФИО *</label><input id="newAuditUserName" /></div><div><label>PIN (не менее 6 символов) *</label><input id="newAuditUserPin" type="password" autocomplete="new-password" /></div>
-          <div><label>Роль</label><select id="newAuditUserRole"><option value="signer">Подтверждающий</option><option value="admin">Администратор</option></select></div>
-          <div><label>Текущий администратор</label><select id="authorizingAdmin"></select></div><div><label>PIN администратора</label><input id="authorizingAdminPin" type="password" autocomplete="off" /></div>
-          <div class="audit-create-action"><button class="btn primary" id="createAuditUserBtn">Создать профиль и ключ</button></div>
-        </div></details><div id="auditUserError"></div>
-      </section>
-      <section class="audit-section" id="auditJournalPanel" role="tabpanel" aria-labelledby="auditJournalTab" data-audit-panel="journal"><div class="audit-section-head"><div><h3>Журнал изменений</h3><div id="auditScope" class="audit-scope"></div></div><button class="btn small" id="refreshAuditBtn">Обновить</button></div><div id="auditEvents" class="audit-events"></div></section>
-      <section class="audit-section hidden-pane" id="auditVerificationPanel" role="tabpanel" aria-labelledby="auditVerificationTab" data-audit-panel="verification"><h3>Проверка целостности журнала</h3><div id="verifyScope" class="audit-scope"></div><div class="audit-verify-row"><label class="sr-only" for="verifyAdmin">Администратор</label><select id="verifyAdmin"></select><label class="sr-only" for="verifyAdminPin">PIN администратора</label><input id="verifyAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="verifyAuditBtn">Проверить целостность журнала</button></div><div id="auditVerification"></div></section>
-      <section class="audit-section hidden-pane" id="auditBackupsPanel" role="tabpanel" aria-labelledby="auditBackupsTab" data-audit-panel="backups"><div class="audit-section-head"><h3>Резервные копии всей базы</h3><button class="btn small" id="refreshBackupsBtn">Обновить</button></div><div class="backup-note">Копия создаётся автоматически после каждого подписанного сохранения. Хранятся 10 последних копий.</div><div class="audit-verify-row"><label class="sr-only" for="backupAdmin">Администратор</label><select id="backupAdmin"></select><label class="sr-only" for="backupAdminPin">PIN администратора</label><input id="backupAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="createBackupBtn">Создать копию сейчас</button></div><div id="backupResult"></div><div id="backupList" class="backup-list"></div></section>
-    </div>
-    <div class="modal-foot"><button class="btn" data-close="auditModal">Закрыть</button></div>
-  </div>
-</div>
+<div class="modal-backdrop" id="adminLoginModal" role="dialog" aria-modal="true" aria-labelledby="adminLoginTitle"><div class="modal"><div class="modal-head"><h2 id="adminLoginTitle">Вход администратора</h2><span class="spacer"></span><button class="btn icon" data-close="adminLoginModal">×</button></div><div class="modal-body"><p>Административные данные отделены от рабочего интерфейса. Для входа требуется ключ единственного администратора.</p><div class="form-grid"><div><label for="adminLoginUser">Администратор</label><select id="adminLoginUser"></select></div><div><label for="adminLoginPin">PIN администратора</label><input id="adminLoginPin" type="password" autocomplete="off" /></div></div><div id="adminLoginError"></div></div><div class="modal-foot"><button class="btn" data-close="adminLoginModal">Отмена</button><button class="btn primary" id="confirmAdminLoginBtn">Войти</button></div></div></div>
+
+<div class="modal-backdrop" id="onboardingModal" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle"><div class="modal modal-wide onboarding-modal"><div class="modal-head"><div><span class="onboarding-step" id="onboardingStepLabel">Шаг 1 из 4</span><h2 id="onboardingTitle">Начало работы</h2></div><span class="spacer"></span><button class="btn icon" data-close="onboardingModal">×</button></div><div class="modal-body"><div id="onboardingContent" class="onboarding-content"></div></div><div class="modal-foot"><button class="btn" id="onboardingBackBtn">Назад</button><span class="spacer"></span><button class="btn primary" id="onboardingNextBtn">Далее</button></div></div></div>
 
 <script defer src="config/contracts.js"></script>
 <script defer src="domain/cycle.js"></script>

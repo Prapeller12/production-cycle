@@ -31,7 +31,7 @@ fn main(){
             production::production_validate,production::production_load_snapshot,production::production_load_snapshot_by_id,
             production::production_list_projects,production::production_list_deadline_control,production::production_list_dictionary,
             production::production_export_txt,production::production_get_management_report,
-            audit::audit_list_users,audit::audit_create_user,audit::audit_save_snapshot,
+            audit::audit_list_users,audit::audit_authorize_admin,audit::audit_create_user,audit::audit_save_snapshot,
             audit::audit_list_events,audit::audit_verify_log,audit::audit_replace_dictionary_value,
             backup::backup_list,backup::backup_create,backup::backup_restore
         ])

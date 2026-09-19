@@ -55,6 +55,11 @@
     if(!native())throw Error('Профили подписи доступны только в Windows-приложении.');
     return invoke('audit_create_user',{input});
   }
+  async function authorizeAdmin(userId,pin){
+    if(!native())throw Error('Вход администратора доступен только в Windows-приложении.');
+    await invoke('audit_authorize_admin',{userId:Number(userId),pin});
+    return true;
+  }
   async function saveSigned(state,confirmation){
     if(!native())throw Error('Подписанное сохранение доступно только в Windows-приложении.');
     return invoke('audit_save_snapshot',{snapshot:toSnapshot(state),userId:Number(confirmation.userId),pin:confirmation.pin,comment:confirmation.comment,evidence:confirmation.evidence||null});
@@ -107,7 +112,7 @@
   }
   async function listDictionary(kind,state){return native()?invoke('production_list_dictionary',{kind}):localDictionary(kind,state)}
   async function replaceDictionaryValue(kind,fromValue,toValue,confirmation=null){
-    if(!native())return {affectedProjectRows:0,affectedStageRows:0};
+    if(!native())throw Error('Изменение базы справочников доступно только в Windows-приложении.');
     if(!confirmation)throw Error('Для изменения справочника требуется подпись.');
     return invoke('audit_replace_dictionary_value',{kind,fromValue,toValue,userId:Number(confirmation.userId),pin:confirmation.pin,comment:confirmation.comment});
   }
@@ -131,5 +136,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,listDictionary,replaceDictionaryValue,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,listDictionary,replaceDictionaryValue,exportPair,report});
 })();
