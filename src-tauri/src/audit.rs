@@ -591,14 +591,14 @@ impl ProductionDb {
             .query_row("SELECT COUNT(*) FROM audit_user", [], |row| row.get(0))
             .map_err(|e| e.to_string())?;
         if count > 0 {
-            let admin_id = input
+            let authorizing_user_id = input
                 .admin_user_id
-                .ok_or_else(|| "Укажите администратора, создающего профиль.".to_string())?;
-            let admin_pin = input
+                .ok_or_else(|| "Выберите действующего пользователя, создающего профиль.".to_string())?;
+            let authorizing_pin = input
                 .admin_pin
                 .as_deref()
-                .ok_or_else(|| "Введите PIN администратора.".to_string())?;
-            authenticate(&conn, admin_id, admin_pin, RoleRequirement::Admin)?;
+                .ok_or_else(|| "Введите PIN пользователя, создающего профиль.".to_string())?;
+            authenticate(&conn, authorizing_user_id, authorizing_pin, RoleRequirement::AnySigner)?;
         }
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
@@ -658,8 +658,16 @@ impl ProductionDb {
                     && old_statuses.get(&stage.uid).map(String::as_str) != Some("done")
             })
             .collect();
-        if !completed.is_empty() && !matches!(user.role.as_str(), "admin" | "reviewer") {
-            return Err("Завершение этапа должен подтвердить проверяющий или администратор.".into());
+        let reopened: Vec<_> = snapshot
+            .stages
+            .iter()
+            .filter(|stage| {
+                old_statuses.get(&stage.uid).map(String::as_str) == Some("done")
+                    && stage.status != StageStatus::Done
+            })
+            .collect();
+        if !reopened.is_empty() && user.role != "admin" {
+            return Err("Возвратить выполненный этап в работу может только администратор.".into());
         }
         let completed_uids = completed.iter().map(|stage| stage.uid.as_str()).collect::<std::collections::HashSet<_>>();
         let evidence = if completed.is_empty() {
@@ -940,19 +948,21 @@ mod tests {
     }
 
     #[test]
-    fn roles_allow_one_admin_and_require_reviewer_for_completion() {
+    fn roles_allow_delegated_profiles_manager_completion_and_admin_reopen() {
         let db=ProductionDb::memory().unwrap();let owner=admin(&db);
         let manager=db.create_audit_user(CreateAuditUserInput { display_name:"Руководитель".into(),pin:"111111".into(),is_admin:false,role:Some("project_manager".into()),admin_user_id:Some(owner.id),admin_pin:Some("739201".into()) }).unwrap();
-        let reviewer=db.create_audit_user(CreateAuditUserInput { display_name:"Заместитель директора".into(),pin:"222222".into(),is_admin:false,role:Some("reviewer".into()),admin_user_id:Some(owner.id),admin_pin:Some("739201".into()) }).unwrap();
+        let reviewer=db.create_audit_user(CreateAuditUserInput { display_name:"Заместитель директора".into(),pin:"222222".into(),is_admin:false,role:Some("reviewer".into()),admin_user_id:Some(manager.id),admin_pin:Some("111111".into()) }).unwrap();
         assert_eq!(manager.role,"project_manager");assert_eq!(reviewer.role,"reviewer");
-        let duplicate_admin=db.create_audit_user(CreateAuditUserInput { display_name:"Второй администратор".into(),pin:"333333".into(),is_admin:false,role:Some("admin".into()),admin_user_id:Some(owner.id),admin_pin:Some("739201".into()) }).unwrap_err();
+        let duplicate_admin=db.create_audit_user(CreateAuditUserInput { display_name:"Второй администратор".into(),pin:"333333".into(),is_admin:false,role:Some("admin".into()),admin_user_id:Some(reviewer.id),admin_pin:Some("222222".into()) }).unwrap_err();
         assert!(duplicate_admin.contains("уже есть администратор"));
         let mut snapshot=sample(StageStatus::Work);
         let created=db.save_signed_snapshot(&snapshot,manager.id,"111111","Создание руководителем",None).unwrap();
         snapshot.database_id=Some(created.project_id);snapshot.stages[0].status=StageStatus::Done;
         let evidence=CompletionEvidenceInput{document_type:"Акт приёмки".into(),document_reference:"№21".into(),comment:"Этап принят".into(),stage_uids:vec!["stage-1".into()]};
-        assert!(db.save_signed_snapshot(&snapshot,manager.id,"111111","Попытка завершения",Some(evidence.clone())).unwrap_err().contains("проверяющий"));
-        assert_eq!(db.save_signed_snapshot(&snapshot,reviewer.id,"222222","Проверено",Some(evidence)).unwrap().completion_event_ids.len(),1);
+        assert_eq!(db.save_signed_snapshot(&snapshot,manager.id,"111111","Завершение руководителем",Some(evidence)).unwrap().completion_event_ids.len(),1);
+        snapshot.stages[0].status=StageStatus::Work;
+        assert!(db.save_signed_snapshot(&snapshot,reviewer.id,"222222","Возврат проверяющим",None).unwrap_err().contains("только администратор"));
+        assert!(db.save_signed_snapshot(&snapshot,owner.id,"739201","Возврат администратором",None).is_ok());
     }
 
     #[test]

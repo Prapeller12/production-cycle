@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="styles/app.css">
 </head>
 <body>
-<header class="appbar"><strong>Производственный цикл</strong><span class="project-context" id="projectContext">Новый проект</span><span class="spacer"></span><button class="top-action" id="onboardingBtn">Как работать</button><button class="top-action" id="auditBtn">Администратор</button><span class="save-state" id="saveState">Новый проект</span><span id="taskCounter">Этапов: 0</span></header>
+<header class="appbar"><strong>Производственный цикл</strong><span class="project-context" id="projectContext">Новый проект</span><span class="spacer"></span><button class="top-action" id="onboardingBtn">Как работать</button><button class="top-action" id="profilesBtn">Пользователи</button><button class="top-action" id="auditBtn">Администратор</button><span class="save-state" id="saveState">Новый проект</span><span id="taskCounter">Этапов: 0</span></header>
 <nav class="tabs" aria-label="Разделы программы" role="tablist"><button class="tab active" id="registryTab" role="tab" aria-selected="true" aria-controls="registryView" data-view="registry">Реестр цикла</button><button class="tab" id="deadlinesTab" role="tab" aria-selected="false" aria-controls="deadlinesView" data-view="deadlines">Контроль сроков <span id="deadlineRiskCount"></span></button><button class="tab" id="ganttTab" role="tab" aria-selected="false" aria-controls="ganttView" data-view="gantt">Диаграмма Ганта</button></nav>
 <div id="messageArea" class="message-area" role="status" aria-live="polite" aria-atomic="true"></div>
 <main class="shell">
@@ -69,15 +69,15 @@
  </div>
  <div id="adminView" class="workspace-view" aria-hidden="true">
    <section class="panel admin-page" id="auditModal">
-    <div class="admin-page-head"><div><h1>Интерфейс администратора</h1><p>Пользователи, справочники, подписанный журнал и резервные копии отделены от рабочего реестра.</p></div><span class="spacer"></span><span id="adminSessionLabel" class="admin-session"></span><button class="btn" id="closeAdminBtn">Вернуться к проекту</button></div>
+    <div class="admin-page-head"><div><h1 id="adminPageTitle">Интерфейс администратора</h1><p id="adminPageDescription">Пользователи, справочники, подписанный журнал и резервные копии отделены от рабочего реестра.</p></div><span class="spacer"></span><span id="adminSessionLabel" class="admin-session"></span><button class="btn" id="closeAdminBtn">Вернуться к проекту</button></div>
     <div class="admin-tabs" role="tablist" aria-label="Разделы администрирования"><button class="preview-tab active" id="auditJournalTab" role="tab" aria-selected="true" aria-controls="auditJournalPanel" data-audit-view="journal">Журнал изменений</button><button class="preview-tab" id="auditProfilesTab" role="tab" aria-selected="false" aria-controls="auditProfilesPanel" data-audit-view="profiles">Пользователи и ключи</button><button class="preview-tab" id="dictionaryTab" role="tab" aria-selected="false" aria-controls="dictionaryPanel" data-audit-view="dictionary">Справочники</button><button class="preview-tab" id="auditVerificationTab" role="tab" aria-selected="false" aria-controls="auditVerificationPanel" data-audit-view="verification">Проверка целостности</button><button class="preview-tab" id="auditBackupsTab" role="tab" aria-selected="false" aria-controls="auditBackupsPanel" data-audit-view="backups">Резервные копии</button></div>
     <div class="audit-layout">
       <section class="audit-section hidden-pane" id="auditProfilesPanel" role="tabpanel" aria-labelledby="auditProfilesTab" data-audit-panel="profiles">
         <div class="audit-section-title"><h2>Пользователи и ключи</h2><p>Каждый сотрудник работает под своим профилем. Передача PIN другому человеку недопустима.</p></div>
         <div class="role-cards" aria-label="Права ролей">
-          <article><span class="role-number">1</span><div><b>Руководитель проекта</b><p>Заполняет и сохраняет сведения по проекту.</p></div></article>
-          <article><span class="role-number">2</span><div><b>Проверяющий</b><p>Подтверждает выполнение этапов и изменяет справочники.</p></div></article>
-          <article><span class="role-number">3</span><div><b>Администратор</b><p>Единственный владелец системы с полным доступом.</p></div></article>
+          <article><span class="role-number">1</span><div><b>Руководитель проекта</b><p>Заполняет проект и подтверждает выполнение этапов.</p></div></article>
+          <article><span class="role-number">2</span><div><b>Проверяющий</b><p>Контролирует этапы и изменяет общие справочники.</p></div></article>
+          <article><span class="role-number">3</span><div><b>Администратор</b><p>Проводит итоговую проверку и возвращает выполненные этапы в работу.</p></div></article>
         </div>
         <div id="adminSetupIntro" class="admin-setup-intro hidden-pane">
           <span>Первичная настройка</span>
@@ -94,8 +94,8 @@
               <label class="audit-field role-field"><span>Роль *</span><select id="newAuditUserRole"><option value="project_manager">Руководитель проекта</option><option value="reviewer">Проверяющий</option></select></label>
               <label class="audit-field"><span>Новый PIN *</span><input id="newAuditUserPin" type="password" minlength="6" autocomplete="new-password" placeholder="Не менее 6 символов" /></label>
               <label class="audit-field"><span>Повторите новый PIN *</span><input id="newAuditUserPinConfirm" type="password" minlength="6" autocomplete="new-password" placeholder="Введите PIN ещё раз" /></label>
-              <div class="audit-field requires-existing-admin" id="authorizingAdminField"><span>Подтверждает администратор</span><div id="authorizingAdminName" class="readonly-value">—</div><select id="authorizingAdmin" class="hidden-control" aria-hidden="true" tabindex="-1"></select></div>
-              <label class="audit-field requires-existing-admin" id="authorizingAdminPinField"><span>PIN администратора *</span><input id="authorizingAdminPin" type="password" autocomplete="off" placeholder="Подтвердите создание пользователя" /></label>
+              <label class="audit-field requires-existing-user" id="authorizingUserField"><span>Кто создаёт профиль *</span><select id="authorizingUser"></select></label>
+              <label class="audit-field requires-existing-user" id="authorizingUserPinField"><span>PIN подтверждающего *</span><input id="authorizingUserPin" type="password" autocomplete="off" placeholder="Введите собственный PIN" /></label>
               <div class="audit-create-action"><button class="btn primary" id="createAuditUserBtn">Создать профиль и ключ</button><span id="createUserActionHint">Действие будет записано в систему.</span></div>
             </div>
           </div>
@@ -137,7 +137,7 @@
       </div>
       <div class="required-hint">Все поля со знаком * обязательны. Количество прямых детей рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
     </div>
-    <div class="modal-foot modal-foot-explained"><span>Изменения будут записаны в базу после команды «Подписать и сохранить».</span><button class="btn" id="createChildStageBtn">Создать дочерний этап</button><button class="btn danger-outline" id="deleteStageBtn">Удалить этап</button><button class="btn" data-close="stageModal">Отмена</button><button class="btn primary" id="saveStageBtn">Применить изменения</button></div>
+    <div class="modal-foot stage-modal-foot"><div class="stage-secondary-actions"><button class="btn small" id="createChildStageBtn">+ Дочерний этап</button><button class="btn small danger-link" id="deleteStageBtn">Удалить этап</button></div><div class="stage-primary-actions"><button class="btn" data-close="stageModal">Отмена</button><button class="btn primary" id="saveStageBtn">Применить к проекту</button></div></div>
   </div>
 </div>
 
@@ -178,9 +178,9 @@
 
 <div class="modal-backdrop" id="saveConfirmationModal">
   <div class="modal">
-    <div class="modal-head"><h2>Подтверждение сохранения</h2><span class="spacer"></span><button class="btn icon" data-close="saveConfirmationModal">×</button></div>
+    <div class="modal-head"><h2 id="saveConfirmationTitle">Подтверждение сохранения</h2><span class="spacer"></span><button class="btn icon" data-close="saveConfirmationModal">×</button></div>
     <div class="modal-body">
-      <div class="audit-note">Сохранение создаёт подписанную запись в неизменяемом журнале. PIN не записывается в базу данных.</div>
+      <div class="audit-note" id="saveConfirmationNote">Сохранение создаёт подписанную запись в неизменяемом журнале. PIN не записывается в базу данных.</div>
       <div class="form-grid">
         <div><label>Профиль подписи *</label><select id="saveSigner"></select></div>
         <div><label>PIN подписи *</label><input id="saveSignerPin" type="password" autocomplete="off" inputmode="numeric" /></div>
@@ -188,7 +188,7 @@
       </div>
       <section id="completionEvidence" class="completion-evidence">
         <h3>Основание выполнения этапа</h3>
-        <div id="completionTargetSummary" class="completion-target-summary"></div>
+        <div id="completionTargetSummary" class="completion-target-summary" tabindex="-1"></div>
         <div class="form-grid">
           <div><label>Официальный документ *</label><select id="evidenceType"><option value="">Выберите документ</option><option>Входящее письмо</option><option>Инвойс</option><option>Накладная</option><option>Акт приёмки</option><option>Иной официальный документ</option></select></div>
           <div><label>Номер, дата или реквизиты *</label><input id="evidenceReference" placeholder="Например: акт №15 от 18.09.2026" /></div>
