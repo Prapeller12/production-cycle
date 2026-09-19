@@ -13,6 +13,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   await page.goto(pathToFileURL(path.resolve(__dirname,'../frontend/index.html')).href);
   await page.locator('.more-actions summary').click();
   await page.click('#demoBtn');
+  assert.equal(await page.locator('.more-actions').getAttribute('open'),null);
   await page.click('.stage-primary-btn');await page.fill('#stageTitle','');await page.click('#saveStageBtn');assert.match(await page.locator('#stageFormError').innerText(),/обязательные поля/i);assert.ok(await page.locator('#stageModal').evaluate(element=>element.classList.contains('open')));assert.equal(await page.getAttribute('#stageTitle','aria-invalid'),'true');await page.getByRole('button',{name:'Отмена',exact:true}).click();
   const firstStage=page.locator('#treeBody tr').filter({hasText:'924-001'}),equalDeadlineStage=page.locator('#treeBody tr').filter({hasText:'924-008'});
   assert.equal(await equalDeadlineStage.locator('.deadline-warning').count(),1);
