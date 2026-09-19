@@ -291,7 +291,7 @@ mod tests {
     fn verified_backup_can_restore_previous_signed_state() {
         let dir=temporary_directory("restore");fs::create_dir_all(&dir).unwrap();
         let db=ProductionDb::open(&dir.join("production-cycle.db")).unwrap();
-        let owner=db.create_audit_user(CreateAuditUserInput{display_name:"Владелец".into(),pin:"739201".into(),is_admin:false,admin_user_id:None,admin_pin:None}).unwrap();
+        let owner=db.create_audit_user(CreateAuditUserInput{display_name:"Владелец".into(),pin:"739201".into(),is_admin:false,role:None,admin_user_id:None,admin_pin:None}).unwrap();
         let mut initial=snapshot("До изменения");
         let first=db.save_signed_snapshot(&initial,owner.id,"739201","Первое сохранение",None).unwrap();
         let first_backup=first.backup.unwrap();assert!(first_backup.valid);

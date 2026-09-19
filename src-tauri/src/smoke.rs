@@ -21,7 +21,8 @@ pub const SCRIPT:&str=r#"
   const validation=await Production.backend.validate(p);
   if(validation.errors.length)throw Error('Backend validation failed');
   const users=await Production.backend.listAuditUsers();
-  const signer=users[0]||await Production.backend.createAuditUser({displayName:'Администратор проверки',pin:'739201',isAdmin:true,adminUserId:null,adminPin:null});
+  const signer=users.find(user=>user.role==='admin')||await Production.backend.createAuditUser({displayName:'Администратор проверки',pin:'739201',role:'admin',isAdmin:false,adminUserId:null,adminPin:null});
+  await Production.backend.authorizeAdmin(signer.id,'739201');
   const savedProject=await Production.backend.saveSigned(p,{userId:signer.id,pin:'739201',comment:'Автоматическая проверка подписанного сохранения',evidence:{documentType:'Акт приёмки',documentReference:'SMOKE-ACT-1 от 01.09.2026',comment:'Проверка обязательного подтверждения выполнения',stageUids:['smoke-stage']}});
   p.databaseId=savedProject.projectId;
   const loaded=await Production.backend.load('SMOKE-1');
