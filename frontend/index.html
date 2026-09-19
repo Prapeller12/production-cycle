@@ -7,36 +7,30 @@
 <link rel="stylesheet" href="styles/app.css">
 </head>
 <body>
-<div class="appbar"><strong>Производственный цикл</strong><span class="spacer"></span><span class="save-state" id="saveState">Изменения не сохранены</span><span id="taskCounter">0 элементов</span></div>
-<div class="tabs" aria-label="Навигация"><button class="tab active" data-view="registry">Реестр цикла</button><button class="tab" data-view="gantt">Диаграмма Ганта</button></div>
-<div class="shell">
- <div id="registryView" class="workspace-view active">
+<header class="appbar"><strong>Производственный цикл</strong><span class="project-context" id="projectContext">Новый проект</span><span class="spacer"></span><span class="save-state" id="saveState">Новый проект</span><span id="taskCounter">Этапов: 0</span></header>
+<nav class="tabs" aria-label="Разделы программы" role="tablist"><button class="tab active" id="registryTab" role="tab" aria-selected="true" aria-controls="registryView" data-view="registry">Реестр цикла</button><button class="tab" id="deadlinesTab" role="tab" aria-selected="false" aria-controls="deadlinesView" data-view="deadlines">Контроль сроков <span id="deadlineRiskCount"></span></button><button class="tab" id="ganttTab" role="tab" aria-selected="false" aria-controls="ganttView" data-view="gantt">Диаграмма Ганта</button></nav>
+<div id="messageArea" class="message-area" role="status" aria-live="polite" aria-atomic="true"></div>
+<main class="shell">
+ <div id="registryView" class="workspace-view active" role="tabpanel" aria-labelledby="registryTab">
   <div class="toolbar">
-    <h1>Производственный цикл</h1>
-    <button class="btn" id="demoBtn">Демо</button>
-    <button class="btn" id="newBtn">Новый проект</button>
-    <button class="btn" id="saveJsonBtn">Сохранить проект</button>
-    <button class="btn" id="loadJsonBtn">Все проекты</button>
-    <button class="btn" id="dictionaryBtn">Справочники</button>
-    <button class="btn" id="auditBtn">Подписи и журнал</button>
+    <h1 id="workspaceTitle">Новый проект</h1>
+    <div class="toolbar-group" aria-label="Проект"><span class="toolbar-label">Проект</span><button class="btn" id="newBtn">Новый</button><button class="btn" id="loadJsonBtn">Сохранённые проекты</button><button class="btn primary" id="saveJsonBtn">Подписать и сохранить</button></div>
     <input type="file" id="jsonFile" class="hidden-file" accept="application/json,.json" />
-    <button class="btn" id="importBtn">Импорт 2 TXT</button>
-    <span class="spacer"></span>
-    <button class="btn" id="pdfReportBtn">Отчёт PDF</button>
-    <button class="btn" id="validateBtn">Проверить</button>
-    <button class="btn primary" id="exportBtn">Сформировать 2 TXT</button>
+    <div class="toolbar-group" aria-label="Обмен данными"><span class="toolbar-label">Данные</span><button class="btn" id="importBtn">Импорт проекта</button><button class="btn" id="exportBtn">Экспорт для Реестра</button></div>
+    <div class="toolbar-group" aria-label="Отчёты"><span class="toolbar-label">Отчёты</span><button class="btn" id="pdfReportBtn">Печать отчёта / PDF</button><button class="btn" id="validateBtn">Проверить заполнение</button></div>
+    <div class="toolbar-group" aria-label="Администрирование"><span class="toolbar-label">Сервис</span><button class="btn" id="dictionaryBtn">Справочники</button><button class="btn" id="auditBtn">Администрирование</button><button class="btn secondary" id="demoBtn">Учебный пример</button></div>
   </div>
 
   <section class="project-card">
     <div class="project-grid">
-      <div class="field"><label>Название проекта *</label><input id="projectName" list="projectNameOptions" placeholder="Например: Изделие 5П-20К заказ №924" /></div>
-      <div class="field"><label>Номер заказа *</label><input id="orderNo" placeholder="924" /></div>
-      <div class="field"><label>Инициатор / подписант *</label><input id="initiator" list="initiatorOptions" placeholder="ФИО / подразделение" /></div>
-      <div class="field"><label>Исполнитель / получатель *</label><input id="executor" list="executorOptions" placeholder="ФИО / организация" /></div>
-      <div class="field"><label>Начало *</label><input id="projectStart" type="date" /></div>
-      <div class="field"><label>Дедлайн *</label><input id="projectDeadline" type="date" /></div>
+      <div class="field"><label for="projectName">Название проекта *</label><input id="projectName" list="projectNameOptions" placeholder="Например: Изделие 5П-20К заказ №924" /></div>
+      <div class="field"><label for="orderNo">Номер заказа *</label><input id="orderNo" placeholder="924" /></div>
+      <div class="field"><label for="initiator">Инициатор / подписант *</label><input id="initiator" list="initiatorOptions" placeholder="ФИО / подразделение" /></div>
+      <div class="field"><label for="executor">Исполнитель / получатель *</label><input id="executor" list="executorOptions" placeholder="ФИО / организация" /></div>
+      <div class="field"><label for="projectStart">Начало *</label><input id="projectStart" type="date" /></div>
+      <div class="field"><label for="projectDeadline">Срок исполнения *</label><input id="projectDeadline" type="date" /></div>
     </div>
-    <div class="project-extra"><div class="field"><label>Предприятие *</label><input id="projectAddressees" list="enterpriseOptions" placeholder="Наименование предприятия" /></div></div>
+    <div class="project-extra"><div class="field"><label for="projectAddressees">Предприятие *</label><input id="projectAddressees" list="enterpriseOptions" placeholder="Наименование предприятия" /></div></div>
   </section>
 
   <section class="structure-card" id="structureCard">
@@ -53,10 +47,11 @@
       <span class="summary-chip"><span class="status-dot new"></span>Не начато <b id="sumNew">0</b></span>
       <span class="summary-chip"><span class="status-dot hold"></span>Приостановлено <b id="sumHold">0</b></span>
       <span class="spacer"></span>
-      <label class="filter-control">Показать <select id="completionFilter"><option value="active">Только невыполненные</option><option value="all">Все этапы</option><option value="done">Только выполненные</option></select></label>
+      <label class="filter-control" for="completionFilter">Показать <select id="completionFilter"><option value="active">Только невыполненные</option><option value="all">Все этапы</option><option value="done">Только выполненные</option></select></label>
     </div>
     <div class="table-wrap">
-      <table class="tree-table">
+      <div class="scroll-hint">На узком экране строки показаны карточками; все поля сохранены.</div>
+      <table class="tree-table" aria-label="Реестр этапов проекта">
         <thead><tr>
           <th class="col-actions">Действия</th><th class="col-id">ID</th><th class="col-title">Название / этап</th><th class="col-exec">Исполнитель</th><th class="col-init">Инициатор / адресат</th><th class="col-status">Статус</th><th class="col-date">Начало</th><th class="col-date">Дедлайн</th><th class="col-left">Осталось</th>
         </tr></thead>
@@ -67,49 +62,50 @@
     </div>
   </section>
 
-  <div id="messageArea"></div>
  </div>
- <div id="ganttView" class="workspace-view">
-   <section class="panel gantt-panel"><div class="panel-head"><span class="title">Диаграмма Ганта</span><span class="muted-text" id="ganttPeriod"></span><span class="spacer"></span><label class="filter-control">Масштаб <select id="ganttScale"><option value="day">По дням</option><option value="week" selected>По неделям</option><option value="month">По месяцам</option></select></label><button class="btn small" id="printGanttA4Btn">Печать А4</button><button class="btn small" id="printGanttA3Btn">Печать А3</button></div><div id="ganttChart" class="gantt-chart"></div></section>
+ <div id="deadlinesView" class="workspace-view" role="tabpanel" aria-labelledby="deadlinesTab">
+   <section class="panel deadlines-panel"><div class="panel-head"><span class="title">Общий контроль сроков</span><span class="muted-text">Невыполненные этапы с контролируемым сроком</span><span class="spacer"></span><label class="filter-control" for="deadlineSearch">Поиск <input id="deadlineSearch" placeholder="Заказ, проект, этап или исполнитель" /></label><button class="btn small" id="refreshDeadlinesBtn">Обновить</button></div><div id="deadlineControlList" class="deadline-control-list deadline-workspace"><div class="projects-empty">Откройте раздел для загрузки сроков.</div></div></section>
  </div>
-</div>
+ <div id="ganttView" class="workspace-view" role="tabpanel" aria-labelledby="ganttTab">
+   <section class="panel gantt-panel"><div class="panel-head"><span class="title">Диаграмма Ганта</span><span class="muted-text" id="ganttPeriod"></span><span class="spacer"></span><label class="filter-control" for="ganttCompletionFilter">Показать <select id="ganttCompletionFilter"><option value="active">Только невыполненные</option><option value="all">Все этапы</option><option value="done">Только выполненные</option></select></label><label class="filter-control" for="ganttScale">Масштаб <select id="ganttScale"><option value="day">По дням</option><option value="week" selected>По неделям</option><option value="month">По месяцам</option></select></label><button class="btn small" id="printGanttA4Btn">Печать А4</button><button class="btn small" id="printGanttA3Btn">Печать А3</button></div><div class="gantt-context"><span id="ganttFilterSummary"></span><span class="gantt-legend"><i class="work"></i>В работе <i class="done"></i>Выполнено <i class="overdue"></i>Просрочено <i class="new"></i>Не начато <i class="hold"></i>Приостановлено</span></div><div id="ganttChart" class="gantt-chart"></div></section>
+ </div>
+</main>
 
 <section id="pdfReport" class="pdf-report" aria-hidden="true"></section>
 <section id="ganttPrint" class="gantt-print" aria-hidden="true"></section>
 <section id="structurePrint" class="structure-print" aria-hidden="true"></section>
 
-<div class="modal-backdrop" id="stageModal">
-  <div class="modal">
-    <div class="modal-head"><h2 id="stageModalTitle">Новый этап</h2><span class="spacer"></span><button class="btn icon" data-close="stageModal">×</button></div>
+<div class="modal-backdrop" id="stageModal" role="dialog" aria-modal="true" aria-labelledby="stageModalTitle">
+  <div class="modal" tabindex="-1">
+    <div class="modal-head"><h2 id="stageModalTitle">Новый этап</h2><span class="spacer"></span><button class="btn icon" data-close="stageModal" aria-label="Закрыть окно этапа">×</button></div>
     <div class="modal-body">
+      <div id="stageFormError" class="form-error" role="alert" aria-live="assertive"></div>
       <div class="form-grid">
-        <div class="wide"><label>Название этапа / краткое содержание *</label><input id="stageTitle" list="stageTitleOptions" placeholder="Например: Изготовление блока МЭТ" /></div>
-        <div><label>Родитель *</label><select id="stageParent"></select><div class="help">У элемента может быть только один родитель. Для верхнего уровня выберите основной проект.</div></div>
-        <div><label>Исполнитель / корреспондент *</label><input id="stageExecutor" list="executorOptions" placeholder="ФИО / организация" /></div>
-        <div><label>Адресаты *</label><input id="stageAddressees" list="enterpriseOptions" placeholder="ФИО / подразделение" /></div>
-        <div><label>Начало / дата регистрации *</label><input id="stageStart" type="date" /></div>
-        <div><label>Дедлайн / срок исполнения *</label><input id="stageDeadline" type="date" /></div>
-        <div><label>Статус *</label><select id="stageStatus"><option value="new">Не начато</option><option value="work">В работе</option><option value="hold">Приостановлено</option><option value="done">Выполнено</option></select></div>
+        <div class="wide"><label for="stageTitle">Название этапа / краткое содержание *</label><input id="stageTitle" list="stageTitleOptions" aria-describedby="stageFormError" placeholder="Например: Изготовление блока МЭТ" /></div>
+        <div><label for="stageParent">К какому проекту или этапу относится *</label><select id="stageParent" aria-describedby="stageParentHelp stageFormError"></select><div id="stageParentHelp" class="help">У элемента может быть только один родитель. Для верхнего уровня выберите основной проект.</div></div>
+        <div><label for="stageExecutor">Исполнитель / корреспондент *</label><input id="stageExecutor" list="executorOptions" aria-describedby="stageFormError" placeholder="ФИО / организация" /></div>
+        <div><label for="stageAddressees">Адресаты *</label><input id="stageAddressees" list="enterpriseOptions" aria-describedby="stageFormError" placeholder="ФИО / подразделение" /></div>
+        <div><label for="stageStart">Начало / дата регистрации *</label><input id="stageStart" type="date" aria-describedby="stageFormError" /></div>
+        <div><label for="stageDeadline">Срок исполнения *</label><input id="stageDeadline" type="date" aria-describedby="stageFormError" /></div>
+        <div><label for="stageStatus">Статус *</label><select id="stageStatus"><option value="new">Не начато</option><option value="work">В работе</option><option value="hold">Приостановлено</option><option value="done">Выполнено</option></select></div>
         <div><label>ID этапа — автоматически</label><div id="stageIdPreview" class="auto-value"></div><div class="help">ID сохраняется за этапом. Изменение родителя не меняет ID.</div></div>
         <div id="completionScopeField" class="wide completion-scope">
-          <label>Объём завершения *</label>
+          <label for="completionScope">Объём завершения *</label>
           <select id="completionScope"><option value="stage">Только выбранный этап</option><option value="branch">Вся родительская ветка</option></select>
           <div id="completionScopeHelp" class="help"></div>
         </div>
-        <div class="wide"><label>Комментарий</label><textarea id="stageComment" rows="3" placeholder="Дополнительные сведения по этапу"></textarea></div>
+        <div class="wide"><label for="stageComment">Комментарий</label><textarea id="stageComment" rows="3" placeholder="Дополнительные сведения по этапу"></textarea></div>
       </div>
       <div class="required-hint">Все поля со знаком * обязательны. Количество прямых детей рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
     </div>
-    <div class="modal-foot"><button class="btn" data-close="stageModal">Отмена</button><button class="btn primary" id="saveStageBtn">Сохранить</button></div>
+    <div class="modal-foot modal-foot-explained"><span>Изменения будут записаны в базу после команды «Подписать и сохранить».</span><button class="btn" data-close="stageModal">Отмена</button><button class="btn primary" id="saveStageBtn">Применить изменения</button></div>
   </div>
 </div>
 
-<div class="modal-backdrop" id="projectsModal">
-  <div class="modal modal-wide"><div class="modal-head"><h2>Сохранённые проекты</h2><span class="spacer"></span><button class="btn icon" data-close="projectsModal">×</button></div><div class="modal-body">
-    <div class="projects-tabs"><button class="preview-tab active" data-projects-view="projects">Проекты</button><button class="preview-tab" data-projects-view="deadlines">Контроль сроков <span id="deadlineRiskCount"></span></button></div>
-    <label class="projects-search">Номер заказа, проект или этап <input id="projectsSearch" placeholder="Например: 924" /></label>
+<div class="modal-backdrop" id="projectsModal" role="dialog" aria-modal="true" aria-labelledby="projectsModalTitle">
+  <div class="modal modal-wide" tabindex="-1"><div class="modal-head"><h2 id="projectsModalTitle">Сохранённые проекты</h2><span class="spacer"></span><button class="btn icon" data-close="projectsModal" aria-label="Закрыть сохранённые проекты">×</button></div><div class="modal-body">
+    <label class="projects-search" for="projectsSearch">Номер заказа, название или предприятие <input id="projectsSearch" placeholder="Например: 924" /></label>
     <section id="projectsListPane"><div class="project-list-help">Проекты с одинаковым номером заказа сохраняются раздельно. Выберите нужное название из списка.</div><div id="projectsList" class="projects-list"></div></section>
-    <section id="deadlineControlPane" class="hidden-pane"><div class="project-list-help">Показаны невыполненные этапы: просроченные, со сроком сегодня и в ближайшие 7 дней.</div><div id="deadlineControlList" class="deadline-control-list"></div></section>
   </div><div class="modal-foot"><button class="btn" data-close="projectsModal">Закрыть</button></div></div>
 </div>
 
@@ -178,11 +174,12 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="auditModal">
-  <div class="modal modal-wide">
-    <div class="modal-head"><h2>Подписи и журнал изменений</h2><span class="spacer"></span><button class="btn icon" data-close="auditModal">×</button></div>
+<div class="modal-backdrop" id="auditModal" role="dialog" aria-modal="true" aria-labelledby="auditModalTitle">
+  <div class="modal modal-wide audit-modal" tabindex="-1">
+    <div class="modal-head"><h2 id="auditModalTitle">Администрирование</h2><span class="spacer"></span><button class="btn icon" data-close="auditModal" aria-label="Закрыть администрирование">×</button></div>
+    <div class="admin-tabs" role="tablist" aria-label="Разделы администрирования"><button class="preview-tab active" id="auditJournalTab" role="tab" aria-selected="true" aria-controls="auditJournalPanel" data-audit-view="journal">Журнал изменений</button><button class="preview-tab" id="auditProfilesTab" role="tab" aria-selected="false" aria-controls="auditProfilesPanel" data-audit-view="profiles">Пользователи и подписи</button><button class="preview-tab" id="auditVerificationTab" role="tab" aria-selected="false" aria-controls="auditVerificationPanel" data-audit-view="verification">Проверка целостности</button><button class="preview-tab" id="auditBackupsTab" role="tab" aria-selected="false" aria-controls="auditBackupsPanel" data-audit-view="backups">Резервные копии</button></div>
     <div class="modal-body audit-layout">
-      <section class="audit-section"><h3>Профили подписи</h3><div id="auditUsers"></div>
+      <section class="audit-section hidden-pane" id="auditProfilesPanel" role="tabpanel" aria-labelledby="auditProfilesTab" data-audit-panel="profiles"><h3>Профили подписи</h3><div id="auditUsers"></div>
         <details id="createUserDetails"><summary>Добавить профиль</summary><div class="form-grid audit-user-form">
           <div><label>ФИО *</label><input id="newAuditUserName" /></div><div><label>PIN (не менее 6 символов) *</label><input id="newAuditUserPin" type="password" autocomplete="new-password" /></div>
           <div><label>Роль</label><select id="newAuditUserRole"><option value="signer">Подтверждающий</option><option value="admin">Администратор</option></select></div>
@@ -190,9 +187,9 @@
           <div class="audit-create-action"><button class="btn primary" id="createAuditUserBtn">Создать профиль и ключ</button></div>
         </div></details><div id="auditUserError"></div>
       </section>
-      <section class="audit-section"><div class="audit-section-head"><h3>Журнал</h3><button class="btn small" id="refreshAuditBtn">Обновить</button></div><div id="auditEvents" class="audit-events"></div></section>
-      <section class="audit-section"><h3>Проверка администратором</h3><div class="audit-verify-row"><select id="verifyAdmin"></select><input id="verifyAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="verifyAuditBtn">Проверить подписи и цепочку</button></div><div id="auditVerification"></div></section>
-      <section class="audit-section"><div class="audit-section-head"><h3>Резервные копии базы</h3><button class="btn small" id="refreshBackupsBtn">Обновить</button></div><div class="backup-note">Копия создаётся автоматически после каждого подписанного сохранения. Хранятся 10 последних копий.</div><div class="audit-verify-row"><select id="backupAdmin"></select><input id="backupAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="createBackupBtn">Создать копию сейчас</button></div><div id="backupResult"></div><div id="backupList" class="backup-list"></div></section>
+      <section class="audit-section" id="auditJournalPanel" role="tabpanel" aria-labelledby="auditJournalTab" data-audit-panel="journal"><div class="audit-section-head"><div><h3>Журнал изменений</h3><div id="auditScope" class="audit-scope"></div></div><button class="btn small" id="refreshAuditBtn">Обновить</button></div><div id="auditEvents" class="audit-events"></div></section>
+      <section class="audit-section hidden-pane" id="auditVerificationPanel" role="tabpanel" aria-labelledby="auditVerificationTab" data-audit-panel="verification"><h3>Проверка целостности журнала</h3><div id="verifyScope" class="audit-scope"></div><div class="audit-verify-row"><label class="sr-only" for="verifyAdmin">Администратор</label><select id="verifyAdmin"></select><label class="sr-only" for="verifyAdminPin">PIN администратора</label><input id="verifyAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="verifyAuditBtn">Проверить целостность журнала</button></div><div id="auditVerification"></div></section>
+      <section class="audit-section hidden-pane" id="auditBackupsPanel" role="tabpanel" aria-labelledby="auditBackupsTab" data-audit-panel="backups"><div class="audit-section-head"><h3>Резервные копии всей базы</h3><button class="btn small" id="refreshBackupsBtn">Обновить</button></div><div class="backup-note">Копия создаётся автоматически после каждого подписанного сохранения. Хранятся 10 последних копий.</div><div class="audit-verify-row"><label class="sr-only" for="backupAdmin">Администратор</label><select id="backupAdmin"></select><label class="sr-only" for="backupAdminPin">PIN администратора</label><input id="backupAdminPin" type="password" autocomplete="off" placeholder="PIN администратора" /><button class="btn primary" id="createBackupBtn">Создать копию сейчас</button></div><div id="backupResult"></div><div id="backupList" class="backup-list"></div></section>
     </div>
     <div class="modal-foot"><button class="btn" data-close="auditModal">Закрыть</button></div>
   </div>
