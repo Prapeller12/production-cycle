@@ -72,13 +72,34 @@
     <div class="admin-page-head"><div><h1>Интерфейс администратора</h1><p>Пользователи, справочники, подписанный журнал и резервные копии отделены от рабочего реестра.</p></div><span class="spacer"></span><span id="adminSessionLabel" class="admin-session"></span><button class="btn" id="closeAdminBtn">Вернуться к проекту</button></div>
     <div class="admin-tabs" role="tablist" aria-label="Разделы администрирования"><button class="preview-tab active" id="auditJournalTab" role="tab" aria-selected="true" aria-controls="auditJournalPanel" data-audit-view="journal">Журнал изменений</button><button class="preview-tab" id="auditProfilesTab" role="tab" aria-selected="false" aria-controls="auditProfilesPanel" data-audit-view="profiles">Пользователи и ключи</button><button class="preview-tab" id="dictionaryTab" role="tab" aria-selected="false" aria-controls="dictionaryPanel" data-audit-view="dictionary">Справочники</button><button class="preview-tab" id="auditVerificationTab" role="tab" aria-selected="false" aria-controls="auditVerificationPanel" data-audit-view="verification">Проверка целостности</button><button class="preview-tab" id="auditBackupsTab" role="tab" aria-selected="false" aria-controls="auditBackupsPanel" data-audit-view="backups">Резервные копии</button></div>
     <div class="audit-layout">
-      <section class="audit-section hidden-pane" id="auditProfilesPanel" role="tabpanel" aria-labelledby="auditProfilesTab" data-audit-panel="profiles"><h2>Профили подписи</h2><div class="role-explainer"><b>Руководитель проекта</b> — обычное заполнение и сохранение. <b>Проверяющий</b> — подтверждение выполненных этапов и изменение справочников. <b>Администратор</b> — единственный владелец системы и полный контроль.</div><div id="auditUsers"></div>
-        <details id="createUserDetails"><summary>Добавить профиль</summary><div class="form-grid audit-user-form">
-          <div><label>ФИО *</label><input id="newAuditUserName" /></div><div><label>PIN (не менее 6 символов) *</label><input id="newAuditUserPin" type="password" autocomplete="new-password" /></div>
-          <div><label>Роль</label><select id="newAuditUserRole"><option value="project_manager">Руководитель проекта</option><option value="reviewer">Проверяющий</option></select></div>
-          <div><label>Текущий администратор</label><select id="authorizingAdmin"></select></div><div><label>PIN администратора</label><input id="authorizingAdminPin" type="password" autocomplete="off" /></div>
-          <div class="audit-create-action"><button class="btn primary" id="createAuditUserBtn">Создать профиль и ключ</button></div>
-        </div></details><div id="auditUserError"></div>
+      <section class="audit-section hidden-pane" id="auditProfilesPanel" role="tabpanel" aria-labelledby="auditProfilesTab" data-audit-panel="profiles">
+        <div class="audit-section-title"><h2>Пользователи и ключи</h2><p>Каждый сотрудник работает под своим профилем. Передача PIN другому человеку недопустима.</p></div>
+        <div class="role-cards" aria-label="Права ролей">
+          <article><span class="role-number">1</span><div><b>Руководитель проекта</b><p>Заполняет и сохраняет сведения по проекту.</p></div></article>
+          <article><span class="role-number">2</span><div><b>Проверяющий</b><p>Подтверждает выполнение этапов и изменяет справочники.</p></div></article>
+          <article><span class="role-number">3</span><div><b>Администратор</b><p>Единственный владелец системы с полным доступом.</p></div></article>
+        </div>
+        <div id="adminSetupIntro" class="admin-setup-intro hidden-pane">
+          <span>Первичная настройка</span>
+          <h3>Создайте профиль администратора</h3>
+          <p>Укажите ФИО и придумайте PIN. Этот профиль станет единственным администратором программы. Позже администратора добавить нельзя.</p>
+        </div>
+        <div id="existingUsersSection" class="existing-users"><h3>Созданные профили</h3><div id="auditUsers"></div></div>
+        <details id="createUserDetails" class="profile-create">
+          <summary><span id="createUserSummary">Добавить пользователя</span><small>ФИО, роль и персональный PIN</small></summary>
+          <div class="profile-form-card">
+            <div class="profile-form-heading"><h3 id="createUserTitle">Новый пользователь</h3><p id="createUserHint">Создайте персональный профиль и передайте PIN только его владельцу.</p></div>
+            <div class="audit-user-form">
+              <label class="audit-field profile-name"><span>ФИО *</span><input id="newAuditUserName" autocomplete="name" placeholder="Например: Иванов Иван Иванович" /></label>
+              <label class="audit-field role-field"><span>Роль *</span><select id="newAuditUserRole"><option value="project_manager">Руководитель проекта</option><option value="reviewer">Проверяющий</option></select></label>
+              <label class="audit-field"><span>Новый PIN *</span><input id="newAuditUserPin" type="password" minlength="6" autocomplete="new-password" placeholder="Не менее 6 символов" /></label>
+              <label class="audit-field"><span>Повторите новый PIN *</span><input id="newAuditUserPinConfirm" type="password" minlength="6" autocomplete="new-password" placeholder="Введите PIN ещё раз" /></label>
+              <div class="audit-field requires-existing-admin" id="authorizingAdminField"><span>Подтверждает администратор</span><div id="authorizingAdminName" class="readonly-value">—</div><select id="authorizingAdmin" class="hidden-control" aria-hidden="true" tabindex="-1"></select></div>
+              <label class="audit-field requires-existing-admin" id="authorizingAdminPinField"><span>PIN администратора *</span><input id="authorizingAdminPin" type="password" autocomplete="off" placeholder="Подтвердите создание пользователя" /></label>
+              <div class="audit-create-action"><button class="btn primary" id="createAuditUserBtn">Создать профиль и ключ</button><span id="createUserActionHint">Действие будет записано в систему.</span></div>
+            </div>
+          </div>
+        </details><div id="auditUserError" aria-live="polite"></div>
       </section>
       <section class="audit-section" id="auditJournalPanel" role="tabpanel" aria-labelledby="auditJournalTab" data-audit-panel="journal"><div class="audit-section-head"><div><h2>Журнал изменений</h2><div id="auditScope" class="audit-scope"></div></div><button class="btn small" id="refreshAuditBtn">Обновить</button></div><div id="auditEvents" class="audit-events"></div></section>
       <section class="audit-section hidden-pane" id="dictionaryPanel" role="tabpanel" aria-labelledby="dictionaryTab" data-audit-panel="dictionary"><h2>Справочники наименований</h2><div class="dictionary-note">Замена изменяет точное совпадение во всех сохранённых проектах. Операция доступна только по ключу проверяющего или администратора и всегда попадает в подписанный журнал.</div><div class="dictionary-toolbar"><label>Категория <select id="dictionaryKind"><option value="enterprise">Предприятия / адресаты</option><option value="executor">Исполнители / получатели</option><option value="initiator">Инициаторы / подписанты</option><option value="projectName">Названия проектов</option><option value="stageTitle">Названия этапов</option></select></label><label>Поиск <input id="dictionarySearch" placeholder="Начните вводить наименование" /></label></div><div class="dictionary-head"><span>Наименование</span><span>Использований</span><span>Проектов</span><span></span></div><div id="dictionaryList" class="dictionary-list"></div></section>
