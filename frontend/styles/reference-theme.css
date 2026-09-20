@@ -98,6 +98,10 @@
   .project-context{max-width:min(520px,40vw);color:var(--ref-muted)}
   .top-action{
     min-height:36px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:7px;
     padding:0 14px;
     border:0;
     border-radius:var(--ref-radius-control);
@@ -197,15 +201,53 @@
   .btn.danger,.btn.danger-link,.btn.danger-outline{color:var(--ref-negative);background:transparent;border-color:transparent;box-shadow:none}
   .btn.danger:hover,.btn.danger-link:hover,.btn.danger-outline:hover{color:#bb2f22;background:var(--ref-negative-bg);border-color:transparent}
   .btn:disabled{color:var(--ref-disabled);background:var(--ref-translucent-100);opacity:1;cursor:not-allowed}
-  .more-actions>summary:after{
-    content:"";
+  .ui-icon{
+    --ui-icon-image:none;
+    display:inline-block;
     width:16px;
     height:16px;
-    margin-left:6px;
-    background:url("../assets/icons/chevron-down.svg") center/16px 16px no-repeat;
-    transition:transform var(--ref-duration) var(--ref-ease);
+    flex:0 0 16px;
+    background-color:currentColor;
+    -webkit-mask:var(--ui-icon-image) center/contain no-repeat;
+    mask:var(--ui-icon-image) center/contain no-repeat;
+    pointer-events:none;
   }
-  .more-actions[open]>summary:after{content:"";transform:rotate(180deg)}
+  .btn.icon .ui-icon{width:18px;height:18px;flex-basis:18px}
+  .ui-icon-plus{--ui-icon-image:url("../assets/icons/plus.svg")}
+  .ui-icon-folder{--ui-icon-image:url("../assets/icons/folder-open.svg")}
+  .ui-icon-save{--ui-icon-image:url("../assets/icons/save.svg")}
+  .ui-icon-upload{--ui-icon-image:url("../assets/icons/upload.svg")}
+  .ui-icon-download{--ui-icon-image:url("../assets/icons/download.svg")}
+  .ui-icon-print{--ui-icon-image:url("../assets/icons/print.svg")}
+  .ui-icon-check{--ui-icon-image:url("../assets/icons/check.svg")}
+  .ui-icon-help{--ui-icon-image:url("../assets/icons/help-circle.svg")}
+  .ui-icon-users{--ui-icon-image:url("../assets/icons/users.svg")}
+  .ui-icon-shield{--ui-icon-image:url("../assets/icons/shield.svg")}
+  .ui-icon-refresh{--ui-icon-image:url("../assets/icons/refresh.svg")}
+  .ui-icon-back{--ui-icon-image:url("../assets/icons/arrow-left.svg")}
+  .ui-icon-edit{--ui-icon-image:url("../assets/icons/edit.svg")}
+  .ui-icon-key{--ui-icon-image:url("../assets/icons/key.svg")}
+  .ui-icon-document{--ui-icon-image:url("../assets/icons/document.svg")}
+  .ui-icon-archive{--ui-icon-image:url("../assets/icons/archive.svg")}
+  .ui-icon-login{--ui-icon-image:url("../assets/icons/login.svg")}
+  .ui-icon-settings{--ui-icon-image:url("../assets/icons/settings.svg")}
+  .ui-icon-trash{--ui-icon-image:url("../assets/icons/trash.svg")}
+  .ui-icon-close{--ui-icon-image:url("../assets/icons/close.svg")}
+  .ui-icon-chevron-down{--ui-icon-image:url("../assets/icons/chevron-down.svg")}
+  .ui-icon-chevron-right{--ui-icon-image:url("../assets/icons/chevron-right.svg")}
+  .more-chevron,.structure-chevron{transition:transform var(--ref-duration) var(--ref-ease)}
+  .more-actions>summary:after{content:none}
+  .more-actions[open]>summary:after{content:none}
+  .more-actions[open] .more-chevron,.structure-toggle[aria-expanded="true"] .structure-chevron{transform:rotate(180deg)}
+  .expander .ui-icon{width:14px;height:14px;transition:transform var(--ref-duration) var(--ref-ease)}
+  .expander[aria-expanded="true"] .ui-icon{transform:rotate(90deg)}
+  .root-toggle-collapsed{transform:rotate(-90deg)}
+  .profile-create>summary:before{content:none!important}
+  .profile-create .profile-chevron{transition:transform var(--ref-duration) var(--ref-ease)}
+  .profile-create[open] .profile-chevron{transform:rotate(90deg)}
+  .audit-changes>summary{display:flex;align-items:center;gap:7px}
+  .audit-changes .audit-chevron{transition:transform var(--ref-duration) var(--ref-ease)}
+  .audit-changes[open] .audit-chevron{transform:rotate(90deg)}
   .more-actions-menu{
     top:calc(100% + 8px);
     width:280px;
@@ -413,21 +455,6 @@
     background-position:14px center;
     background-size:16px 16px;
   }
-  #pdfReportBtn:before,#printStructureBtn:before,#printGanttA4Btn:before,#printGanttA3Btn:before{
-    content:"";
-    width:16px;
-    height:16px;
-    flex:0 0 16px;
-    background:url("../assets/icons/print.svg") center/16px 16px no-repeat;
-  }
-  #deleteStageBtn:before{
-    content:"";
-    width:16px;
-    height:16px;
-    flex:0 0 16px;
-    background:url("../assets/icons/trash.svg") center/16px 16px no-repeat;
-  }
-
   .notice{border:0;border-radius:16px;padding:12px 16px;font-size:13px;line-height:20px}
   .notice.info{color:var(--ref-info);background:var(--ref-info-bg)}
   .notice.ok{color:var(--ref-positive);background:var(--ref-positive-bg)}
