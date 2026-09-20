@@ -201,40 +201,22 @@
   .btn.danger,.btn.danger-link,.btn.danger-outline{color:var(--ref-negative);background:transparent;border-color:transparent;box-shadow:none}
   .btn.danger:hover,.btn.danger-link:hover,.btn.danger-outline:hover{color:#bb2f22;background:var(--ref-negative-bg);border-color:transparent}
   .btn:disabled{color:var(--ref-disabled);background:var(--ref-translucent-100);opacity:1;cursor:not-allowed}
+  .ui-icon-sprite{position:absolute!important;left:-9999px!important;overflow:hidden!important}
   .ui-icon{
-    --ui-icon-image:none;
     display:inline-block;
     width:16px;
     height:16px;
     flex:0 0 16px;
-    background-color:currentColor;
-    -webkit-mask:var(--ui-icon-image) center/contain no-repeat;
-    mask:var(--ui-icon-image) center/contain no-repeat;
+    overflow:visible;
+    fill:none;
+    stroke:currentColor;
+    stroke-width:2;
+    stroke-linecap:round;
+    stroke-linejoin:round;
     pointer-events:none;
   }
+  .ui-icon use{pointer-events:none}
   .btn.icon .ui-icon{width:18px;height:18px;flex-basis:18px}
-  .ui-icon-plus{--ui-icon-image:url("../assets/icons/plus.svg")}
-  .ui-icon-folder{--ui-icon-image:url("../assets/icons/folder-open.svg")}
-  .ui-icon-save{--ui-icon-image:url("../assets/icons/save.svg")}
-  .ui-icon-upload{--ui-icon-image:url("../assets/icons/upload.svg")}
-  .ui-icon-download{--ui-icon-image:url("../assets/icons/download.svg")}
-  .ui-icon-print{--ui-icon-image:url("../assets/icons/print.svg")}
-  .ui-icon-check{--ui-icon-image:url("../assets/icons/check.svg")}
-  .ui-icon-help{--ui-icon-image:url("../assets/icons/help-circle.svg")}
-  .ui-icon-users{--ui-icon-image:url("../assets/icons/users.svg")}
-  .ui-icon-shield{--ui-icon-image:url("../assets/icons/shield.svg")}
-  .ui-icon-refresh{--ui-icon-image:url("../assets/icons/refresh.svg")}
-  .ui-icon-back{--ui-icon-image:url("../assets/icons/arrow-left.svg")}
-  .ui-icon-edit{--ui-icon-image:url("../assets/icons/edit.svg")}
-  .ui-icon-key{--ui-icon-image:url("../assets/icons/key.svg")}
-  .ui-icon-document{--ui-icon-image:url("../assets/icons/document.svg")}
-  .ui-icon-archive{--ui-icon-image:url("../assets/icons/archive.svg")}
-  .ui-icon-login{--ui-icon-image:url("../assets/icons/login.svg")}
-  .ui-icon-settings{--ui-icon-image:url("../assets/icons/settings.svg")}
-  .ui-icon-trash{--ui-icon-image:url("../assets/icons/trash.svg")}
-  .ui-icon-close{--ui-icon-image:url("../assets/icons/close.svg")}
-  .ui-icon-chevron-down{--ui-icon-image:url("../assets/icons/chevron-down.svg")}
-  .ui-icon-chevron-right{--ui-icon-image:url("../assets/icons/chevron-right.svg")}
   .more-chevron,.structure-chevron{transition:transform var(--ref-duration) var(--ref-ease)}
   .more-actions>summary:after{content:none}
   .more-actions[open]>summary:after{content:none}

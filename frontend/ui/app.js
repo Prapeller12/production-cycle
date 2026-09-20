@@ -26,7 +26,8 @@ function derivedStageVisualStatus(s){return D.visualStatus(s,isoToday())}
 function rootVisualStatus(){return D.projectStatus(state,isoToday())}
 function statusText(k){return k==='overdue'?'Просрочено':STATUS[k]||k}
 function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
-function icon(name,extra=''){return `<span class="ui-icon ui-icon-${name}${extra?' '+extra:''}" aria-hidden="true"></span>`}
+function icon(name,extra=''){return `<svg class="ui-icon ui-icon-${name}${extra?' '+extra:''}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><use href="#ui-icon-${name}"></use></svg>`}
+function hydrateStaticIcons(root=document){root.querySelectorAll('span.ui-icon').forEach(source=>{const token=[...source.classList].find(name=>name.startsWith('ui-icon-'));if(!token)return;const name=token.slice(8),extra=[...source.classList].filter(value=>value!=='ui-icon'&&value!==token).join(' '),template=document.createElement('template');template.innerHTML=icon(name,extra);source.replaceWith(template.content.firstElementChild)})}
 function rememberPersistedStatuses(){persistedStatuses=new Map(state.stages.map(stage=>[stage.uid,stage.status]))}
 function newlyCompletedStages(model=state){return model.stages.filter(stage=>stage.status==='done'&&persistedStatuses.get(stage.uid)!=='done')}
 function cloneState(model=state){return {databaseId:model.databaseId,project:{...model.project},stages:model.stages.map(stage=>({...stage})),nextSeq:model.nextSeq,collapsed:{...(model.collapsed||{})}}}
@@ -35,6 +36,7 @@ function completionTargets(model,uids){const wanted=new Set(uids||[]);return mod
 function updateFromForm(){for(const [k,el] of Object.entries(els)){const key=k==='projectName'?'name':k==='projectAddressees'?'addressees':k==='projectStart'?'start':k==='projectDeadline'?'deadline':k;state.project[key]=clean(el.value)}render(false)}
 function syncForm(){els.projectName.value=state.project.name;els.orderNo.value=state.project.orderNo;els.initiator.value=state.project.initiator;els.executor.value=state.project.executor;els.projectAddressees.value=state.project.addressees||'';els.projectStart.value=state.project.start;els.projectDeadline.value=state.project.deadline}
 Object.values(els).forEach(el=>el.addEventListener('input',updateFromForm));
+hydrateStaticIcons();
 
 const primaryStageButton=document.createElement('button');primaryStageButton.className='btn primary stage-primary-btn';primaryStageButton.innerHTML=icon('plus')+'Создать этап';primaryStageButton.onclick=()=>openStageModal(null);
 function placePrimaryStageButton(){const emptySlot=$('emptyStageButtonSlot'),inlineSlot=$('inlineStageButtonSlot'),wrap=document.querySelector('.table-wrap');if(state.stages.length){wrap.classList.add('has-stages');inlineSlot.appendChild(primaryStageButton)}else{wrap.classList.remove('has-stages');emptySlot.appendChild(primaryStageButton)}}
