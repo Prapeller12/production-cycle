@@ -1,0 +1,63 @@
+{
+  "profileVersion": 1,
+  "reference": {
+    "name": "Frontend Reference Kit v1 / Реестр писем",
+    "verification": "passed",
+    "visualOnly": true
+  },
+  "target": {
+    "name": "Производственный цикл",
+    "baselineCommit": "cd9fd9053791f386d44498c14e668602c6a696fc",
+    "stack": "static HTML/CSS/JavaScript inside Tauri WebView2",
+    "entryPoints": [
+      "frontend/index.html",
+      "frontend/styles/app.css",
+      "frontend/styles/reference-theme.css",
+      "frontend/ui/app.js"
+    ]
+  },
+  "strategy": {
+    "mode": "screen-only CSS theme overlay",
+    "preserveBusinessLogic": true,
+    "preserveStorageAndMigrations": true,
+    "preserveImportExport": true,
+    "preserveRuntime": true,
+    "preservePrintTypography": true
+  },
+  "screen": {
+    "font": "Golos Text (local WOFF2, 400/500/700)",
+    "accent": "#e5402b",
+    "dark": "#1d2029",
+    "background": "#f3f4f7",
+    "surface": "#ffffff",
+    "cardRadiusPx": 24,
+    "controlHeightPx": 40,
+    "primaryActionHeightPx": 48,
+    "views": [
+      "registry",
+      "deadline control",
+      "Gantt",
+      "administrator",
+      "dialogs",
+      "narrow registry"
+    ]
+  },
+  "print": {
+    "changed": false,
+    "font": "Segoe UI, Arial, sans-serif",
+    "reportBodyPt": 14,
+    "structureNodePt": 14,
+    "formats": ["A4 landscape", "A3 landscape"]
+  },
+  "runtime": {
+    "platforms": ["Windows 10 x64", "Windows 11 x64"],
+    "launch": "production-cycle.exe",
+    "storage": "data/production-cycle.db",
+    "networkRequired": false
+  },
+  "visualChecks": {
+    "desktop": {"width": 1440, "height": 1000},
+    "narrow": {"width": 760, "height": 900},
+    "automation": "tests/browser.cjs in GitHub Actions"
+  }
+}
