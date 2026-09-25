@@ -1,0 +1,28 @@
+{
+  "deviations": [
+    {
+      "id": "PRINT-001",
+      "referenceBehavior": "Reference kit includes its own print typography examples.",
+      "targetBehavior": "Existing production report, hierarchy and Gantt print rules remain unchanged.",
+      "reason": "The target has accepted A4/A3 templates, 14 pt report text and Segoe UI/Arial typography."
+    },
+    {
+      "id": "STACK-001",
+      "referenceBehavior": "Reference implementation may use a component framework.",
+      "targetBehavior": "Static HTML/CSS/JavaScript and existing Tauri IPC are retained.",
+      "reason": "A framework migration is outside a visual adaptation and would add runtime and regression risk."
+    },
+    {
+      "id": "NARROW-001",
+      "referenceBehavior": "Desktop-first register layout.",
+      "targetBehavior": "The existing narrow card view is retained and themed.",
+      "reason": "It preserves all fields and supports demonstrations on a phone-sized screen."
+    },
+    {
+      "id": "SAFETY-001",
+      "referenceBehavior": "Generic button hierarchy.",
+      "targetBehavior": "Destructive and administrative actions remain visually and spatially separated.",
+      "reason": "The production workflow requires explicit separation of routine and high-risk actions."
+    }
+  ]
+}

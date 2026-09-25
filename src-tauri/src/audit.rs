@@ -49,6 +49,60 @@ pub fn initialize_audit_schema(conn: &Connection) -> std::result::Result<(), Str
     if !columns.iter().any(|name| name == "changes_json") {
         conn.execute_batch("ALTER TABLE audit_event ADD COLUMN changes_json TEXT NOT NULL DEFAULT '[]';").map_err(|e| e.to_string())?;
     }
+    migrate_audit_user_roles(conn)?;
+    Ok(())
+}
+
+fn migrate_audit_user_roles(conn: &Connection) -> std::result::Result<(), String> {
+    let sql: String = conn.query_row(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_user'",
+        [],
+        |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    if !sql.contains("project_manager") || !sql.contains("reviewer") {
+        let migration =
+            "PRAGMA foreign_keys=OFF;
+             BEGIN IMMEDIATE;
+             CREATE TABLE audit_user_v4 (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               display_name TEXT NOT NULL UNIQUE,
+               role TEXT NOT NULL CHECK(role IN ('admin','reviewer','project_manager')),
+               public_key TEXT NOT NULL,
+               encrypted_private_key TEXT NOT NULL,
+               kdf_salt TEXT NOT NULL,
+               encryption_nonce TEXT NOT NULL,
+               key_fingerprint TEXT NOT NULL UNIQUE,
+               active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+               created_at TEXT NOT NULL,
+               revoked_at TEXT NULL
+             );
+             INSERT INTO audit_user_v4
+               (id,display_name,role,public_key,encrypted_private_key,kdf_salt,encryption_nonce,key_fingerprint,active,created_at,revoked_at)
+             SELECT id,display_name,
+               CASE
+                 WHEN id=(SELECT COALESCE(MIN(CASE WHEN role='admin' THEN id END),MIN(id)) FROM audit_user) THEN 'admin'
+                 WHEN role IN ('admin','signer','reviewer') THEN 'reviewer'
+                 ELSE 'project_manager'
+               END,
+               public_key,encrypted_private_key,kdf_salt,encryption_nonce,key_fingerprint,active,created_at,revoked_at
+             FROM audit_user;
+             DROP TABLE audit_user;
+             ALTER TABLE audit_user_v4 RENAME TO audit_user;
+             CREATE UNIQUE INDEX idx_audit_user_single_admin ON audit_user(role) WHERE role='admin';
+             COMMIT;
+             PRAGMA foreign_keys=ON;";
+        if let Err(error) = conn.execute_batch(migration) {
+            let _ = conn.execute_batch("ROLLBACK; PRAGMA foreign_keys=ON;");
+            return Err(error.to_string());
+        }
+    } else {
+        conn.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_user_single_admin ON audit_user(role) WHERE role='admin';")
+            .map_err(|e| e.to_string())?;
+    }
+    let mut violations = conn.prepare("PRAGMA foreign_key_check").map_err(|e| e.to_string())?;
+    if violations.exists([]).map_err(|e| e.to_string())? {
+        return Err("Миграция ролей нарушила связи журнала подтверждений.".into());
+    }
     Ok(())
 }
 
@@ -82,6 +136,8 @@ pub struct CreateAuditUserInput {
     pub pin: String,
     #[serde(default)]
     pub is_admin: bool,
+    #[serde(default)]
+    pub role: Option<String>,
     #[serde(default)]
     pub admin_user_id: Option<i64>,
     #[serde(default)]
@@ -402,18 +458,30 @@ fn authenticate(
     conn: &Connection,
     user_id: i64,
     pin: &str,
-    require_admin: bool,
+    requirement: RoleRequirement,
 ) -> std::result::Result<(AuditUserSecret, SigningKey), String> {
     let user = load_user(conn, user_id)?;
-    if require_admin && user.role != "admin" {
-        return Err("Для этой операции требуется профиль администратора.".into());
+    let allowed = match requirement {
+        RoleRequirement::AnySigner => matches!(user.role.as_str(), "admin" | "reviewer" | "project_manager"),
+        RoleRequirement::Reviewer => matches!(user.role.as_str(), "admin" | "reviewer"),
+        RoleRequirement::Admin => user.role == "admin",
+    };
+    if !allowed {
+        return Err(match requirement {
+            RoleRequirement::AnySigner => "Для этой операции требуется действующий профиль подписи.",
+            RoleRequirement::Reviewer => "Для этой операции требуется ключ проверяющего или администратора.",
+            RoleRequirement::Admin => "Для этой операции требуется профиль администратора.",
+        }.into());
     }
     let signing_key = decrypt_signing_key(&user, pin)?;
     Ok((user, signing_key))
 }
 
+#[derive(Clone, Copy)]
+enum RoleRequirement { AnySigner, Reviewer, Admin }
+
 pub(crate) fn authenticate_admin(conn: &Connection, user_id: i64, pin: &str) -> std::result::Result<(), String> {
-    authenticate(conn, user_id, pin, true).map(|_| ())
+    authenticate(conn, user_id, pin, RoleRequirement::Admin).map(|_| ())
 }
 
 fn snapshot_hash(snapshot: &ProductionSnapshot) -> std::result::Result<String, String> {
@@ -499,6 +567,11 @@ impl ProductionDb {
             .map_err(|e| e.to_string())
     }
 
+    pub fn authorize_admin(&self, user_id: i64, pin: &str) -> std::result::Result<(), String> {
+        let conn = self.conn.lock().map_err(|_| "База данных занята".to_string())?;
+        authenticate(&conn, user_id, pin, RoleRequirement::Admin).map(|_| ())
+    }
+
     pub fn create_audit_user(
         &self,
         input: CreateAuditUserInput,
@@ -518,21 +591,31 @@ impl ProductionDb {
             .query_row("SELECT COUNT(*) FROM audit_user", [], |row| row.get(0))
             .map_err(|e| e.to_string())?;
         if count > 0 {
-            let admin_id = input
+            let authorizing_user_id = input
                 .admin_user_id
-                .ok_or_else(|| "Укажите администратора, создающего профиль.".to_string())?;
-            let admin_pin = input
+                .ok_or_else(|| "Выберите действующего пользователя, создающего профиль.".to_string())?;
+            let authorizing_pin = input
                 .admin_pin
                 .as_deref()
-                .ok_or_else(|| "Введите PIN администратора.".to_string())?;
-            authenticate(&conn, admin_id, admin_pin, true)?;
+                .ok_or_else(|| "Введите PIN пользователя, создающего профиль.".to_string())?;
+            authenticate(&conn, authorizing_user_id, authorizing_pin, RoleRequirement::AnySigner)?;
         }
         let mut rng = OsRng;
         let signing_key = SigningKey::generate(&mut rng);
         let public_key = signing_key.verifying_key().to_bytes();
         let fingerprint = sha256_hex(&public_key)[..16].to_uppercase();
         let (encrypted, salt, nonce) = encrypt_signing_key(&signing_key, &input.pin)?;
-        let role = if count == 0 || input.is_admin { "admin" } else { "signer" };
+        let requested_role = input.role.as_deref().unwrap_or(if input.is_admin { "admin" } else { "project_manager" });
+        let role = if count == 0 {
+            "admin"
+        } else {
+            match requested_role {
+                "project_manager" => "project_manager",
+                "reviewer" => "reviewer",
+                "admin" => return Err("В программе уже есть администратор. Можно создать руководителя проекта или проверяющего.".into()),
+                _ => return Err("Неизвестная роль профиля подписи.".into()),
+            }
+        };
         let now = Local::now().to_rfc3339();
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         tx.execute(
@@ -558,7 +641,7 @@ impl ProductionDb {
         }
         let comment = validate_comment(comment, "Комментарий к изменению")?;
         let mut conn = self.conn.lock().map_err(|_| "База данных занята".to_string())?;
-        let (user, signing_key) = authenticate(&conn, user_id, pin, false)?;
+        let (user, signing_key) = authenticate(&conn, user_id, pin, RoleRequirement::AnySigner)?;
         let previous = match snapshot.database_id {
             Some(project_id) => load_snapshot_by_id_conn(&conn, project_id).map_err(|e| e.to_string())?,
             None => None,
@@ -575,6 +658,17 @@ impl ProductionDb {
                     && old_statuses.get(&stage.uid).map(String::as_str) != Some("done")
             })
             .collect();
+        let reopened: Vec<_> = snapshot
+            .stages
+            .iter()
+            .filter(|stage| {
+                old_statuses.get(&stage.uid).map(String::as_str) == Some("done")
+                    && stage.status != StageStatus::Done
+            })
+            .collect();
+        if !reopened.is_empty() && user.role != "admin" {
+            return Err("Возвратить выполненный этап в работу может только администратор.".into());
+        }
         let completed_uids = completed.iter().map(|stage| stage.uid.as_str()).collect::<std::collections::HashSet<_>>();
         let evidence = if completed.is_empty() {
             if evidence.as_ref().is_some_and(|value| !value.stage_uids.is_empty()) {
@@ -684,7 +778,7 @@ impl ProductionDb {
         project_id: Option<i64>,
     ) -> std::result::Result<AuditVerificationReport, String> {
         let conn = self.conn.lock().map_err(|_| "База данных занята".to_string())?;
-        authenticate(&conn, admin_user_id, admin_pin, true)?;
+        authenticate(&conn, admin_user_id, admin_pin, RoleRequirement::Admin)?;
         let mut stmt = conn.prepare("SELECT seq,project_id,event_id,stage_uid,stage_reg_number,event_type,actor_user_id,actor_name,key_fingerprint,comment,evidence_type,evidence_reference,changes_json,snapshot_hash,previous_hash,event_hash,payload_json,signature,public_key,created_at FROM audit_event WHERE (?1 IS NULL OR project_id=?1) ORDER BY project_id,seq").map_err(|e| e.to_string())?;
         let events = stmt.query_map(params![project_id], |row| Ok((row.get::<_,i64>(0)?,row.get::<_,i64>(1)?,row.get::<_,String>(2)?,row.get::<_,Option<String>>(3)?,row.get::<_,Option<String>>(4)?,row.get::<_,String>(5)?,row.get::<_,i64>(6)?,row.get::<_,String>(7)?,row.get::<_,String>(8)?,row.get::<_,String>(9)?,row.get::<_,Option<String>>(10)?,row.get::<_,Option<String>>(11)?,row.get::<_,String>(12)?,row.get::<_,String>(13)?,row.get::<_,String>(14)?,row.get::<_,String>(15)?,row.get::<_,String>(16)?,row.get::<_,String>(17)?,row.get::<_,String>(18)?,row.get::<_,String>(19)?))).map_err(|e| e.to_string())?.collect::<std::result::Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
         let mut previous_by_project = HashMap::<i64, String>::new();
@@ -743,7 +837,7 @@ impl ProductionDb {
             return Err("Новое наименование не должно содержать TAB или перенос строки.".into());
         }
         let mut conn = self.conn.lock().map_err(|_| "База данных занята".to_string())?;
-        let (user, signing_key) = authenticate(&conn, user_id, pin, false)?;
+        let (user, signing_key) = authenticate(&conn, user_id, pin, RoleRequirement::Reviewer)?;
         let project_query = match kind {
             DictionaryKind::Enterprise => "SELECT id FROM production_cycle WHERE enterprise=?1 UNION SELECT cycle_id FROM production_stage WHERE addressees=?1",
             DictionaryKind::Executor => "SELECT id FROM production_cycle WHERE executor=?1 UNION SELECT cycle_id FROM production_stage WHERE executor=?1",
@@ -818,6 +912,9 @@ pub fn attach_completion_confirmations(
 pub fn audit_list_users(db: State<'_, ProductionDb>) -> std::result::Result<Vec<AuditUserSummary>, String> { db.list_audit_users() }
 
 #[tauri::command]
+pub fn audit_authorize_admin(user_id: i64, pin: String, db: State<'_, ProductionDb>) -> std::result::Result<(), String> { db.authorize_admin(user_id,&pin) }
+
+#[tauri::command]
 pub fn audit_create_user(input: CreateAuditUserInput, db: State<'_, ProductionDb>) -> std::result::Result<AuditUserSummary, String> { db.create_audit_user(input) }
 
 #[tauri::command]
@@ -847,7 +944,43 @@ mod tests {
     }
 
     fn admin(db: &ProductionDb) -> AuditUserSummary {
-        db.create_audit_user(CreateAuditUserInput { display_name:"Владелец".into(),pin:"739201".into(),is_admin:false,admin_user_id:None,admin_pin:None }).unwrap()
+        db.create_audit_user(CreateAuditUserInput { display_name:"Владелец".into(),pin:"739201".into(),is_admin:false,role:None,admin_user_id:None,admin_pin:None }).unwrap()
+    }
+
+    #[test]
+    fn roles_allow_delegated_profiles_manager_completion_and_admin_reopen() {
+        let db=ProductionDb::memory().unwrap();let owner=admin(&db);
+        let manager=db.create_audit_user(CreateAuditUserInput { display_name:"Руководитель".into(),pin:"111111".into(),is_admin:false,role:Some("project_manager".into()),admin_user_id:Some(owner.id),admin_pin:Some("739201".into()) }).unwrap();
+        let reviewer=db.create_audit_user(CreateAuditUserInput { display_name:"Заместитель директора".into(),pin:"222222".into(),is_admin:false,role:Some("reviewer".into()),admin_user_id:Some(manager.id),admin_pin:Some("111111".into()) }).unwrap();
+        assert_eq!(manager.role,"project_manager");assert_eq!(reviewer.role,"reviewer");
+        let duplicate_admin=db.create_audit_user(CreateAuditUserInput { display_name:"Второй администратор".into(),pin:"333333".into(),is_admin:false,role:Some("admin".into()),admin_user_id:Some(reviewer.id),admin_pin:Some("222222".into()) }).unwrap_err();
+        assert!(duplicate_admin.contains("уже есть администратор"));
+        let mut snapshot=sample(StageStatus::Work);
+        let created=db.save_signed_snapshot(&snapshot,manager.id,"111111","Создание руководителем",None).unwrap();
+        snapshot.database_id=Some(created.project_id);snapshot.stages[0].status=StageStatus::Done;
+        let evidence=CompletionEvidenceInput{document_type:"Акт приёмки".into(),document_reference:"№21".into(),comment:"Этап принят".into(),stage_uids:vec!["stage-1".into()]};
+        assert_eq!(db.save_signed_snapshot(&snapshot,manager.id,"111111","Завершение руководителем",Some(evidence)).unwrap().completion_event_ids.len(),1);
+        snapshot.stages[0].status=StageStatus::Work;
+        assert!(db.save_signed_snapshot(&snapshot,reviewer.id,"222222","Возврат проверяющим",None).unwrap_err().contains("только администратор"));
+        assert!(db.save_signed_snapshot(&snapshot,owner.id,"739201","Возврат администратором",None).is_ok());
+    }
+
+    #[test]
+    fn legacy_signers_and_extra_admins_migrate_without_breaking_event_links() {
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;
+          CREATE TABLE audit_user(id INTEGER PRIMARY KEY AUTOINCREMENT,display_name TEXT NOT NULL UNIQUE,role TEXT NOT NULL CHECK(role IN ('admin','signer')),public_key TEXT NOT NULL,encrypted_private_key TEXT NOT NULL,kdf_salt TEXT NOT NULL,encryption_nonce TEXT NOT NULL,key_fingerprint TEXT NOT NULL UNIQUE,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,revoked_at TEXT NULL);
+          CREATE TABLE audit_event(id INTEGER PRIMARY KEY,actor_user_id INTEGER NOT NULL,changes_json TEXT NOT NULL DEFAULT '[]',FOREIGN KEY(actor_user_id) REFERENCES audit_user(id) ON DELETE RESTRICT);
+          INSERT INTO audit_user(display_name,role,public_key,encrypted_private_key,kdf_salt,encryption_nonce,key_fingerprint,active,created_at) VALUES
+            ('Администратор 1','admin','a','a','a','a','a',1,'2026-01-01'),
+            ('Администратор 2','admin','b','b','b','b','b',1,'2026-01-02'),
+            ('Подтверждающий','signer','c','c','c','c','c',1,'2026-01-03');
+          INSERT INTO audit_event(id,actor_user_id,changes_json) VALUES(1,3,'[]');").unwrap();
+        initialize_audit_schema(&conn).unwrap();
+        let admin_count:i64=conn.query_row("SELECT COUNT(*) FROM audit_user WHERE role='admin'",[],|row|row.get(0)).unwrap();
+        let reviewer_count:i64=conn.query_row("SELECT COUNT(*) FROM audit_user WHERE role='reviewer'",[],|row|row.get(0)).unwrap();
+        let actor:i64=conn.query_row("SELECT actor_user_id FROM audit_event WHERE id=1",[],|row|row.get(0)).unwrap();
+        assert_eq!(admin_count,1);assert_eq!(reviewer_count,2);assert_eq!(actor,3);
     }
 
     #[test]

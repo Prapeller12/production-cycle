@@ -43,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_production_cycle_order ON production_cycle(order_
 CREATE TABLE IF NOT EXISTS audit_user (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     display_name          TEXT NOT NULL UNIQUE,
-    role                  TEXT NOT NULL CHECK(role IN ('admin','signer')),
+    role                  TEXT NOT NULL CHECK(role IN ('admin','reviewer','project_manager')),
     public_key            TEXT NOT NULL,
     encrypted_private_key TEXT NOT NULL,
     kdf_salt              TEXT NOT NULL,
