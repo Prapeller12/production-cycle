@@ -49,7 +49,7 @@
    for(const [id,value] of Object.entries({projectName:'Сетевая проверка проекта',orderNo:'NET-TEST',initiator:'Инициатор',executor:'Исполнитель',projectAddressees:'Предприятие',projectStart:'2026-09-01',projectDeadline:'2026-11-30'}))fill(id,value);
    click('.stage-primary-btn');click('#saveStageBtn');assert($('stageTitle').getAttribute('aria-invalid')==='true','Required title not highlighted');
    fill('stageTitle','Родительский этап');fill('stageExecutor','Исполнитель');fill('stageAddressees','Предприятие');fill('stageStart','2026-09-01');fill('stageDeadline','2026-10-30');fill('stageStatus','work');fill('stageComment','Комментарий родителя');click('#saveStageBtn');
-   await wait(()=>!open('stageModal'),'create stage');click('#treeBody [data-act="edit"]');click('#createChildStageBtn');fill('stageTitle','Дочерний этап');fill('stageDeadline','2026-10-15');fill('stageStatus','work');click('#saveStageBtn');await wait(()=>!open('stageModal'),'create child');
+   await wait(()=>!open('stageModal'),'create stage');click('#treeBody [data-act="edit"]');click('#createChildStageBtn');fill('stageTitle','Дочерний этап');fill('stageDeadline','2026-09-15');fill('stageStatus','work');click('#saveStageBtn');await wait(()=>!open('stageModal'),'create child');
    const sign=async(user,comment,evidence=false)=>{
     await wait(()=>open('saveConfirmationModal'),'sign dialog');fill('saveSigner',user.id);fill('saveSignerPin','739201');fill('saveChangeComment',comment);
     if(evidence){fill('evidenceType','Акт приёмки');fill('evidenceReference','NET-ACT-1');fill('evidenceComment','Принят только выбранный этап')}

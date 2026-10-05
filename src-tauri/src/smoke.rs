@@ -45,4 +45,4 @@ pub const SCRIPT:&str=r#"
 })();
 "#;
 
-pub const NETWORK_SCRIPT:&str=include_str!("../../../tests/network-native-smoke.js");
+pub const NETWORK_SCRIPT:&str=include_str!("../../tests/network-native-smoke.js");
