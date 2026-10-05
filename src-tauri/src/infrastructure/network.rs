@@ -470,7 +470,10 @@ mod tests{
     }
     #[test]fn exactly_three_sessions_are_allowed(){
         let root=env::temp_dir().join(format!("production-network-slots-{}",Uuid::new_v4()));
-        let first=runtime(&root,"client-1"),second=runtime(&root,"client-2"),third=runtime(&root,"client-3"),fourth=runtime(&root,"client-4");
+        let first=runtime(&root,"client-1");
+        let second=runtime(&root,"client-2");
+        let third=runtime(&root,"client-3");
+        let fourth=runtime(&root,"client-4");
         assert_eq!(first.login(Some(user(1,"project_manager"))).unwrap().state,"active");
         assert_eq!(second.login(Some(user(2,"reviewer"))).unwrap().state,"active");
         assert_eq!(third.login(Some(user(3,"project_manager"))).unwrap().state,"active");
