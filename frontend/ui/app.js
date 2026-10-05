@@ -5,6 +5,7 @@ const {STATUS}=Production.config;
 const D=Production.domain, J=Production.projectFile, B=Production.backend;
 let state={databaseId:null,project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};
 let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',ganttScale='quarter',structureCollapsed=true,importFiles={out:null,in:null},importCandidate=null,importPreviewKind='out',dictionaryEntries=[],projectListItems=[],deadlineControlItems=[],auditUsers=[],pendingSignatureAction=null,persistedStatuses=new Map(),adminSession=null,onboardingStep=0;
+let networkMode=false,networkSessionActive=false,networkTimer=null,networkDraftTimer=null,lastNetworkDraftFingerprint='',networkEvictionStarted=false;
 const modalReturnFocus=new Map();
 const $=id=>document.getElementById(id);
 const els={projectName:$('projectName'),orderNo:$('orderNo'),initiator:$('initiator'),executor:$('executor'),projectAddressees:$('projectAddressees'),projectStart:$('projectStart'),projectDeadline:$('projectDeadline')};
@@ -77,6 +78,7 @@ function render(showMessage=false){
  const hidden=new Set();for(const {stage:s,depth} of D.preorder(state)){if(state.collapsed.__root||hidden.has(s.parentUid)){hidden.add(s.uid);continue}if(stageMatchesFilter(s)){visible++;body.appendChild(makeStageRow(s,depth+1))}if(state.collapsed[s.uid])hidden.add(s.uid)}
  $('emptyState').style.display=state.stages.length?'none':'block';placePrimaryStageButton();
  renderGantt();
+ scheduleNetworkDraft();
  if(showMessage)message('ok','Структура обновлена.');
 }
 function makeRootRow(){const tr=document.createElement('tr');tr.className='root';const st=rootVisualStatus(),dl=daysLeft(state.project.deadline);tr.innerHTML=`
@@ -310,6 +312,39 @@ function printGantt(size){
  requestAnimationFrame(()=>requestAnimationFrame(()=>{void $('ganttPrint').offsetWidth;if(window.__TAURI__)window.__TAURI__.core.invoke('print_report').catch(e=>{restore();message('err','Не удалось открыть печать: '+e)});else window.print()}))
 }
 
+function updateNetworkState(status,text=''){
+ const chip=$('networkState');if(!networkMode){chip.hidden=true;return}chip.hidden=false;
+ const occupied=status?.occupied??0,maximum=status?.maximum??3;chip.className='network-state '+(status?.active?'connected':'waiting');
+ chip.textContent=text||(status?.active?`Сеть: ${occupied} из ${maximum} · ${status.displayName||'сеанс активен'}`:`Сеть: ${occupied} из ${maximum}`);
+}
+function scheduleNetworkDraft(){
+ if(!networkMode||!networkSessionActive||networkEvictionStarted||(!state.project.name&&!state.project.orderNo&&!state.stages.length))return;
+ clearTimeout(networkDraftTimer);networkDraftTimer=setTimeout(()=>void flushNetworkDraft(false),800);
+}
+async function flushNetworkDraft(force){
+ if(!networkMode||!networkSessionActive)return true;
+ const fingerprint=J.fingerprint(state);if(!force&&fingerprint===lastNetworkDraftFingerprint)return true;
+ try{const result=await B.networkSaveDraft(state);lastNetworkDraftFingerprint=fingerprint;if(result.location==='localRecoveryQueue')updateNetworkState({active:true,occupied:'?',maximum:3},'Сеть недоступна · черновик сохранён на этом компьютере');return true}
+ catch(error){updateNetworkState({active:false,occupied:'?',maximum:3},'Нет связи · изменения остаются на этом компьютере');return false}
+}
+async function pollNetworkSession(){
+ if(!networkMode||networkEvictionStarted)return;
+ try{const status=await B.networkStatus();updateNetworkState(status);if(status.evictionRequested){networkEvictionStarted=true;clearInterval(networkTimer);updateNetworkState(status,'Входит администратор · сохраняем черновик и закрываем сеанс…');await flushNetworkDraft(true);await B.networkFinishEviction();}}
+ catch(_error){updateNetworkState({active:false,occupied:'?',maximum:3},'Общая папка временно недоступна')}
+}
+function activateNetworkSession(status){
+ networkSessionActive=true;$('networkLoginModal').classList.remove('open');$('networkLoginPin').value='';updateNetworkState(status);clearInterval(networkTimer);networkTimer=setInterval(()=>void pollNetworkSession(),2000);void pollNetworkSession();scheduleNetworkDraft();if(!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250);
+}
+async function submitNetworkLogin(){
+ const button=$('networkLoginBtn'),statusBox=$('networkLoginStatus'),userId=$('networkLoginUser').value;button.disabled=true;statusBox.className='network-login-status';statusBox.textContent='Проверяем PIN и свободное место…';
+ try{const result=await B.networkLogin(userId?Number(userId):null,$('networkLoginPin').value);if(result.state==='active'||result.state==='standalone'){activateNetworkSession({active:true,occupied:result.occupied,maximum:result.maximum,displayName:$('networkLoginUser').selectedOptions[0]?.textContent||''});return}statusBox.className='network-login-status error';statusBox.textContent=result.state==='full'?'Все 3 места заняты. Закройте программу на одном из компьютеров и повторите вход.':'Администратор запросил освобождение места. Подождите несколько секунд и нажмите «Войти» ещё раз.'}
+ catch(error){statusBox.className='network-login-status error';statusBox.textContent=String(error)}finally{button.disabled=false}
+}
+async function initializeNetworkMode(){
+ try{const status=await B.networkStatus();if(!status.enabled)return;networkMode=true;updateNetworkState(status);const users=await B.listAuditUsers();if(!users.length){const result=await B.networkLogin(null,'');activateNetworkSession({active:true,occupied:result.occupied,maximum:result.maximum,displayName:'Первичная настройка'});return}const select=$('networkLoginUser');select.innerHTML=users.filter(user=>user.active).map(user=>`<option value="${user.id}">${escapeHtml(user.displayName)} · ${escapeHtml(roleLabel(user.role))}</option>`).join('');$('networkLoginModal').classList.add('open');requestAnimationFrame(()=>$('networkLoginUser').focus())}
+ catch(error){networkMode=true;$('networkLoginModal').classList.add('open');$('networkLoginBtn').disabled=true;$('networkLoginStatus').className='network-login-status error';$('networkLoginStatus').textContent='Не удалось открыть общую рабочую папку: '+error}
+}
+
 function newProject(){if((state.project.name||state.stages.length)&&!confirm('Очистить текущий проект и начать новый?'))return;state={databaseId:null,project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};savedSnapshot=null;persistedStatuses=new Map();syncForm();render();refreshAutocomplete();message('ok','Создан новый пустой проект.')}
 function loadDemo(){if((state.project.name||state.stages.length)&&!confirm('Заменить текущий проект демонстрационным?'))return;state={databaseId:null,project:{name:'Демонстрационный заказ №924',orderNo:'924',initiator:'Производственная дирекция',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-06-01',deadline:'2026-11-30'},nextSeq:9,collapsed:{},stages:[
 {uid:'d1',seq:1,sort:1,parentUid:null,title:'Модуль А',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-06-01',deadline:'2026-06-30',status:'work'},
@@ -322,7 +357,7 @@ function loadDemo(){if((state.project.name||state.stages.length)&&!confirm('За
 {uid:'d8',seq:8,sort:6,parentUid:null,title:'Привода',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-07-15',deadline:'2026-11-30',status:'new'}]};savedSnapshot=null;persistedStatuses=new Map();syncForm();render();refreshAutocomplete();message('ok','Загружен демонстрационный производственный цикл.')}
 function focusable(container){return [...container.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(element=>element.offsetParent!==null)}
 function openModal(id){const backdrop=$(id);modalReturnFocus.set(id,document.activeElement);backdrop.classList.add('open');requestAnimationFrame(()=>{const controls=focusable(backdrop),preferred=controls.find(element=>element.matches('input:not([type="hidden"]),select,textarea'));(preferred||controls[0]||backdrop.querySelector('.modal')).focus()})}
-function closeModal(id){const backdrop=$(id);if(!backdrop?.classList.contains('open'))return;if(id==='onboardingModal')markOnboardingSeen();backdrop.classList.remove('open');if(id==='saveConfirmationModal')pendingSignatureAction=null;const target=modalReturnFocus.get(id);modalReturnFocus.delete(id);if(target?.isConnected)target.focus()}
+function closeModal(id){if(id==='networkLoginModal'&&!networkSessionActive)return;const backdrop=$(id);if(!backdrop?.classList.contains('open'))return;if(id==='onboardingModal')markOnboardingSeen();backdrop.classList.remove('open');if(id==='saveConfirmationModal')pendingSignatureAction=null;const target=modalReturnFocus.get(id);modalReturnFocus.delete(id);if(target?.isConnected)target.focus()}
 function topOpenModal(){return [...document.querySelectorAll('.modal-backdrop.open')].at(-1)||null}
 function trapModalFocus(event,modal){const controls=focusable(modal);if(!controls.length)return;const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}
 function enhanceAccessibility(){document.querySelectorAll('.modal-backdrop').forEach((backdrop,index)=>{backdrop.setAttribute('role','dialog');backdrop.setAttribute('aria-modal','true');const heading=backdrop.querySelector('h2');if(heading){if(!heading.id)heading.id=`modalTitle${index+1}`;backdrop.setAttribute('aria-labelledby',heading.id)}const close=backdrop.querySelector('[data-close]');if(close&&!close.getAttribute('aria-label'))close.setAttribute('aria-label','Закрыть окно')});document.querySelectorAll('label:not([for])').forEach((label,index)=>{const control=label.querySelector('input,select,textarea')||label.nextElementSibling;if(control?.matches?.('input,select,textarea')){if(!control.id)control.id=`field${index+1}`;label.htmlFor=control.id}})}
@@ -340,9 +375,10 @@ function onboardingSeen(){try{return localStorage.getItem('production-cycle-onbo
 function markOnboardingSeen(){try{localStorage.setItem('production-cycle-onboarding-v1','done')}catch(_e){}}
 function nextOnboarding(){if(onboardingStep<onboardingSteps.length-1){onboardingStep++;renderOnboarding();return}closeModal('onboardingModal')}
 function previousOnboarding(){if(onboardingStep>0){onboardingStep--;renderOnboarding()}}
-document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('mousedown',e=>{if(e.target===m)closeModal(m.id)}));
+document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('mousedown',e=>{if(e.target===m&&m.id!=='networkLoginModal')closeModal(m.id)}));
 $('createChildStageBtn').onclick=createChildFromOpenStage;
 $('saveStageBtn').onclick=saveStage;$('deleteStageBtn').onclick=()=>editStageUid&&deleteStage(editStageUid);$('pdfReportBtn').onclick=printPdfReport;$('validateBtn').onclick=showValidation;$('exportBtn').onclick=openExport;$('saveJsonBtn').onclick=saveProject;$('loadJsonBtn').onclick=showProjects;$('profilesBtn').onclick=openProfiles;$('auditBtn').onclick=openAudit;$('confirmAdminLoginBtn').onclick=confirmAdminLogin;$('closeAdminBtn').onclick=closeAdminWorkspace;$('confirmSignedSaveBtn').onclick=confirmSignedAction;$('createAuditUserBtn').onclick=createAuditUser;$('refreshAuditBtn').onclick=loadAuditEvents;$('verifyAuditBtn').onclick=verifyAudit;$('importBtn').onclick=openImport;$('jsonFile').onchange=e=>{if(e.target.files[0])loadJsonFile(e.target.files[0]);e.target.value=''};$('newBtn').onclick=newProject;$('demoBtn').onclick=loadDemo;$('completeProjectBtn').onclick=completeRootProject;$('onboardingBackBtn').onclick=previousOnboarding;$('onboardingNextBtn').onclick=nextOnboarding;
+$('networkLoginBtn').onclick=submitNetworkLogin;$('networkLoginPin').addEventListener('keydown',event=>{if(event.key==='Enter')submitNetworkLogin()});
 document.querySelector('.more-actions-menu').addEventListener('click',event=>{if(event.target.closest('button'))event.currentTarget.closest('details').removeAttribute('open')});
 $('stageStatus').onchange=updateCompletionScope;$('completionScope').onchange=updateCompletionScope;
 $('refreshBackupsBtn').onclick=loadBackups;$('createBackupBtn').onclick=createBackup;
@@ -357,6 +393,8 @@ $('downloadOutBtn').onclick=async()=>{try{const d=exportCache||await exportData(
 
 document.querySelectorAll('.tab').forEach(tab=>{tab.onclick=()=>setWorkspace(tab.dataset.view);tab.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const tabs=[...document.querySelectorAll('.tab')],current=tabs.indexOf(tab);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(current+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;setWorkspace(tabs[next].dataset.view,true)}});document.querySelectorAll('[data-audit-view]').forEach(button=>{button.onclick=()=>setAuditView(button.dataset.auditView);button.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const tabs=[...document.querySelectorAll('[data-audit-view]')],current=tabs.indexOf(button);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(current+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;setAuditView(tabs[next].dataset.auditView,true)}});
 window.addEventListener('beforeunload',e=>{if((state.project.name||state.stages.length)&&J.fingerprint(state)!==savedSnapshot){e.preventDefault();e.returnValue=''}});
-document.addEventListener('keydown',e=>{const modal=topOpenModal();if(!modal)return;if(e.key==='Escape'){e.preventDefault();closeModal(modal.id)}else if(e.key==='Tab')trapModalFocus(e,modal)});
-enhanceAccessibility();setWorkspace('registry');setAuditView('journal');syncForm();render();refreshAutocomplete();if(!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')void flushNetworkDraft(true)});
+document.addEventListener('keydown',e=>{const modal=topOpenModal();if(!modal)return;if(e.key==='Escape'){e.preventDefault();if(modal.id!=='networkLoginModal')closeModal(modal.id)}else if(e.key==='Tab')trapModalFocus(e,modal)});
+async function boot(){enhanceAccessibility();setWorkspace('registry');setAuditView('journal');syncForm();render();refreshAutocomplete();await initializeNetworkMode();if(!networkMode&&!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250)}
+void boot();
 })();

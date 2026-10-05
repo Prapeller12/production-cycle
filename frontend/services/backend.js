@@ -100,6 +100,22 @@
     if(!native())throw Error('Восстановление доступно только в Windows-приложении.');
     return invoke('backup_restore',{fileName,adminUserId:Number(adminUserId),adminPin});
   }
+  async function networkStatus(){
+    if(!native())return {enabled:false,active:true,occupied:1,maximum:1,evictionRequested:false};
+    return invoke('network_status');
+  }
+  async function networkLogin(userId,pin){
+    if(!native())return {state:'standalone',occupied:1,maximum:1};
+    return invoke('network_login',{userId:Number.isSafeInteger(Number(userId))?Number(userId):null,pin:String(pin||'')});
+  }
+  async function networkSaveDraft(state){
+    if(!native())return {location:'standalone',savedAt:new Date().toISOString()};
+    return invoke('network_save_draft',{snapshot:toSnapshot(state)});
+  }
+  async function networkFinishEviction(){
+    if(!native())return true;
+    await invoke('network_finish_eviction');return true;
+  }
   function localDictionary(kind,state){
     const values=[];
     if(kind==='projectName')values.push(state.project.name);
@@ -136,5 +152,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,listDictionary,replaceDictionaryValue,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report});
 })();

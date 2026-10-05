@@ -6,17 +6,24 @@ mod smoke;
 mod infrastructure;
 mod production;
 use infrastructure::portable::Paths;
+use infrastructure::network::NetworkRuntime;
 use production::ProductionDb;
 use tauri::{Manager,WebviewUrl,WebviewWindowBuilder,http::Response};
 
 fn main(){
+    match infrastructure::network::maybe_relaunch_network_client(){Ok(true)=>return,Ok(false)=>{},Err(e)=>{eprintln!("{e}");std::process::exit(1)}}
     let paths=match Paths::load(){Ok(p)=>p,Err(e)=>{eprintln!("{}",e);std::process::exit(1)}};
-    let db=match ProductionDb::open(&paths.data.join("production-cycle.db")){Ok(db)=>db,Err(e)=>{eprintln!("{}",e);std::process::exit(1)}};
+    let network=match NetworkRuntime::from_environment(paths.data.clone()){Ok(value)=>value,Err(e)=>{eprintln!("{e}");std::process::exit(1)}};
+    let local_db=paths.data.join("production-cycle.db");
+    if let Err(e)=network.prepare_local_database(&local_db){eprintln!("{e}");std::process::exit(1)}
+    let db=match ProductionDb::open_with_backup_dir(&local_db,network.shared_backups()){Ok(db)=>db,Err(e)=>{eprintln!("{}",e);std::process::exit(1)}};
+    if let Err(e)=network.ensure_shared_database(&db){eprintln!("{e}");std::process::exit(1)}
     let frontend=paths.frontend.clone();
     let smoke=std::env::args().any(|arg|arg=="--smoke-test");
     tauri::Builder::default()
         .manage(paths)
         .manage(db)
+        .manage(network)
         .manage(smoke::Smoke(smoke))
         .register_uri_scheme_protocol("production",move |_context,request|{
             let relative=request.uri().path().trim_start_matches('/');
@@ -33,7 +40,9 @@ fn main(){
             production::production_export_txt,production::production_get_management_report,
             audit::audit_list_users,audit::audit_authorize_admin,audit::audit_create_user,audit::audit_save_snapshot,
             audit::audit_list_events,audit::audit_verify_log,audit::audit_replace_dictionary_value,
-            backup::backup_list,backup::backup_create,backup::backup_restore
+            backup::backup_list,backup::backup_create,backup::backup_restore,
+            infrastructure::network::network_status,infrastructure::network::network_login,
+            infrastructure::network::network_save_draft,infrastructure::network::network_finish_eviction
         ])
         .setup(move |app|{
             let paths=app.state::<Paths>();

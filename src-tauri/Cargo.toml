@@ -20,6 +20,10 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
+fs2 = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
