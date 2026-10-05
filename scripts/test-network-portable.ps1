@@ -19,11 +19,18 @@ if(-not $config.enabled -or $config.maxClients -ne 3 -or $config.version -ne $Ve
 $oldLocalAppData=$env:LOCALAPPDATA
 try{
   $env:LOCALAPPDATA=$localProfile
-  $report=Join-Path $testRoot 'network-self-test.json'
-  $env:PRODUCTION_CYCLE_SMOKE_REPORT=$report
-  $launcher=Start-Process -FilePath (Join-Path $root 'production-cycle.exe') -ArgumentList '--smoke-test' -WorkingDirectory $root -PassThru
-  if(-not $launcher.WaitForExit(180000)){Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue;throw 'Network launcher or local client timed out'}
-  if($launcher.ExitCode -ne 0){throw 'Network launcher failed'}
+  foreach($phase in @('first-run','relaunch')){
+    $report=Join-Path $testRoot "network-$phase.json"
+    $env:PRODUCTION_CYCLE_SMOKE_REPORT=$report
+    $launcher=Start-Process -FilePath (Join-Path $root 'production-cycle.exe') -ArgumentList '--smoke-test' -WorkingDirectory $root -PassThru
+    if(-not $launcher.WaitForExit(300000)){Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue;throw "Network $phase timed out"}
+    if(-not (Test-Path $report)){throw "Missing report: $phase (exit $($launcher.ExitCode))"}
+    $result=Get-Content $report -Raw | ConvertFrom-Json
+    if(-not $result.ok){throw "Network $phase failed: $($result.error)"}
+    if($launcher.ExitCode -ne 0){throw "Network $phase launcher failed"}
+    if(@($result.checks).Count -lt 1){throw "Network $phase executed no functional UI checks"}
+    Write-Host "$phase checks: $($result.checks -join '; ')"
+  }
   $cache=Join-Path $localProfile "ProductionCycleNetwork/cache/$Version"
   if(-not (Test-Path $report)){throw 'Local network client smoke report was not created'}
   $result=Get-Content $report -Raw | ConvertFrom-Json

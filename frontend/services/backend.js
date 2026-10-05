@@ -107,7 +107,7 @@
   }
   async function networkLogin(userId,pin){
     if(!native())return {state:'standalone',occupied:1,maximum:1};
-    return invoke('network_login',{userId:Number.isSafeInteger(Number(userId))?Number(userId):null,pin:String(pin||'')});
+    return invoke('network_login',{userId:userId!==null&&userId!==undefined&&String(userId).trim()!==''&&Number.isSafeInteger(Number(userId))&&Number(userId)>0?Number(userId):null,pin:String(pin||'')});
   }
   async function networkSaveDraft(state){
     if(!native())return {location:'standalone',savedAt:new Date().toISOString()};

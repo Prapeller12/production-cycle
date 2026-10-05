@@ -40,9 +40,9 @@ jobs:
           key: windows-rust-network-${{ hashFiles('src-tauri/Cargo.toml') }}-${{ github.run_id }}
           restore-keys: windows-rust-network-${{ hashFiles('src-tauri/Cargo.toml') }}-
       - name: Test Rust host, migrations and network coordination
-        run: cargo test --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
+        run: cargo test --locked --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
       - name: Build network host
-        run: cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
+        run: cargo build --locked --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
       - name: Obtain and verify Microsoft Fixed Runtime
         shell: pwsh
         run: ./scripts/fetch-runtime.ps1 -Destination "$env:RUNNER_TEMP/fixed-webview"
@@ -63,7 +63,7 @@ jobs:
           name: production-cycle-network-evidence
           path: |
             src-tauri/Cargo.lock
-            ${{ runner.temp }}/Сетевая проверка программы/network-self-test.json
+            ${{ runner.temp }}/Сетевая проверка программы/network-*.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ProductionCycle-network-test-windows10-11-x64

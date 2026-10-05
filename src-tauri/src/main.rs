@@ -29,6 +29,7 @@ fn main(){
     if let Err(e)=network.prepare_local_database(&local_db){startup_failure(&e)}
     let db=match ProductionDb::open_with_backup_dir(&local_db,network.shared_backups()){Ok(db)=>db,Err(e)=>startup_failure(&e.to_string())};
     if let Err(e)=network.ensure_shared_database(&db){startup_failure(&e)}
+    let network_enabled=network.enabled();
     let frontend=paths.frontend.clone();
     let smoke=std::env::args().any(|arg|arg=="--smoke-test");
     tauri::Builder::default()
@@ -61,7 +62,7 @@ fn main(){
                 .title("Производственный цикл — self-test v1")
                 .inner_size(1440.0,900.0).min_inner_size(700.0,500.0)
                 .data_directory(paths.webview.clone())
-                .on_page_load(move |window,payload|{if smoke && payload.event()==tauri::webview::PageLoadEvent::Finished {let _=window.eval(smoke::SCRIPT);}})
+                .on_page_load(move |window,payload|{if smoke && payload.event()==tauri::webview::PageLoadEvent::Finished {let _=window.eval(if network_enabled{smoke::NETWORK_SCRIPT}else{smoke::SCRIPT});}})
                 .on_navigation(|url|matches!(url.scheme(),"production") || url.host_str()==Some("production.localhost"))
                 .build()?;
             Ok(())

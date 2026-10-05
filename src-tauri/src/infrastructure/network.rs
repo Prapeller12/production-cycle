@@ -203,8 +203,20 @@ impl NetworkRuntime {
 
     pub fn login(&self,user:Option<AuditUserSummary>)->Result<NetworkLoginResult,String>{
         if !self.enabled{return Ok(NetworkLoginResult{state:"standalone".into(),occupied:1,maximum:1,evicted_display_name:None})}
-        if self.session.lock().map_err(|_|"Состояние сетевой сессии повреждено".to_string())?.is_some(){
-            return Ok(NetworkLoginResult{state:"active".into(),occupied:self.occupied_count(),maximum:self.maximum,evicted_display_name:None});
+        {
+            let mut guard=self.session.lock().map_err(|_|"Состояние сетевой сессии повреждено".to_string())?;
+            if let Some(active)=guard.as_mut(){
+                // Bind the initial setup slot to the newly authenticated administrator.
+                if active.metadata.user_id.is_none(){
+                    if let Some(ref authenticated)=user{
+                        active.metadata.user_id=Some(authenticated.id);
+                        active.metadata.role=authenticated.role.clone();
+                        active.display_name=authenticated.display_name.clone();
+                        self.write_metadata(&active.metadata)?;
+                    }
+                }
+                return Ok(NetworkLoginResult{state:"active".into(),occupied:self.occupied_count(),maximum:self.maximum,evicted_display_name:None});
+            }
         }
         let (user_id,display_name,role)=match user{
             Some(value)=>(Some(value.id),value.display_name,value.role),
@@ -486,6 +498,44 @@ mod tests{
         first.release().unwrap();
         assert_eq!(fourth.login(Some(user(4,"reviewer"))).unwrap().state,"active");
         drop((second,third,fourth,first));let _=fs::remove_dir_all(root);
+    }
+    #[test]fn bootstrap_session_is_bound_after_profile_creation(){
+        let root=env::temp_dir().join(format!("production-bootstrap-{}",Uuid::new_v4()));
+        let client=runtime(&root,"client");
+        client.login(None).unwrap();
+        let session_id=client.status().unwrap().session_id;
+        client.login(Some(user(1,"admin"))).unwrap();
+        let status=client.status().unwrap();
+        assert_eq!(status.session_id,session_id);
+        assert_eq!(status.display_name.as_deref(),Some("Пользователь 1"));
+        assert_eq!(client.session_metadata().unwrap()[0].1.user_id,Some(1));
+        assert_eq!(status.occupied,1);
+        drop(client);let _=fs::remove_dir_all(root);
+    }
+    #[test]fn administrator_evicts_newest_user_only_after_draft_is_saved(){
+        let root=env::temp_dir().join(format!("production-eviction-{}",Uuid::new_v4()));
+        let first=runtime(&root,"first");let second=runtime(&root,"second");let third=runtime(&root,"third");let admin=runtime(&root,"admin");
+        first.login(Some(user(1,"project_manager"))).unwrap();
+        thread::sleep(Duration::from_millis(5));second.login(Some(user(2,"reviewer"))).unwrap();
+        thread::sleep(Duration::from_millis(5));third.login(Some(user(3,"project_manager"))).unwrap();
+        let handle=thread::spawn(move||{
+            let started=Instant::now();
+            while !third.status().unwrap().eviction_requested{
+                assert!(started.elapsed()<Duration::from_secs(10),"Eviction request not delivered");
+                thread::sleep(Duration::from_millis(30));
+            }
+            let snapshot:ProductionSnapshot=serde_json::from_value(serde_json::json!({"databaseId":null,"project":{"name":"Черновик до вытеснения","orderNo":"DRAFT","initiator":"И","executor":"И","enterprise":"П","start":"2026-09-01","deadline":"2026-11-30"},"stages":[],"nextSeq":1})).unwrap();
+            assert_eq!(third.save_draft(&snapshot).unwrap().location,"shared");
+            third.release().unwrap();
+        });
+        assert_eq!(admin.login(Some(user(4,"admin"))).unwrap().state,"active");
+        handle.join().unwrap();
+        assert!(!first.status().unwrap().eviction_requested);assert!(!second.status().unwrap().eviction_requested);
+        let drafts=fs::read_dir(root.join("shared/drafts/user-3")).unwrap().collect::<Vec<_>>();assert_eq!(drafts.len(),1);
+        let draft:serde_json::Value=serde_json::from_slice(&fs::read(drafts[0].as_ref().unwrap().path()).unwrap()).unwrap();
+        assert_eq!(draft["snapshot"]["project"]["name"],"Черновик до вытеснения");
+        assert_eq!(admin.status().unwrap().occupied,3);
+        drop((first,second,admin));let _=fs::remove_dir_all(root);
     }
     #[test]fn shared_session_metadata_does_not_store_person_name(){
         let root=env::temp_dir().join(format!("production-network-private-session-{}",Uuid::new_v4()));let client=runtime(&root,"client");
