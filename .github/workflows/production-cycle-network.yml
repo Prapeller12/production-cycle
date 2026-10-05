@@ -63,7 +63,7 @@ jobs:
           name: production-cycle-network-evidence
           path: |
             src-tauri/Cargo.lock
-            ${{ runner.temp }}/Локальный профиль клиента/ProductionCycleNetwork/cache/**/temp/self-test.json
+            ${{ runner.temp }}/Сетевая проверка программы/network-self-test.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ProductionCycle-network-test-windows10-11-x64

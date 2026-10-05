@@ -10,14 +10,25 @@ use infrastructure::network::NetworkRuntime;
 use production::ProductionDb;
 use tauri::{Manager,WebviewUrl,WebviewWindowBuilder,http::Response};
 
+fn startup_failure(message:&str)->!{
+    if let Some(path)=std::env::var_os("PRODUCTION_CYCLE_SMOKE_REPORT").map(std::path::PathBuf::from){
+        if !path.is_file(){
+            if let Some(parent)=path.parent(){let _=std::fs::create_dir_all(parent);}
+            let body=serde_json::json!({"ok":false,"error":message,"phase":"startup"});
+            let _=std::fs::write(path,serde_json::to_vec_pretty(&body).unwrap_or_default());
+        }
+    }
+    eprintln!("{message}");std::process::exit(1)
+}
+
 fn main(){
-    match infrastructure::network::maybe_relaunch_network_client(){Ok(true)=>return,Ok(false)=>{},Err(e)=>{eprintln!("{e}");std::process::exit(1)}}
-    let paths=match Paths::load(){Ok(p)=>p,Err(e)=>{eprintln!("{}",e);std::process::exit(1)}};
-    let network=match NetworkRuntime::from_environment(paths.data.clone()){Ok(value)=>value,Err(e)=>{eprintln!("{e}");std::process::exit(1)}};
+    match infrastructure::network::maybe_relaunch_network_client(){Ok(true)=>return,Ok(false)=>{},Err(e)=>startup_failure(&e)}
+    let paths=match Paths::load(){Ok(p)=>p,Err(e)=>startup_failure(&e)};
+    let network=match NetworkRuntime::from_environment(paths.data.clone()){Ok(value)=>value,Err(e)=>startup_failure(&e)};
     let local_db=paths.data.join("production-cycle.db");
-    if let Err(e)=network.prepare_local_database(&local_db){eprintln!("{e}");std::process::exit(1)}
-    let db=match ProductionDb::open_with_backup_dir(&local_db,network.shared_backups()){Ok(db)=>db,Err(e)=>{eprintln!("{}",e);std::process::exit(1)}};
-    if let Err(e)=network.ensure_shared_database(&db){eprintln!("{e}");std::process::exit(1)}
+    if let Err(e)=network.prepare_local_database(&local_db){startup_failure(&e)}
+    let db=match ProductionDb::open_with_backup_dir(&local_db,network.shared_backups()){Ok(db)=>db,Err(e)=>startup_failure(&e.to_string())};
+    if let Err(e)=network.ensure_shared_database(&db){startup_failure(&e)}
     let frontend=paths.frontend.clone();
     let smoke=std::env::args().any(|arg|arg=="--smoke-test");
     tauri::Builder::default()

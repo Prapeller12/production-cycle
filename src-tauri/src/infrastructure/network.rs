@@ -362,7 +362,12 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
     let mut command=Command::new(local_exe);
     command.arg("--network-client");
     for argument in env::args().skip(1){if argument!="--network-client"{command.arg(argument);}}
-    command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,root).current_dir(&cache).spawn().map_err(|e|format!("Не удалось запустить локальный клиент: {e}"))?;
+    let smoke=env::args().any(|argument|argument=="--smoke-test");
+    let mut child=command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,root).current_dir(&cache).spawn().map_err(|e|format!("Не удалось запустить локальный клиент: {e}"))?;
+    if smoke{
+        let status=child.wait().map_err(|e|format!("Не удалось дождаться сетевого self-test: {e}"))?;
+        if !status.success(){return Err(format!("Сетевой self-test завершился с кодом {:?}.",status.code()))}
+    }
     Ok(true)
 }
 
