@@ -102,7 +102,8 @@
   }
   async function networkStatus(){
     if(!native())return {enabled:false,active:true,occupied:1,maximum:1,evictionRequested:false};
-    return invoke('network_status');
+    const result=await invoke('network_status');
+    return result&&typeof result.enabled==='boolean'?result:{enabled:false,active:true,occupied:1,maximum:1,evictionRequested:false};
   }
   async function networkLogin(userId,pin){
     if(!native())return {state:'standalone',occupied:1,maximum:1};
