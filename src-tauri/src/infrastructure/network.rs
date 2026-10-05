@@ -194,7 +194,7 @@ impl NetworkRuntime {
         let target=self.shared_database()?;
         let pending=target.with_extension(format!("pending-{}",Uuid::new_v4().simple()));
         fs::copy(&local,&pending).map_err(|e|format!("Не удалось передать базу в общую папку: {e}"))?;
-        File::open(&pending).and_then(|file|file.sync_all()).map_err(|e|format!("Не удалось подтвердить запись общей базы: {e}"))?;
+        OpenOptions::new().read(true).write(true).open(&pending).and_then(|file|file.sync_all()).map_err(|e|format!("Не удалось подтвердить запись общей базы: {e}"))?;
         let replace=atomic_replace(&pending,&target);
         let _=fs::remove_file(&local);
         if replace.is_err(){let _=fs::remove_file(&pending);}
