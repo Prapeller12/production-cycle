@@ -34,6 +34,7 @@ impl Paths {
         if c.technical_logging { return Err("Technical logging is not implemented in this prototype".into()); }
         let result = Self {frontend: inside(&root,&c.frontend)?, runtime: inside(&root,&c.webview_runtime)?,webview:inside(&root,&c.webview_data)?,data:inside(&root,&c.working_data)?,exports:inside(&root,&c.exports)?,smoke_report:inside(&root,"temp")?.join("self-test.json")};
         if !result.runtime.join("msedgewebview2.exe").is_file() { return Err("Missing bundled Fixed WebView2 Runtime. Extract the complete portable ZIP.".into()); }
+        if std::env::var_os("PRODUCTION_CYCLE_NETWORK_CLIENT").is_some() && (!super::network::is_local_disk(&result.runtime)||!super::network::is_local_disk(&result.webview)) {return Err("WebView2 и его профиль оказались на сетевом диске. Запуск отменён: нужна локальная папка клиента.".into());}
         // Microsoft Fixed Runtime >=120 needs these runtime-folder rights on Windows 10.
         // No registry changes, elevation or sandbox disabling; only read/execute in this app folder.
         #[cfg(windows)]
