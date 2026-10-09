@@ -25,9 +25,16 @@ public static class LaunchWindows {
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr window,StringBuilder text,int max);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window,uint message,IntPtr w,IntPtr l);
   [DllImport("user32.dll")] static extern IntPtr GetDlgItem(IntPtr dialog,int id);
+  [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+  [DllImport("user32.dll",SetLastError=true)] static extern IntPtr SendMessageTimeoutW(IntPtr window,uint msg,IntPtr w,IntPtr l,uint flags,uint timeout,out UIntPtr result);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
+  public static uint Owner(IntPtr window){uint process;GetWindowThreadProcessId(window,out process);return process;}
   public static bool Dismiss(IntPtr dialog) {
     var button=GetDlgItem(dialog,1);
-    return button!=IntPtr.Zero && PostMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero);
+    SetForegroundWindow(dialog);
+    if(button!=IntPtr.Zero)PostMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero);
+    UIntPtr result;
+    return SendMessageTimeoutW(dialog,0x0010,IntPtr.Zero,IntPtr.Zero,2,500,out result)!=IntPtr.Zero;
   }
   public static IntPtr Find(string title) {
     IntPtr result=IntPtr.Zero;
@@ -114,6 +121,7 @@ try{
     $env:PRODUCTION_CYCLE_SMOKE_REPORT=Join-Path $testRoot 'network-visible-error.json'
     $failed=Start-NetworkProcess $unc '--smoke-test'
     $dialog=Wait-VisibleWindow 'Производственный цикл — ошибка запуска' 30
+    if([LaunchWindows]::Owner($dialog) -ne $failed.Id){throw 'Startup error belongs to a different process'}
     $deadline=[DateTime]::UtcNow.AddSeconds(30)
     do {
       [LaunchWindows]::Dismiss($dialog) | Out-Null
