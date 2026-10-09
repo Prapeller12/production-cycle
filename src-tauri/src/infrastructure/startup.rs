@@ -40,7 +40,7 @@ pub fn start() {
     update("Запуск программы…");
     #[cfg(windows)]
     std::thread::spawn(|| {
-        use windows_sys::Win32::{UI::{WindowsAndMessaging::*,Controls::SS_CENTER}, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleW};
+        use windows_sys::Win32::{UI::WindowsAndMessaging::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleW};
         let deadline = if std::env::var_os("PRODUCTION_CYCLE_NETWORK_CLIENT").is_some(){90}else{300};
         let started=Instant::now();
         unsafe {
@@ -48,7 +48,7 @@ pub fn start() {
             let class=wide("STATIC");
             let hwnd=CreateWindowExW(WS_EX_TOPMOST, class.as_ptr(), wide("Производственный цикл — запуск").as_ptr(), WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE, (GetSystemMetrics(SM_CXSCREEN)-560)/2, (GetSystemMetrics(SM_CYSCREEN)-170)/2, 560, 170, std::ptr::null_mut(), std::ptr::null_mut(), instance, std::ptr::null());
             if hwnd.is_null(){crate::startup_failure(&format!("Не удалось показать окно запуска: {}",std::io::Error::last_os_error()));}
-            let label=CreateWindowExW(0,class.as_ptr(),wide("Подготовка…").as_ptr(),WS_CHILD | WS_VISIBLE | SS_CENTER as u32,15,20,520,80,hwnd,std::ptr::null_mut(),instance,std::ptr::null());
+            let label=CreateWindowExW(0,class.as_ptr(),wide("Подготовка…").as_ptr(),WS_CHILD | WS_VISIBLE,15,20,520,80,hwnd,std::ptr::null_mut(),instance,std::ptr::null());
             SendMessageW(label,WM_SETFONT,GetStockObject(DEFAULT_GUI_FONT) as usize,1);
             let mut msg=std::mem::zeroed();
             loop {
