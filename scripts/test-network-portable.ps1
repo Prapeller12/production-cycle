@@ -24,6 +24,11 @@ public static class LaunchWindows {
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr window,StringBuilder text,int max);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window,uint message,IntPtr w,IntPtr l);
+  [DllImport("user32.dll")] static extern IntPtr GetDlgItem(IntPtr dialog,int id);
+  public static bool Dismiss(IntPtr dialog) {
+    var button=GetDlgItem(dialog,1);
+    return button!=IntPtr.Zero && PostMessage(button,0x00F5,IntPtr.Zero,IntPtr.Zero);
+  }
   public static IntPtr Find(string title) {
     IntPtr result=IntPtr.Zero;
     EnumWindows((window,param)=>{var text=new StringBuilder(512);GetWindowText(window,text,512);if(IsWindowVisible(window)&&text.ToString()==title){result=window;return false;}return true;},IntPtr.Zero);
@@ -51,7 +56,7 @@ function Run-FunctionalSmoke([string]$path,[string]$phase){
   $deadline=[DateTime]::UtcNow.AddSeconds(300)
   while(-not $launcher.HasExited -and [DateTime]::UtcNow -lt $deadline){
     $dialog=[LaunchWindows]::Find('Производственный цикл — ошибка запуска')
-    if($dialog -ne [IntPtr]::Zero){[LaunchWindows]::PostMessage($dialog,0x0111,[IntPtr]1,[IntPtr]::Zero) | Out-Null}
+    if($dialog -ne [IntPtr]::Zero){[LaunchWindows]::Dismiss($dialog) | Out-Null}
     Start-Sleep -Milliseconds 200
     $launcher.Refresh()
   }
@@ -109,8 +114,15 @@ try{
     $env:PRODUCTION_CYCLE_SMOKE_REPORT=Join-Path $testRoot 'network-visible-error.json'
     $failed=Start-NetworkProcess $unc '--smoke-test'
     $dialog=Wait-VisibleWindow 'Производственный цикл — ошибка запуска' 30
-    [LaunchWindows]::PostMessage($dialog,0x0111,[IntPtr]1,[IntPtr]::Zero) | Out-Null
-    if(-not $failed.WaitForExit(30000) -or $failed.ExitCode -eq 0){throw 'Failed launch did not exit with an error'}
+    $deadline=[DateTime]::UtcNow.AddSeconds(30)
+    do {
+      [LaunchWindows]::Dismiss($dialog) | Out-Null
+      Start-Sleep -Milliseconds 200
+      $failed.Refresh()
+    }while(-not $failed.HasExited -and [DateTime]::UtcNow -lt $deadline)
+    if(-not $failed.HasExited){throw 'Visible startup error dialog did not close'}
+    $failed.WaitForExit()
+    if($failed.ExitCode -eq 0){throw "Failed launch returned success; report: $(Get-Content $env:PRODUCTION_CYCLE_SMOKE_REPORT -Raw)"}
     $errorReport=Get-Content $env:PRODUCTION_CYCLE_SMOKE_REPORT -Raw | ConvertFrom-Json
     if($errorReport.ok -or $errorReport.error -notmatch 'network.json'){throw 'Expected a configuration error report'}
   }finally{[IO.File]::WriteAllText($networkFile,$networkText,(New-Object Text.UTF8Encoding($false)))}
