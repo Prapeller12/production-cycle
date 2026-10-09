@@ -78,8 +78,9 @@ try{
   $clients=@(Get-CimInstance Win32_Process -Filter "Name='production-cycle.exe'" | Where-Object {$_.CommandLine -match '--network-client'})
   if($clients.Count -ne 1 -or $clients[0].ExecutablePath -notlike "$localProfile*"){throw 'Normal UNC launch did not create one local client'}
   $clientId=$clients[0].ProcessId
+  $clientProcess=Get-Process -Id $clientId
   [LaunchWindows]::PostMessage($window,0x0010,[IntPtr]::Zero,[IntPtr]::Zero) | Out-Null
-  if(-not (Get-Process -Id $clientId).WaitForExit(30000)){throw 'Normal client did not close'}
+  if(-not $clientProcess.WaitForExit(30000)){throw 'Normal client did not close'}
   @{ok=$true;phase='normal-visible-window';transport='SMB';path=$unc;clientPath=$clients[0].ExecutablePath} | ConvertTo-Json | Set-Content (Join-Path $testRoot 'network-window.json')
   # Verify errors before WebView2 are visible and leave no hidden client alive.
   $networkFile=Join-Path $root 'config/network.json';$networkText=Get-Content $networkFile -Raw

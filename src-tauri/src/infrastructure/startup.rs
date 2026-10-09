@@ -40,7 +40,7 @@ pub fn start() {
     update("Запуск программы…");
     #[cfg(windows)]
     std::thread::spawn(|| {
-        use windows_sys::Win32::{UI::WindowsAndMessaging::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleW};
+        use windows_sys::Win32::{UI::{WindowsAndMessaging::*,Controls::SS_CENTER}, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleW};
         let deadline = if std::env::var_os("PRODUCTION_CYCLE_NETWORK_CLIENT").is_some(){90}else{300};
         let started=Instant::now();
         unsafe {
