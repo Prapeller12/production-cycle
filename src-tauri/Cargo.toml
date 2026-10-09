@@ -23,7 +23,7 @@ uuid = { version = "1", features = ["v4"] }
 fs2 = "0.4"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32_UI_WindowsAndMessaging", "Win32_UI_Controls", "Win32_Graphics_Gdi", "Win32_System_LibraryLoader"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

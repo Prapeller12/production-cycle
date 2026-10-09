@@ -354,28 +354,39 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
     if !config_path.is_file(){return Ok(false)}
     let config=read_network_config(&config_path)?;
     if !config.enabled{return Ok(false)}
-    let local_base=env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(||env::temp_dir()).join("ProductionCycleNetwork/cache");
+    let local_base=local_cache_base()?;
+    // A cache may be used by several interactive sessions of the same Windows user.
+    // Serialize preparation so one launcher cannot delete another one's staging/cache.
+    crate::infrastructure::startup::update("Подготовка локальной копии. Первый запуск может занять несколько минут…");
+    let cache_lock=OpenOptions::new().create(true).read(true).write(true).open(local_base.join("prepare.lock")).map_err(|e|e.to_string())?;
+    let waiting=Instant::now();
+    while let Err(error)=cache_lock.try_lock_exclusive(){
+        if waiting.elapsed()>Duration::from_secs(240){return Err(format!("Другой запуск не завершил подготовку локальной копии: {error}"));}
+        thread::sleep(Duration::from_millis(100));
+    }
     let cache=local_base.join(&config.version);
     let marker=cache.join(".network-cache-ready");
-    let ready=marker.is_file()&&fs::read_to_string(&marker).map(|value|value.trim()==config.version).unwrap_or(false)&&cache.join("production-cycle.exe").is_file();
+    let ready=marker.is_file()&&fs::read_to_string(&marker).map(|value|value.trim()==config.version).unwrap_or(false)&&["production-cycle.exe","frontend/index.html","runtime/webview2/msedgewebview2.exe","config/portable.json"].iter().all(|name|cache.join(name).is_file());
     if !ready{
         fs::create_dir_all(&local_base).map_err(|e|e.to_string())?;
         let staging=local_base.join(format!(".staging-{}",Uuid::new_v4()));
         fs::create_dir_all(&staging).map_err(|e|e.to_string())?;
         for name in ["production-cycle.exe","frontend","runtime","config","app"]{
             let source=root.join(name);if !source.exists(){let _=fs::remove_dir_all(&staging);return Err(format!("В сетевой поставке отсутствует {name}."))}
-            copy_entry(&source,&staging.join(name))?;
+            if let Err(error)=copy_entry(&source,&staging.join(name)){let _=fs::remove_dir_all(&staging);return Err(format!("Не удалось получить {name} из общей папки: {error}"));}
         }
         fs::write(staging.join(".network-cache-ready"),format!("{}\n",config.version)).map_err(|e|e.to_string())?;
         if cache.exists(){fs::remove_dir_all(&cache).map_err(|e|format!("Не удалось обновить локальный кэш: {e}"))?;}
         fs::rename(&staging,&cache).map_err(|e|format!("Не удалось активировать локальный кэш: {e}"))?;
     }
+    FileExt::unlock(&cache_lock).map_err(|e|e.to_string())?;
     let local_exe=cache.join("production-cycle.exe");
     let mut command=Command::new(local_exe);
     command.arg("--network-client");
     for argument in env::args().skip(1){if argument!="--network-client"{command.arg(argument);}}
     let smoke=env::args().any(|argument|argument=="--smoke-test");
     let mut child=command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,root).current_dir(&cache).spawn().map_err(|e|format!("Не удалось запустить локальный клиент: {e}"))?;
+    crate::infrastructure::startup::stop();
     if smoke{
         let status=child.wait().map_err(|e|format!("Не удалось дождаться сетевого self-test: {e}"))?;
         if !status.success(){return Err(format!("Сетевой self-test завершился с кодом {:?}.",status.code()))}
@@ -405,10 +416,40 @@ pub fn network_save_draft(snapshot:ProductionSnapshot,network:State<'_,NetworkRu
 #[tauri::command]
 pub fn network_finish_eviction(app:AppHandle,network:State<'_,NetworkRuntime>)->Result<(),String>{network.release()?;app.exit(0);Ok(())}
 
+// Resolve junctions and mapped drives before accepting a cache. LOCALAPPDATA may be
+// redirected to SMB on domain PCs; Fixed WebView2 must NEVER execute there.
+fn local_cache_base()->Result<PathBuf,String>{
+    let mut candidates=Vec::new();
+    if let Some(path)=env::var_os("LOCALAPPDATA"){candidates.push(PathBuf::from(path));}
+    if let Some(path)=env::var_os("USERPROFILE"){candidates.push(PathBuf::from(path).join("AppData/Local"));}
+    candidates.push(env::temp_dir());
+    for candidate in candidates{
+        if fs::create_dir_all(&candidate).is_err(){continue;}
+        let Ok(real)=candidate.canonicalize() else {continue;};
+        if !is_local_disk(&real){continue;}
+        let base=real.join("ProductionCycleNetwork/cache");
+        if fs::create_dir_all(&base).is_err(){continue;}
+        let probe=base.join(format!(".write-test-{}",Uuid::new_v4()));
+        if fs::write(&probe,b"ok").is_ok(){let _=fs::remove_file(probe);return Ok(base);}
+    }
+    Err("Нет доступной локальной папки для клиента. Локальный профиль Windows или TEMP должен находиться на диске этого компьютера и разрешать запись. WebView2 нельзя запускать из сетевой папки.".into())
+}
+
+#[cfg(windows)]
+pub(crate) fn is_local_disk(path:&Path)->bool{
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{GetVolumePathNameW,GetDriveTypeW};
+    let input:Vec<u16>=path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut volume=vec![0u16;32768];
+    unsafe {GetVolumePathNameW(input.as_ptr(),volume.as_mut_ptr(),volume.len() as u32)!=0 && matches!(GetDriveTypeW(volume.as_ptr()),2|3)}
+}
+#[cfg(not(windows))]
+pub(crate) fn is_local_disk(_path:&Path)->bool{true}
+
 fn read_network_config(path:&Path)->Result<NetworkConfig,String>{
     let bytes=fs::read(path).map_err(|e|format!("Не удалось прочитать {}: {e}",path.display()))?;
     let config:NetworkConfig=serde_json::from_slice(&bytes).map_err(|e|format!("Некорректный network.json: {e}"))?;
-    if config.version.trim().is_empty(){return Err("В network.json не задана версия клиента.".into())}
+    if config.version.trim().is_empty() || !config.version.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'-'||c==b'_'||c==b'.') || config.version=="." || config.version==".." {return Err("Некорректная версия клиента в network.json.".into())}
     Ok(config)
 }
 
@@ -456,6 +497,7 @@ fn copy_entry(source:&Path,target:&Path)->Result<(),String>{
         for entry in fs::read_dir(source).map_err(|e|e.to_string())?{let entry=entry.map_err(|e|e.to_string())?;copy_entry(&entry.path(),&target.join(entry.file_name()))?;}
     }else{
         if let Some(parent)=target.parent(){fs::create_dir_all(parent).map_err(|e|e.to_string())?;}
+        crate::infrastructure::startup::update(&format!("Получение локальной копии: {}\nПервый запуск может занять несколько минут. Не запускайте программу повторно.",source.file_name().unwrap_or_default().to_string_lossy()));
         fs::copy(source,target).map_err(|e|e.to_string())?;
     }
     Ok(())
@@ -480,6 +522,14 @@ mod tests{
         let root=env::temp_dir().join(format!("production-network-config-{}",Uuid::new_v4()));fs::create_dir_all(&root).unwrap();
         fs::write(root.join("network.json"),br#"{"enabled":true,"version":"test","maxClients":3}"#).unwrap();
         let config=read_network_config(&root.join("network.json")).unwrap();assert!(config.enabled);assert_eq!(config.max_clients,3);let _=fs::remove_dir_all(root);
+    }
+    #[test]fn network_version_cannot_escape_cache_directory(){
+        let root=env::temp_dir().join(format!("production-network-config-{}",Uuid::new_v4()));fs::create_dir_all(&root).unwrap();
+        for version in ["..","../escape","a/b","C:\\bad"]{
+            fs::write(root.join("network.json"),serde_json::to_vec(&serde_json::json!({"enabled":true,"version":version,"maxClients":3})).unwrap()).unwrap();
+            assert!(read_network_config(&root.join("network.json")).is_err());
+        }
+        let _=fs::remove_dir_all(root);
     }
     #[test]fn atomic_write_replaces_complete_document(){
         let root=env::temp_dir().join(format!("production-network-atomic-{}",Uuid::new_v4()));fs::create_dir_all(&root).unwrap();let path=root.join("value.json");

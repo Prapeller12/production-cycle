@@ -395,6 +395,6 @@ document.querySelectorAll('.tab').forEach(tab=>{tab.onclick=()=>setWorkspace(tab
 window.addEventListener('beforeunload',e=>{if((state.project.name||state.stages.length)&&J.fingerprint(state)!==savedSnapshot){e.preventDefault();e.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')void flushNetworkDraft(true)});
 document.addEventListener('keydown',e=>{const modal=topOpenModal();if(!modal)return;if(e.key==='Escape'){e.preventDefault();if(modal.id!=='networkLoginModal')closeModal(modal.id)}else if(e.key==='Tab')trapModalFocus(e,modal)});
-async function boot(){enhanceAccessibility();setWorkspace('registry');setAuditView('journal');syncForm();render();refreshAutocomplete();await initializeNetworkMode();if(!networkMode&&!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250)}
+async function boot(){enhanceAccessibility();setWorkspace('registry');setAuditView('journal');syncForm();render();refreshAutocomplete();if(window.__TAURI__?.core?.invoke)await window.__TAURI__.core.invoke("frontend_ready");await initializeNetworkMode();if(!networkMode&&!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250)}
 void boot();
 })();

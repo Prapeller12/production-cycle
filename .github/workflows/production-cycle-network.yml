@@ -25,7 +25,11 @@ jobs:
           PLAYWRIGHT_MODULE: /tmp/prototype-tests/node_modules/playwright
         run: node tests/browser.cjs
   windows-network-host:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     permissions:
       contents: write
@@ -37,8 +41,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: windows-rust-network-${{ hashFiles('src-tauri/Cargo.toml') }}-${{ github.run_id }}
-          restore-keys: windows-rust-network-${{ hashFiles('src-tauri/Cargo.toml') }}-
+          key: windows-rust-network-${{ matrix.os }}-${{ hashFiles('src-tauri/Cargo.toml') }}-${{ github.run_id }}
+          restore-keys: windows-rust-network-${{ matrix.os }}-${{ hashFiles('src-tauri/Cargo.toml') }}-
       - name: Test Rust host, migrations and network coordination
         run: cargo test --locked --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
       - name: Build network host
@@ -52,7 +56,7 @@ jobs:
           $runtime=(Get-Content "$env:RUNNER_TEMP/fixed-webview/runtime-path.txt" -Raw).Trim()
           $version='network-test-'+$env:GITHUB_SHA.Substring(0,7)
           ./scripts/package-network-windows.ps1 -FixedRuntimePath $runtime -Version $version -OutputPath ./dist/network
-      - name: Test launch from shared-folder simulation
+      - name: Test real SMB UNC/IP launch and every native workflow
         shell: pwsh
         run: |
           $version='network-test-'+$env:GITHUB_SHA.Substring(0,7)
@@ -60,19 +64,19 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: production-cycle-network-evidence
+          name: production-cycle-network-evidence-${{ matrix.os }}
           path: |
             src-tauri/Cargo.lock
             ${{ runner.temp }}/Сетевая проверка программы/network-*.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ProductionCycle-network-test-windows10-11-x64
+          name: ProductionCycle-network-test-windows10-11-x64-${{ matrix.os }}
           path: |
             dist/network/*.zip
             dist/network/*.sha256
           if-no-files-found: error
       - name: Publish network prerelease
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && matrix.os == 'windows-2022'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -86,4 +90,4 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: windows-rust-network-${{ hashFiles('src-tauri/Cargo.toml') }}-${{ github.run_id }}
+          key: windows-rust-network-${{ matrix.os }}-${{ hashFiles('src-tauri/Cargo.toml') }}-${{ github.run_id }}
