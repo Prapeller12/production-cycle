@@ -36,11 +36,31 @@ function Wait-VisibleWindow([string]$title,[int]$seconds=90){
   do {$window=[LaunchWindows]::Find($title);if($window -ne [IntPtr]::Zero){return $window};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $deadline)
   throw "No visible window: $title"
 }
+function Start-NetworkProcess([string]$path,[string]$arguments=''){
+  # CreateProcess, like the production local launcher. ShellExecute can stop
+  # unattended tests at an Explorer trust prompt for an IP-based UNC path.
+  $info=[Diagnostics.ProcessStartInfo]::new()
+  $info.FileName=Join-Path $path 'production-cycle.exe';$info.WorkingDirectory=$path
+  $info.UseShellExecute=$false;$info.Arguments=$arguments
+  return [Diagnostics.Process]::Start($info)
+}
 function Run-FunctionalSmoke([string]$path,[string]$phase){
   $report=Join-Path $testRoot "network-$phase.json"
   $env:PRODUCTION_CYCLE_SMOKE_REPORT=$report
-  $launcher=Start-Process -FilePath (Join-Path $path 'production-cycle.exe') -ArgumentList '--smoke-test' -WorkingDirectory $path -PassThru
-  if(-not $launcher.WaitForExit(300000)){Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue;throw "Network $phase timed out"}
+  $launcher=Start-NetworkProcess $path '--smoke-test'
+  $deadline=[DateTime]::UtcNow.AddSeconds(300)
+  while(-not $launcher.HasExited -and [DateTime]::UtcNow -lt $deadline){
+    $dialog=[LaunchWindows]::Find('Производственный цикл — ошибка запуска')
+    if($dialog -ne [IntPtr]::Zero){[LaunchWindows]::PostMessage($dialog,0x0111,[IntPtr]1,[IntPtr]::Zero) | Out-Null}
+    Start-Sleep -Milliseconds 200
+    $launcher.Refresh()
+  }
+  if(-not $launcher.HasExited){
+    Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue
+    $detail=if(Test-Path $report){Get-Content $report -Raw}else{'No startup or functional report'}
+    throw "Network $phase timed out: $detail"
+  }
+  $launcher.WaitForExit()
   if(-not (Test-Path $report)){throw "Missing report: $phase (exit $($launcher.ExitCode))"}
   $result=Get-Content $report -Raw | ConvertFrom-Json
   if(-not $result.ok -or $launcher.ExitCode -ne 0){throw "Network $phase failed: $($result.error), exit $($launcher.ExitCode)"}
@@ -73,7 +93,7 @@ try{
   $env:LOCALAPPDATA=$localProfile;$env:USERPROFILE=$old.USERPROFILE
   $env:PRODUCTION_CYCLE_SMOKE_REPORT=$null
   # A normal launch (without self-test) must display an actual top-level window.
-  $launcher=Start-Process -FilePath (Join-Path $unc 'production-cycle.exe') -WorkingDirectory $unc -PassThru
+  $launcher=Start-NetworkProcess $unc
   $window=Wait-VisibleWindow 'Производственный цикл — self-test v1'
   $clients=@(Get-CimInstance Win32_Process -Filter "Name='production-cycle.exe'" | Where-Object {$_.CommandLine -match '--network-client'})
   if($clients.Count -ne 1 -or $clients[0].ExecutablePath -notlike "$localProfile*"){throw 'Normal UNC launch did not create one local client'}
@@ -87,7 +107,7 @@ try{
   try{
     Set-Content $networkFile '{invalid json' -Encoding utf8
     $env:PRODUCTION_CYCLE_SMOKE_REPORT=Join-Path $testRoot 'network-visible-error.json'
-    $failed=Start-Process -FilePath (Join-Path $unc 'production-cycle.exe') -ArgumentList '--smoke-test' -WorkingDirectory $unc -PassThru
+    $failed=Start-NetworkProcess $unc '--smoke-test'
     $dialog=Wait-VisibleWindow 'Производственный цикл — ошибка запуска' 30
     [LaunchWindows]::PostMessage($dialog,0x0111,[IntPtr]1,[IntPtr]::Zero) | Out-Null
     if(-not $failed.WaitForExit(30000) -or $failed.ExitCode -eq 0){throw 'Failed launch did not exit with an error'}

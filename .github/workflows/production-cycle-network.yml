@@ -57,6 +57,7 @@ jobs:
           $version='network-test-'+$env:GITHUB_SHA.Substring(0,7)
           ./scripts/package-network-windows.ps1 -FixedRuntimePath $runtime -Version $version -OutputPath ./dist/network
       - name: Test real SMB UNC/IP launch and every native workflow
+        timeout-minutes: 15
         shell: pwsh
         run: |
           $version='network-test-'+$env:GITHUB_SHA.Substring(0,7)
