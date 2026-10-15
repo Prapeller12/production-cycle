@@ -3,13 +3,14 @@ use crate::infrastructure::portable::Paths;
 pub struct Smoke(pub bool);
 
 #[tauri::command]
-pub fn finish_smoke(app:tauri::AppHandle, enabled:State<'_,Smoke>, paths:State<'_,Paths>, error:Option<String>,checks:Option<Vec<String>>)->Result<(),String>{
+pub fn finish_smoke(app:tauri::AppHandle, enabled:State<'_,Smoke>, paths:State<'_,Paths>, error:Option<String>,checks:Option<Vec<String>>)->Result<bool,String>{
     if !enabled.0{return Err("Self-test is not enabled".into());}
-    let result=serde_json::json!({"ok":error.is_none(),"error":error,"runtime":paths.runtime,"profile":paths.webview,"checks":checks,"windowVisible":app.get_webview_window("main").and_then(|window|window.is_visible().ok()).unwrap_or(false),"frontendReady":crate::infrastructure::startup::is_ready()});
+    let result=serde_json::json!({"ok":error.is_none(),"error":error,"processId":std::process::id(),"network":app.state::<crate::infrastructure::network::NetworkRuntime>().status()?,"runtime":paths.runtime,"profile":paths.webview,"checks":checks,"windowVisible":app.get_webview_window("main").and_then(|window|window.is_visible().ok()).unwrap_or(false),"frontendReady":crate::infrastructure::startup::is_ready()});
     let report=std::env::var_os("PRODUCTION_CYCLE_SMOKE_REPORT").map(std::path::PathBuf::from).unwrap_or_else(||paths.smoke_report.clone());
     if let Some(parent)=report.parent(){std::fs::create_dir_all(parent).map_err(|e|e.to_string())?;}
     std::fs::write(report,serde_json::to_vec_pretty(&result).unwrap()).map_err(|e|e.to_string())?;
-    app.exit(if result["ok"]==true{0}else{1});Ok(())
+    if result["ok"]==true && std::env::var_os("PRODUCTION_CYCLE_SMOKE_HOLD").is_some(){return Ok(true)}
+    app.exit(if result["ok"]==true{0}else{1});Ok(false)
 }
 
 pub const SCRIPT:&str=r#"

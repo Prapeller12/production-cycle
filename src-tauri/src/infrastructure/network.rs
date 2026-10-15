@@ -215,7 +215,7 @@ impl NetworkRuntime {
                         self.write_metadata(&active.metadata)?;
                     }
                 }
-                return Ok(NetworkLoginResult{state:"active".into(),occupied:self.occupied_count(),maximum:self.maximum,evicted_display_name:None});
+                return Ok(NetworkLoginResult{state:"active".into(),occupied:self.occupied_count()?,maximum:self.maximum,evicted_display_name:None});
             }
         }
         let (user_id,display_name,role)=match user{
@@ -224,7 +224,7 @@ impl NetworkRuntime {
         };
         if let Some(active)=self.try_acquire_slot(user_id,&display_name,&role)?{
             *self.session.lock().map_err(|_|"Состояние сетевой сессии повреждено".to_string())?=Some(active);
-            return Ok(NetworkLoginResult{state:"active".into(),occupied:self.occupied_count().max(1),maximum:self.maximum,evicted_display_name:None});
+            return Ok(NetworkLoginResult{state:"active".into(),occupied:self.occupied_count()?.max(1),maximum:self.maximum,evicted_display_name:None});
         }
         if role!="admin"{
             return Ok(NetworkLoginResult{state:"full".into(),occupied:self.maximum,maximum:self.maximum,evicted_display_name:None});
@@ -237,7 +237,7 @@ impl NetworkRuntime {
         while started.elapsed()<Duration::from_secs(15){
             if let Some(active)=self.try_acquire_slot(user_id,&display_name,&role)?{
                 *self.session.lock().map_err(|_|"Состояние сетевой сессии повреждено".to_string())?=Some(active);
-                return Ok(NetworkLoginResult{state:"active".into(),occupied:self.occupied_count().max(1),maximum:self.maximum,evicted_display_name:Some("последний вошедший пользователь".into())});
+                return Ok(NetworkLoginResult{state:"active".into(),occupied:self.occupied_count()?.max(1),maximum:self.maximum,evicted_display_name:Some("последний вошедший пользователь".into())});
             }
             thread::sleep(Duration::from_millis(250));
         }
@@ -265,7 +265,11 @@ impl NetworkRuntime {
     }
 
     fn remove_metadata_for_slot(&self,slot:usize)->Result<(),String>{
-        for (path,metadata) in self.session_metadata()?{if metadata.slot==slot{let _=fs::remove_file(path);}}
+        for (path,metadata) in self.session_metadata()?{if metadata.slot==slot{
+            fs::remove_file(path).map_err(|e|e.to_string())?;
+            let control=self.root()?.join("shared/control").join(format!("{}.evict",metadata.session_id));
+            match fs::remove_file(control){Ok(())=>{},Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},Err(e)=>return Err(e.to_string())}
+        }}
         Ok(())
     }
 
@@ -282,21 +286,51 @@ impl NetworkRuntime {
         Ok(result)
     }
 
-    fn newest_non_admin_session(&self)->Result<Option<SessionMetadata>,String>{
-        Ok(self.session_metadata()?.into_iter().map(|(_,value)|value).filter(|value|value.role!="admin").max_by(|a,b|a.started_at.cmp(&b.started_at)))
+    // Metadata can survive a crash. Only the OS/SMB lock proves that a slot
+    // is occupied; an old heartbeat must never evict a still-running client.
+    fn occupied_slots(&self)->Result<(usize,Vec<SessionMetadata>),String>{
+        let sessions=self.root()?.join("shared/sessions");
+        let mut occupied=0;
+        let mut active=Vec::new();
+        for slot in 1..=self.maximum{
+            let file=OpenOptions::new().create(true).read(true).write(true)
+                .open(sessions.join(format!("slot-{slot}.lock"))).map_err(|e|e.to_string())?;
+            match file.try_lock_exclusive(){
+                Ok(())=>{
+                    // Keep the slot locked throughout cleanup, so a new login
+                    // cannot publish metadata that this probe would remove.
+                    self.remove_metadata_for_slot(slot)?;
+                    FileExt::unlock(&file).map_err(|e|e.to_string())?;
+                }
+                Err(error) if error.raw_os_error()==fs2::lock_contended_error().raw_os_error()=>{
+                    occupied+=1;
+                    if let Some((_,metadata))=self.session_metadata()?.into_iter()
+                        .filter(|(_,metadata)|metadata.slot==slot)
+                        .max_by(|(_,a),(_,b)|a.started_at.cmp(&b.started_at)){
+                        active.push(metadata);
+                    }
+                }
+                Err(error)=>return Err(format!("Не удалось проверить занятые сетевые места: {error}")),
+            }
+        }
+        Ok((occupied,active))
     }
 
-    fn occupied_count(&self)->usize{self.session_metadata().map(|items|items.len().min(self.maximum)).unwrap_or(0)}
+    fn newest_non_admin_session(&self)->Result<Option<SessionMetadata>,String>{
+        Ok(self.occupied_slots()?.1.into_iter().filter(|value|value.role!="admin").max_by(|a,b|a.started_at.cmp(&b.started_at)))
+    }
+
+    fn occupied_count(&self)->Result<usize,String>{Ok(self.occupied_slots()?.0)}
 
     pub fn status(&self)->Result<NetworkStatus,String>{
         if !self.enabled{return Ok(NetworkStatus{enabled:false,active:true,occupied:1,maximum:1,eviction_requested:false,role:None,display_name:None,session_id:None})}
         self.flush_pending_drafts();
         let mut guard=self.session.lock().map_err(|_|"Состояние сетевой сессии повреждено".to_string())?;
-        let Some(active)=guard.as_mut() else{return Ok(NetworkStatus{enabled:true,active:false,occupied:self.occupied_count(),maximum:self.maximum,eviction_requested:false,role:None,display_name:None,session_id:None})};
+        let Some(active)=guard.as_mut() else{return Ok(NetworkStatus{enabled:true,active:false,occupied:self.occupied_count()?,maximum:self.maximum,eviction_requested:false,role:None,display_name:None,session_id:None})};
         active.metadata.heartbeat_at=Local::now().to_rfc3339();
         self.write_metadata(&active.metadata)?;
         let eviction=self.root()?.join("shared/control").join(format!("{}.evict",active.metadata.session_id)).is_file();
-        Ok(NetworkStatus{enabled:true,active:true,occupied:self.occupied_count().max(1),maximum:self.maximum,eviction_requested:eviction,role:Some(active.metadata.role.clone()),display_name:Some(active.display_name.clone()),session_id:Some(active.metadata.session_id.clone())})
+        Ok(NetworkStatus{enabled:true,active:true,occupied:self.occupied_count()?.max(1),maximum:self.maximum,eviction_requested:eviction,role:Some(active.metadata.role.clone()),display_name:Some(active.display_name.clone()),session_id:Some(active.metadata.session_id.clone())})
     }
 
     pub fn save_draft(&self,snapshot:&ProductionSnapshot)->Result<DraftSaveResult,String>{
@@ -561,6 +595,43 @@ mod tests{
         assert_eq!(client.session_metadata().unwrap()[0].1.user_id,Some(1));
         assert_eq!(status.occupied,1);
         drop(client);let _=fs::remove_dir_all(root);
+    }
+    #[test]fn session_count_tracks_close_reopen_and_removes_abandoned_metadata(){
+        let root=env::temp_dir().join(format!("production-session-count-{}",Uuid::new_v4()));
+        let observer=runtime(&root,"observer");let client=runtime(&root,"client");
+        observer.login(Some(user(1,"reviewer"))).unwrap();
+        client.login(Some(user(2,"project_manager"))).unwrap();
+        assert_eq!(observer.status().unwrap().occupied,2);
+        client.release().unwrap();assert_eq!(observer.status().unwrap().occupied,1);
+        client.login(Some(user(2,"project_manager"))).unwrap();
+        assert_eq!(observer.status().unwrap().occupied,2);
+        // Simulate process termination: OS releases the handle, JSON survives.
+        let abandoned=client.session.lock().unwrap().take().unwrap();
+        let id=abandoned.metadata.session_id.clone();
+        let metadata=root.join(format!("shared/sessions/session-{id}.json"));
+        let control=root.join(format!("shared/control/{id}.evict"));
+        fs::write(&control,b"{}").unwrap();drop(abandoned);
+        assert!(metadata.is_file());
+        assert_eq!(observer.status().unwrap().occupied,1);
+        assert!(!metadata.exists());assert!(!control.exists());
+        assert_eq!(observer.newest_non_admin_session().unwrap().unwrap().user_id,Some(1));
+        // A live slot is counted even if its descriptive JSON is missing.
+        client.login(Some(user(2,"project_manager"))).unwrap();
+        let metadata=client.session_metadata().unwrap().into_iter().find(|(_,m)|m.user_id==Some(2)).unwrap().0;
+        fs::remove_file(metadata).unwrap();assert_eq!(observer.status().unwrap().occupied,2);
+        drop(client);assert_eq!(observer.status().unwrap().occupied,1);
+        observer.release().unwrap();assert_eq!(observer.status().unwrap().occupied,0);
+        drop(observer);let _=fs::remove_dir_all(root);
+    }
+    #[test]fn old_heartbeat_does_not_release_a_live_slot(){
+        let root=env::temp_dir().join(format!("production-session-heartbeat-{}",Uuid::new_v4()));
+        let client=runtime(&root,"client");let observer=runtime(&root,"observer");
+        client.login(Some(user(1,"project_manager"))).unwrap();
+        {let mut guard=client.session.lock().unwrap();let active=guard.as_mut().unwrap();
+            active.metadata.heartbeat_at="2000-01-01T00:00:00Z".into();client.write_metadata(&active.metadata).unwrap();}
+        assert_eq!(observer.status().unwrap().occupied,1);
+        assert_eq!(observer.newest_non_admin_session().unwrap().unwrap().user_id,Some(1));
+        drop((client,observer));let _=fs::remove_dir_all(root);
     }
     #[test]fn administrator_evicts_newest_user_only_after_draft_is_saved(){
         let root=env::temp_dir().join(format!("production-eviction-{}",Uuid::new_v4()));

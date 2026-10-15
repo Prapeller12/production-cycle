@@ -78,7 +78,26 @@ function Run-FunctionalSmoke([string]$path,[string]$phase){
   if(-not $result.ok -or $launcher.ExitCode -ne 0){throw "Network $phase failed: $($result.error), exit $($launcher.ExitCode)"}
   if(@($result.checks).Count -lt 1 -or -not $result.windowVisible -or -not $result.frontendReady){throw "Network $phase did not verify visible, ready UI"}
   if($result.runtime -match '^\\\\(?!\?\\[A-Za-z]:)' -or $result.profile -match '^\\\\(?!\?\\[A-Za-z]:)'){throw 'Runtime/profile were not on a local drive'}
+  if(@(Get-ChildItem (Join-Path $root 'shared/sessions') -Filter 'session-*.json').Count -ne 0){throw "Session metadata survived normal exit: $phase"}
   Write-Host "$phase checks: $($result.checks -join '; ')"
+}
+function Wait-SessionCount([string]$report,[int]$expected){
+  $deadline=[DateTime]::UtcNow.AddSeconds(30)
+  do {
+    try{$result=Get-Content $report -Raw -ErrorAction Stop | ConvertFrom-Json
+      if($result.ok -and $result.network.active -and $result.network.occupied -eq $expected){return $result}
+      if($result.error){throw "Session probe failed: $($result.error)"}
+    }catch{if($_ -match 'Session probe failed'){throw}}
+    Start-Sleep -Milliseconds 200
+  }while([DateTime]::UtcNow -lt $deadline)
+  throw "Session count did not become $expected in $report"
+}
+function Start-HeldSmoke([string]$path,[string]$phase,[string]$profile=$localProfile){
+  $report=Join-Path $testRoot "network-$phase.json"
+  $previousProfile=$env:LOCALAPPDATA;$env:LOCALAPPDATA=$profile
+  $env:PRODUCTION_CYCLE_SMOKE_REPORT=$report;$env:PRODUCTION_CYCLE_SMOKE_HOLD='1'
+  try{$launcher=Start-NetworkProcess $path '--smoke-test'}finally{$env:PRODUCTION_CYCLE_SMOKE_HOLD=$null;$env:LOCALAPPDATA=$previousProfile}
+  return @{launcher=$launcher;report=$report}
 }
 $share='PCNetworkTest'+$PID
 $account=[Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -134,13 +153,38 @@ try{
     $errorReport=Get-Content $env:PRODUCTION_CYCLE_SMOKE_REPORT -Raw | ConvertFrom-Json
     if($errorReport.ok -or $errorReport.error -notmatch 'network.json'){throw 'Expected a configuration error report'}
   }finally{[IO.File]::WriteAllText($networkFile,$networkText,(New-Object Text.UTF8Encoding($false)))}
+  # Two real EXE clients on SMB. The remaining client's reported count must
+  # decrease after both a normal window close and a forced process kill.
+  $first=Start-HeldSmoke $unc 'session-first'
+  $firstResult=Wait-SessionCount $first.report 1
+  $second=Start-HeldSmoke $unc 'session-second' (Join-Path $localProfile 'second-computer')
+  $secondResult=Wait-SessionCount $second.report 2
+  Wait-SessionCount $first.report 2 | Out-Null
+  # Find by PID, since both client windows have the same title.
+  $secondProcess=Get-Process -Id $secondResult.processId
+  if(-not $secondProcess.CloseMainWindow()){throw 'Cannot close second client window'}
+  if(-not $secondProcess.WaitForExit(30000)){throw 'Second client did not exit normally'}
+  Wait-SessionCount $first.report 1 | Out-Null
+  $second=Start-HeldSmoke $unc 'session-forced' (Join-Path $localProfile 'second-computer')
+  $secondResult=Wait-SessionCount $second.report 2
+  Wait-SessionCount $first.report 2 | Out-Null
+  Stop-Process -Id $second.launcher.Id -Force -ErrorAction SilentlyContinue
+  Stop-Process -Id $secondResult.processId -Force
+  Wait-SessionCount $first.report 1 | Out-Null
+  # Release of the remaining client must leave no abandoned session JSON.
+  $firstProcess=Get-Process -Id $firstResult.processId
+  if(-not $firstProcess.CloseMainWindow()){throw 'Cannot close first client window'}
+  if(-not $firstProcess.WaitForExit(30000)){throw 'First client did not exit normally'}
+  if(@(Get-ChildItem (Join-Path $root 'shared/sessions') -Filter 'session-*.json').Count -ne 0){throw 'Session files were not cleaned after close'}
+  Run-FunctionalSmoke $unc 'after-forced-relaunch'
+  $env:PRODUCTION_CYCLE_SMOKE_REPORT=$null
   $cache=Join-Path $localProfile "ProductionCycleNetwork/cache/$Version"
   if(-not (Test-Path (Join-Path $root 'shared/database/production-cycle.db'))){throw 'Shared database snapshot missing'}
   if(-not (Test-Path (Join-Path $cache 'runtime/webview2/msedgewebview2.exe'))){throw 'Local Fixed Runtime missing'}
   if(Test-Path (Join-Path $root 'temp/webview2')){throw 'WebView profile created in shared folder'}
 }finally{
   foreach($key in $old.Keys){[Environment]::SetEnvironmentVariable($key,$old[$key],'Process')}
-  $env:PRODUCTION_CYCLE_SMOKE_REPORT=$null
+  $env:PRODUCTION_CYCLE_SMOKE_REPORT=$null;$env:PRODUCTION_CYCLE_SMOKE_HOLD=$null
   Get-CimInstance Win32_Process -Filter "Name='production-cycle.exe'" | Where-Object {$_.ExecutablePath -like "$localProfile*" -or $_.CommandLine -like "*$share*"} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}
   if($mapped){& net.exe use N: /delete /y | Out-Null}
   Remove-SmbShare -Name $share -Force -ErrorAction SilentlyContinue

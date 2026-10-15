@@ -334,19 +334,19 @@ fn issue(field:&str,code:&str,message:&str,entity:Option<&str>)->ValidationIssue
 pub fn validate_snapshot(snapshot:&ProductionSnapshot)->Result<ValidationResult>{
     let mut r=ValidationResult::default();
     let p=&snapshot.project;
-    let fields=[("Название проекта",p.name.as_str()),("Номер заказа",p.order_no.as_str()),("Инициатор",p.initiator.as_str()),("Исполнитель",p.executor.as_str()),("Предприятие",p.enterprise.as_str()),("Начало",p.start.as_str()),("Дедлайн",p.deadline.as_str())];
+    let fields=[("Название проекта",p.name.as_str()),("Номер заказа",p.order_no.as_str()),("Инициатор",p.initiator.as_str()),("Исполнитель",p.executor.as_str()),("Предприятие",p.enterprise.as_str()),("Начало",p.start.as_str()),("Срок исполнения",p.deadline.as_str())];
     for (name,v) in fields { if clean(v).is_empty(){r.errors.push(issue(name,"REQUIRED",&format!("Поле «{name}» обязательно."),None));} else if has_tsv_breaker(v){r.errors.push(issue(name,"TSV_BREAKER",&format!("Поле «{name}» содержит TAB/перенос строки."),None));} }
-    if !p.start.is_empty()&&!p.deadline.is_empty(){match(parse_date(&p.start),parse_date(&p.deadline)){(Ok(a),Ok(b)) if a>b=>r.errors.push(issue("Дедлайн","DATE_ORDER","Дата начала проекта не может быть позже дедлайна.",None)),(Err(_),_)|(_,Err(_))=>r.errors.push(issue("Дата","DATE_FORMAT","Используйте формат YYYY-MM-DD.",None)),_=>{}}}
+    if !p.start.is_empty()&&!p.deadline.is_empty(){match(parse_date(&p.start),parse_date(&p.deadline)){(Ok(a),Ok(b)) if a>b=>r.errors.push(issue("Срок исполнения","DATE_ORDER","Дата начала проекта не может быть позже срока исполнения.",None)),(Err(_),_)|(_,Err(_))=>r.errors.push(issue("Дата","DATE_FORMAT","Используйте формат YYYY-MM-DD.",None)),_=>{}}}
     let mut uids=HashSet::new();let mut seqs=HashSet::new();
     for s in &snapshot.stages {
         if !uids.insert(s.uid.clone()){r.errors.push(issue("uid","DUPLICATE_UID","Повторяющийся UID этапа.",Some(&s.uid)));}
         if !seqs.insert(s.seq){r.errors.push(issue("seq","DUPLICATE_SEQ","Повторяющийся порядковый номер этапа.",Some(&s.uid)));}
-        for (name,v) in [("Название этапа",s.title.as_str()),("Исполнитель",s.executor.as_str()),("Адресаты",s.addressees.as_str()),("Начало",s.start.as_str()),("Дедлайн",s.deadline.as_str())] { if clean(v).is_empty(){r.errors.push(issue(name,"REQUIRED",&format!("Поле «{name}» обязательно."),Some(&s.uid)));} else if has_tsv_breaker(v){r.errors.push(issue(name,"TSV_BREAKER",&format!("Поле «{name}» содержит TAB/перенос строки."),Some(&s.uid)));} }
-        if !s.start.is_empty()&&!s.deadline.is_empty(){match(parse_date(&s.start),parse_date(&s.deadline)){(Ok(a),Ok(b)) if a>b=>r.errors.push(issue("Дедлайн","DATE_ORDER","Дата начала этапа не может быть позже дедлайна.",Some(&s.uid))),(Err(_),_)|(_,Err(_))=>r.errors.push(issue("Дата","DATE_FORMAT","Используйте формат YYYY-MM-DD.",Some(&s.uid))),_=>{}}}
+        for (name,v) in [("Название этапа",s.title.as_str()),("Исполнитель",s.executor.as_str()),("Адресаты",s.addressees.as_str()),("Начало",s.start.as_str()),("Срок исполнения",s.deadline.as_str())] { if clean(v).is_empty(){r.errors.push(issue(name,"REQUIRED",&format!("Поле «{name}» обязательно."),Some(&s.uid)));} else if has_tsv_breaker(v){r.errors.push(issue(name,"TSV_BREAKER",&format!("Поле «{name}» содержит TAB/перенос строки."),Some(&s.uid)));} }
+        if !s.start.is_empty()&&!s.deadline.is_empty(){match(parse_date(&s.start),parse_date(&s.deadline)){(Ok(a),Ok(b)) if a>b=>r.errors.push(issue("Срок исполнения","DATE_ORDER","Дата начала этапа не может быть позже срока исполнения.",Some(&s.uid))),(Err(_),_)|(_,Err(_))=>r.errors.push(issue("Дата","DATE_FORMAT","Используйте формат YYYY-MM-DD.",Some(&s.uid))),_=>{}}}
     }
     let uid_set:HashSet<_>=snapshot.stages.iter().map(|s|s.uid.as_str()).collect();
-    for s in &snapshot.stages {if let Some(parent)=s.parent_uid.as_deref(){if parent==s.uid{r.errors.push(issue("Родитель","SELF_PARENT","Этап не может быть собственным родителем.",Some(&s.uid)));}else if !uid_set.contains(parent){r.errors.push(issue("Родитель","MISSING_PARENT","Родительский этап не найден.",Some(&s.uid)));}}}
-    if has_cycle(&snapshot.stages){r.errors.push(issue("Родитель","CYCLE","Обнаружен цикл в иерархии этапов.",None));}
+    for s in &snapshot.stages {if let Some(parent)=s.parent_uid.as_deref(){if parent==s.uid{r.errors.push(issue("Головной этап / основной проект","SELF_PARENT","Этап не может быть выбран в качестве собственного головного этапа.",Some(&s.uid)));}else if !uid_set.contains(parent){r.errors.push(issue("Головной этап / основной проект","MISSING_PARENT","Головной этап не найден.",Some(&s.uid)));}}}
+    if has_cycle(&snapshot.stages){r.errors.push(issue("Головной этап / основной проект","CYCLE","Обнаружен цикл в иерархии этапов.",None));}
     if snapshot.stages.is_empty(){r.warnings.push(issue("Этапы","NO_STAGES","Проект не содержит этапов.",None));}
     r.valid=r.errors.is_empty();
     Ok(r)

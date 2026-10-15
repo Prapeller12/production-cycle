@@ -73,7 +73,14 @@ fn main(){
                 .build()?;
             Ok(())
         })
-        .run(tauri::generate_context!());
-    if let Err(error)=result{startup_failure(&format!("Не удалось открыть окно программы: {error}"));}
+        .build(tauri::generate_context!());
+    let app=match result{Ok(app)=>app,Err(error)=>startup_failure(&format!("Не удалось открыть окно программы: {error}"))};
+    app.run(|app,event|{
+        if matches!(event,tauri::RunEvent::Exit){
+            // Tauri exits the process after this callback; managed-state Drop
+            // is not guaranteed to run on that path.
+            let _=app.state::<NetworkRuntime>().release();
+        }
+    });
     infrastructure::startup::stop();
 }
