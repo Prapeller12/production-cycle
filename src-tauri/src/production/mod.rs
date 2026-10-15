@@ -3,6 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use std::{collections::{HashMap, HashSet}, path::{Path, PathBuf}, sync::Mutex};
 use tauri::State;
+use crate::infrastructure::network::NetworkRuntime;
 
 const MIGRATION: &str = include_str!("../../migrations/001_production_cycle.sql");
 pub(crate) const SCHEMA_VERSION: i64 = 4;
@@ -215,14 +216,29 @@ pub(crate) fn initialize_schema(conn:&Connection)->Result<()> {
 }
 impl ProductionDb {
     pub fn open(path:&Path) -> Result<Self> {
+        Self::open_with_backup_dir(path,None)
+    }
+    pub fn open_with_backup_dir(path:&Path,backup_dir_override:Option<PathBuf>) -> Result<Self> {
         let existed=path.is_file()&&std::fs::metadata(path).map(|value|value.len()>0).unwrap_or(false);
         let conn=Connection::open(path)?;
-        let backup_dir=path.parent().map(|parent|parent.join("backups"));
+        let backup_dir=backup_dir_override.or_else(||path.parent().map(|parent|parent.join("backups")));
         if existed&&schema_needs_migration(&conn)?{
             if let Some(dir)=backup_dir.as_deref(){crate::backup::create_backup_from_connection(&conn,dir,"before-migration",true).map_err(ProductionError::Validation)?;}
         }
         initialize_schema(&conn)?;
         Ok(Self{conn:Mutex::new(conn),backup_dir})
+    }
+    pub(crate) fn export_database(&self,path:&Path)->Result<()> {
+        if path.exists(){std::fs::remove_file(path).map_err(|e|ProductionError::Validation(e.to_string()))?;}
+        let conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
+        conn.backup(rusqlite::DatabaseName::Main,path,None)?;
+        Ok(())
+    }
+    pub(crate) fn restore_database(&self,path:&Path)->Result<()> {
+        let mut conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
+        conn.restore(rusqlite::DatabaseName::Main,path,None::<fn(rusqlite::backup::Progress)>)?;
+        initialize_schema(&conn)?;
+        Ok(())
     }
     #[cfg(test)]
     pub(crate) fn memory() -> Result<Self> {
@@ -318,19 +334,19 @@ fn issue(field:&str,code:&str,message:&str,entity:Option<&str>)->ValidationIssue
 pub fn validate_snapshot(snapshot:&ProductionSnapshot)->Result<ValidationResult>{
     let mut r=ValidationResult::default();
     let p=&snapshot.project;
-    let fields=[("Название проекта",p.name.as_str()),("Номер заказа",p.order_no.as_str()),("Инициатор",p.initiator.as_str()),("Исполнитель",p.executor.as_str()),("Предприятие",p.enterprise.as_str()),("Начало",p.start.as_str()),("Дедлайн",p.deadline.as_str())];
+    let fields=[("Название проекта",p.name.as_str()),("Номер заказа",p.order_no.as_str()),("Инициатор",p.initiator.as_str()),("Исполнитель",p.executor.as_str()),("Предприятие",p.enterprise.as_str()),("Начало",p.start.as_str()),("Срок исполнения",p.deadline.as_str())];
     for (name,v) in fields { if clean(v).is_empty(){r.errors.push(issue(name,"REQUIRED",&format!("Поле «{name}» обязательно."),None));} else if has_tsv_breaker(v){r.errors.push(issue(name,"TSV_BREAKER",&format!("Поле «{name}» содержит TAB/перенос строки."),None));} }
-    if !p.start.is_empty()&&!p.deadline.is_empty(){match(parse_date(&p.start),parse_date(&p.deadline)){(Ok(a),Ok(b)) if a>b=>r.errors.push(issue("Дедлайн","DATE_ORDER","Дата начала проекта не может быть позже дедлайна.",None)),(Err(_),_)|(_,Err(_))=>r.errors.push(issue("Дата","DATE_FORMAT","Используйте формат YYYY-MM-DD.",None)),_=>{}}}
+    if !p.start.is_empty()&&!p.deadline.is_empty(){match(parse_date(&p.start),parse_date(&p.deadline)){(Ok(a),Ok(b)) if a>b=>r.errors.push(issue("Срок исполнения","DATE_ORDER","Дата начала проекта не может быть позже срока исполнения.",None)),(Err(_),_)|(_,Err(_))=>r.errors.push(issue("Дата","DATE_FORMAT","Используйте формат YYYY-MM-DD.",None)),_=>{}}}
     let mut uids=HashSet::new();let mut seqs=HashSet::new();
     for s in &snapshot.stages {
         if !uids.insert(s.uid.clone()){r.errors.push(issue("uid","DUPLICATE_UID","Повторяющийся UID этапа.",Some(&s.uid)));}
         if !seqs.insert(s.seq){r.errors.push(issue("seq","DUPLICATE_SEQ","Повторяющийся порядковый номер этапа.",Some(&s.uid)));}
-        for (name,v) in [("Название этапа",s.title.as_str()),("Исполнитель",s.executor.as_str()),("Адресаты",s.addressees.as_str()),("Начало",s.start.as_str()),("Дедлайн",s.deadline.as_str())] { if clean(v).is_empty(){r.errors.push(issue(name,"REQUIRED",&format!("Поле «{name}» обязательно."),Some(&s.uid)));} else if has_tsv_breaker(v){r.errors.push(issue(name,"TSV_BREAKER",&format!("Поле «{name}» содержит TAB/перенос строки."),Some(&s.uid)));} }
-        if !s.start.is_empty()&&!s.deadline.is_empty(){match(parse_date(&s.start),parse_date(&s.deadline)){(Ok(a),Ok(b)) if a>b=>r.errors.push(issue("Дедлайн","DATE_ORDER","Дата начала этапа не может быть позже дедлайна.",Some(&s.uid))),(Err(_),_)|(_,Err(_))=>r.errors.push(issue("Дата","DATE_FORMAT","Используйте формат YYYY-MM-DD.",Some(&s.uid))),_=>{}}}
+        for (name,v) in [("Название этапа",s.title.as_str()),("Исполнитель",s.executor.as_str()),("Адресаты",s.addressees.as_str()),("Начало",s.start.as_str()),("Срок исполнения",s.deadline.as_str())] { if clean(v).is_empty(){r.errors.push(issue(name,"REQUIRED",&format!("Поле «{name}» обязательно."),Some(&s.uid)));} else if has_tsv_breaker(v){r.errors.push(issue(name,"TSV_BREAKER",&format!("Поле «{name}» содержит TAB/перенос строки."),Some(&s.uid)));} }
+        if !s.start.is_empty()&&!s.deadline.is_empty(){match(parse_date(&s.start),parse_date(&s.deadline)){(Ok(a),Ok(b)) if a>b=>r.errors.push(issue("Срок исполнения","DATE_ORDER","Дата начала этапа не может быть позже срока исполнения.",Some(&s.uid))),(Err(_),_)|(_,Err(_))=>r.errors.push(issue("Дата","DATE_FORMAT","Используйте формат YYYY-MM-DD.",Some(&s.uid))),_=>{}}}
     }
     let uid_set:HashSet<_>=snapshot.stages.iter().map(|s|s.uid.as_str()).collect();
-    for s in &snapshot.stages {if let Some(parent)=s.parent_uid.as_deref(){if parent==s.uid{r.errors.push(issue("Родитель","SELF_PARENT","Этап не может быть собственным родителем.",Some(&s.uid)));}else if !uid_set.contains(parent){r.errors.push(issue("Родитель","MISSING_PARENT","Родительский этап не найден.",Some(&s.uid)));}}}
-    if has_cycle(&snapshot.stages){r.errors.push(issue("Родитель","CYCLE","Обнаружен цикл в иерархии этапов.",None));}
+    for s in &snapshot.stages {if let Some(parent)=s.parent_uid.as_deref(){if parent==s.uid{r.errors.push(issue("Головной этап / основной проект","SELF_PARENT","Этап не может быть выбран в качестве собственного головного этапа.",Some(&s.uid)));}else if !uid_set.contains(parent){r.errors.push(issue("Головной этап / основной проект","MISSING_PARENT","Головной этап не найден.",Some(&s.uid)));}}}
+    if has_cycle(&snapshot.stages){r.errors.push(issue("Головной этап / основной проект","CYCLE","Обнаружен цикл в иерархии этапов.",None));}
     if snapshot.stages.is_empty(){r.warnings.push(issue("Этапы","NO_STAGES","Проект не содержит этапов.",None));}
     r.valid=r.errors.is_empty();
     Ok(r)
@@ -396,26 +412,25 @@ pub(crate) fn load_snapshot_by_id_conn(conn:&Connection,project_id:i64)->Result<
 #[tauri::command]
 pub fn production_validate(snapshot:ProductionSnapshot)->std::result::Result<ValidationResult,String>{validate_snapshot(&snapshot).map_err(|e|e.to_string())}
 #[tauri::command]
-pub fn production_save_snapshot(snapshot:ProductionSnapshot,db:State<'_,ProductionDb>)->std::result::Result<i64,String>{db.save_snapshot(&snapshot).map_err(|e|e.to_string())}
+pub fn production_save_snapshot(snapshot:ProductionSnapshot,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<i64,String>{network.with_write(&db,||db.save_snapshot(&snapshot).map_err(|e|e.to_string()))}
 #[tauri::command]
-pub fn production_load_snapshot(order_no:String,db:State<'_,ProductionDb>)->std::result::Result<Option<ProductionSnapshot>,String>{db.load_snapshot(&order_no).map_err(|e|e.to_string())}
+pub fn production_load_snapshot(order_no:String,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Option<ProductionSnapshot>,String>{network.with_read(&db,||db.load_snapshot(&order_no).map_err(|e|e.to_string()))}
 #[tauri::command]
-pub fn production_load_snapshot_by_id(project_id:i64,db:State<'_,ProductionDb>)->std::result::Result<Option<ProductionSnapshot>,String>{db.load_snapshot_by_id(project_id).map_err(|e|e.to_string())}
+pub fn production_load_snapshot_by_id(project_id:i64,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Option<ProductionSnapshot>,String>{network.with_read(&db,||db.load_snapshot_by_id(project_id).map_err(|e|e.to_string()))}
 #[tauri::command]
-pub fn production_list_projects(db:State<'_,ProductionDb>)->std::result::Result<Vec<ProjectSummary>,String>{db.list_projects().map_err(|e|e.to_string())}
+pub fn production_list_projects(db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Vec<ProjectSummary>,String>{network.with_read(&db,||db.list_projects().map_err(|e|e.to_string()))}
 #[tauri::command]
-pub fn production_list_deadline_control(db:State<'_,ProductionDb>)->std::result::Result<Vec<DeadlineControlItem>,String>{db.list_deadline_control(Local::now().date_naive()).map_err(|e|e.to_string())}
+pub fn production_list_deadline_control(db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Vec<DeadlineControlItem>,String>{network.with_read(&db,||db.list_deadline_control(Local::now().date_naive()).map_err(|e|e.to_string()))}
 #[tauri::command]
-pub fn production_list_dictionary(kind:DictionaryKind,db:State<'_,ProductionDb>)->std::result::Result<Vec<DictionaryEntry>,String>{db.list_dictionary(kind).map_err(|e|e.to_string())}
+pub fn production_list_dictionary(kind:DictionaryKind,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Vec<DictionaryEntry>,String>{network.with_read(&db,||db.list_dictionary(kind).map_err(|e|e.to_string()))}
 #[tauri::command]
-pub fn production_replace_dictionary_value(kind:DictionaryKind,from_value:String,to_value:String,db:State<'_,ProductionDb>)->std::result::Result<DictionaryReplaceResult,String>{db.replace_dictionary_value(kind,&from_value,&to_value).map_err(|e|e.to_string())}
+pub fn production_replace_dictionary_value(kind:DictionaryKind,from_value:String,to_value:String,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<DictionaryReplaceResult,String>{network.with_write(&db,||db.replace_dictionary_value(kind,&from_value,&to_value).map_err(|e|e.to_string()))}
 #[tauri::command]
 pub fn production_export_txt(snapshot:ProductionSnapshot)->std::result::Result<TxtExportBundle,String>{build_txt_export(&snapshot).map_err(|e|e.to_string())}
 #[tauri::command]
-pub fn production_get_management_report(snapshot:ProductionSnapshot,db:State<'_,ProductionDb>)->std::result::Result<ProductionReport,String>{
-    let mut report=build_report(&snapshot,Local::now().date_naive()).map_err(|e|e.to_string())?;
-    if let Some(project_id)=snapshot.database_id{crate::audit::attach_completion_confirmations(&db,project_id,&mut report)?;}
-    Ok(report)
+pub fn production_get_management_report(snapshot:ProductionSnapshot,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<ProductionReport,String>{
+    network.with_read(&db,||{let mut report=build_report(&snapshot,Local::now().date_naive()).map_err(|e|e.to_string())?;
+    if let Some(project_id)=snapshot.database_id{crate::audit::attach_completion_confirmations(&db,project_id,&mut report)?;}Ok(report)})
 }
 
 #[cfg(test)]

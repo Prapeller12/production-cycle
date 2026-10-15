@@ -32,7 +32,7 @@
   <symbol id="ui-icon-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   <symbol id="ui-icon-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
 </svg>
-<header class="appbar"><strong>Производственный цикл</strong><span class="project-context" id="projectContext">Новый проект</span><span class="spacer"></span><button class="top-action" id="profilesBtn"><span class="ui-icon ui-icon-users" aria-hidden="true"></span>Пользователи</button><button class="top-action" id="auditBtn"><span class="ui-icon ui-icon-shield" aria-hidden="true"></span>Администратор</button><span class="save-state" id="saveState">Новый проект</span><span id="taskCounter">Этапов: 0</span></header>
+<header class="appbar"><strong>Производственный цикл</strong><span class="project-context" id="projectContext">Новый проект</span><span class="spacer"></span><span class="network-state" id="networkState" hidden></span><button class="top-action" id="profilesBtn"><span class="ui-icon ui-icon-users" aria-hidden="true"></span>Пользователи</button><button class="top-action" id="auditBtn"><span class="ui-icon ui-icon-shield" aria-hidden="true"></span>Администратор</button><span class="save-state" id="saveState">Новый проект</span><span id="taskCounter">Этапов: 0</span></header>
 <nav class="tabs" aria-label="Разделы программы" role="tablist"><button class="tab active" id="registryTab" role="tab" aria-selected="true" aria-controls="registryView" data-view="registry">Реестр цикла</button><button class="tab" id="deadlinesTab" role="tab" aria-selected="false" aria-controls="deadlinesView" data-view="deadlines">Контроль сроков <span id="deadlineRiskCount"></span></button><button class="tab" id="ganttTab" role="tab" aria-selected="false" aria-controls="ganttView" data-view="gantt">Диаграмма Ганта</button></nav>
 <div id="messageArea" class="message-area" role="status" aria-live="polite" aria-atomic="true"></div>
 <main class="shell">
@@ -57,7 +57,7 @@
   </section>
 
   <section class="structure-card" id="structureCard">
-    <div class="structure-head"><div><strong>Структура подчинённости</strong><span>Основной заказ → этап → дочерний этап</span></div><div class="structure-actions"><button class="btn small" id="printStructureBtn"><span class="ui-icon ui-icon-print" aria-hidden="true"></span>Печать структуры</button><button class="btn small structure-toggle" id="toggleStructureBtn" aria-expanded="false"><span class="structure-toggle-label">Развернуть</span><span class="ui-icon ui-icon-chevron-down structure-chevron" aria-hidden="true"></span></button></div></div>
+    <div class="structure-head"><div><strong>Структура подчинённости</strong><span>Основной проект → головной этап → зависимый этап</span></div><div class="structure-actions"><button class="btn small" id="printStructureBtn"><span class="ui-icon ui-icon-print" aria-hidden="true"></span>Печать структуры</button><button class="btn small structure-toggle" id="toggleStructureBtn" aria-expanded="false"><span class="structure-toggle-label">Развернуть</span><span class="ui-icon ui-icon-chevron-down structure-chevron" aria-hidden="true"></span></button></div></div>
     <div id="structureContent" class="structure-content collapsed"><div id="structureTree" class="structure-tree"></div></div>
   </section>
 
@@ -76,7 +76,7 @@
       <div class="scroll-hint">На узком экране строки показаны карточками; все поля сохранены.</div>
       <table class="tree-table" aria-label="Реестр этапов проекта">
         <thead><tr>
-          <th class="col-actions">Действия</th><th class="col-id">ID</th><th class="col-title">Название / этап</th><th class="col-exec">Исполнитель</th><th class="col-init">Инициатор / адресат</th><th class="col-status">Статус</th><th class="col-date">Начало</th><th class="col-date">Дедлайн</th><th class="col-left">Осталось</th>
+          <th class="col-actions">Действия</th><th class="col-id">ID</th><th class="col-title">Название / этап</th><th class="col-exec">Исполнитель</th><th class="col-init">Инициатор / адресат</th><th class="col-status">Статус</th><th class="col-date">Начало</th><th class="col-date">Срок</th><th class="col-left">Осталось</th>
         </tr></thead>
         <tbody id="treeBody"></tbody>
       </table>
@@ -146,23 +146,23 @@
       <div id="stageFormError" class="form-error" role="alert" aria-live="assertive"></div>
       <div class="form-grid">
         <div class="wide"><label for="stageTitle">Название этапа / краткое содержание *</label><input id="stageTitle" list="stageTitleOptions" aria-describedby="stageFormError" placeholder="Например: Изготовление блока МЭТ" /></div>
-        <div><label for="stageParent">К какому проекту или этапу относится *</label><select id="stageParent" aria-describedby="stageParentHelp stageFormError"></select><div id="stageParentHelp" class="help">У элемента может быть только один родитель. Для верхнего уровня выберите основной проект.</div></div>
+        <div><label for="stageParent">Головной этап / основной проект *</label><select id="stageParent" aria-describedby="stageParentHelp stageFormError"></select><div id="stageParentHelp" class="help">У этапа может быть только один головной этап. Если этап относится непосредственно к проекту, выберите основной проект.</div></div>
         <div><label for="stageExecutor">Исполнитель / корреспондент *</label><input id="stageExecutor" list="executorOptions" aria-describedby="stageFormError" placeholder="ФИО / организация" /></div>
         <div><label for="stageAddressees">Адресаты *</label><input id="stageAddressees" list="enterpriseOptions" aria-describedby="stageFormError" placeholder="ФИО / подразделение" /></div>
         <div><label for="stageStart">Начало / дата регистрации *</label><input id="stageStart" type="date" aria-describedby="stageFormError" /></div>
         <div><label for="stageDeadline">Срок исполнения *</label><input id="stageDeadline" type="date" aria-describedby="stageFormError" /></div>
         <div><label for="stageStatus">Статус *</label><select id="stageStatus"><option value="new">Не начато</option><option value="work">В работе</option><option value="hold">Приостановлено</option><option value="done">Выполнено</option></select></div>
-        <div><label>ID этапа — автоматически</label><div id="stageIdPreview" class="auto-value"></div><div class="help">ID сохраняется за этапом. Изменение родителя не меняет ID.</div></div>
+        <div><label>ID этапа — автоматически</label><div id="stageIdPreview" class="auto-value"></div><div class="help">ID сохраняется за этапом. Изменение головного этапа не меняет ID.</div></div>
         <div id="completionScopeField" class="wide completion-scope">
           <label for="completionScope">Объём завершения *</label>
-          <select id="completionScope"><option value="stage">Только выбранный этап</option><option value="branch">Вся родительская ветка</option></select>
+          <select id="completionScope"><option value="stage">Только выбранный этап</option><option value="branch">Головной этап и все зависимые этапы</option></select>
           <div id="completionScopeHelp" class="help"></div>
         </div>
         <div class="wide"><label for="stageComment">Комментарий</label><textarea id="stageComment" rows="3" placeholder="Дополнительные сведения по этапу"></textarea></div>
       </div>
-      <div class="required-hint">Все поля со знаком * обязательны. Количество прямых детей рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
+      <div class="required-hint">Все поля со знаком * обязательны. Количество непосредственно зависимых этапов рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
     </div>
-    <div class="modal-foot stage-modal-foot"><div class="stage-secondary-actions"><button class="btn small" id="createChildStageBtn"><span class="ui-icon ui-icon-plus" aria-hidden="true"></span>Дочерний этап</button><button class="btn small danger-link" id="deleteStageBtn"><span class="ui-icon ui-icon-trash" aria-hidden="true"></span>Удалить этап</button></div><div class="stage-primary-actions"><button class="btn" data-close="stageModal"><span class="ui-icon ui-icon-close" aria-hidden="true"></span>Отмена</button><button class="btn primary" id="saveStageBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Применить к проекту</button></div></div>
+    <div class="modal-foot stage-modal-foot"><div class="stage-secondary-actions"><button class="btn small" id="createChildStageBtn"><span class="ui-icon ui-icon-plus" aria-hidden="true"></span>Зависимый этап</button><button class="btn small danger-link" id="deleteStageBtn"><span class="ui-icon ui-icon-trash" aria-hidden="true"></span>Удалить этап</button></div><div class="stage-primary-actions"><button class="btn" data-close="stageModal"><span class="ui-icon ui-icon-close" aria-hidden="true"></span>Отмена</button><button class="btn primary" id="saveStageBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Применить к проекту</button></div></div>
   </div>
 </div>
 
@@ -227,6 +227,8 @@
 </div>
 
 <div class="modal-backdrop" id="adminLoginModal" role="dialog" aria-modal="true" aria-labelledby="adminLoginTitle"><div class="modal"><div class="modal-head"><h2 id="adminLoginTitle">Вход администратора</h2><span class="spacer"></span><button class="btn icon" data-close="adminLoginModal" aria-label="Закрыть вход"><span class="ui-icon ui-icon-close" aria-hidden="true"></span></button></div><div class="modal-body"><p>Административные данные отделены от рабочего интерфейса. Для входа требуется ключ единственного администратора.</p><div class="form-grid"><div><label for="adminLoginUser">Администратор</label><select id="adminLoginUser"></select></div><div><label for="adminLoginPin">PIN администратора</label><input id="adminLoginPin" type="password" autocomplete="off" /></div></div><div id="adminLoginError"></div></div><div class="modal-foot"><button class="btn" data-close="adminLoginModal"><span class="ui-icon ui-icon-close" aria-hidden="true"></span>Отмена</button><button class="btn primary" id="confirmAdminLoginBtn"><span class="ui-icon ui-icon-login" aria-hidden="true"></span>Войти</button></div></div></div>
+
+<div class="modal-backdrop network-login-backdrop" id="networkLoginModal" role="dialog" aria-modal="true" aria-labelledby="networkLoginTitle"><div class="modal network-login-modal"><div class="modal-head"><div><span class="onboarding-step">Сетевая тестовая версия</span><h2 id="networkLoginTitle">Вход в общую рабочую папку</h2></div></div><div class="modal-body"><p>Выберите свой профиль. Одновременно могут работать не более трёх компьютеров.</p><div class="form-grid"><div><label for="networkLoginUser">Пользователь *</label><select id="networkLoginUser"></select></div><div><label for="networkLoginPin">Персональный PIN *</label><input id="networkLoginPin" type="password" autocomplete="off" placeholder="Введите свой PIN" /></div></div><div class="network-login-status" id="networkLoginStatus" role="status" aria-live="polite"></div></div><div class="modal-foot"><span class="network-limit-note">При входе администратора четвёртым будет сохранена работа и закрыта сессия последнего вошедшего обычного пользователя.</span><button class="btn" id="networkRetryBtn"><span class="ui-icon ui-icon-refresh" aria-hidden="true"></span>Повторить</button><button class="btn primary" id="networkLoginBtn"><span class="ui-icon ui-icon-login" aria-hidden="true"></span>Войти</button></div></div></div>
 
 <div class="modal-backdrop" id="onboardingModal" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle"><div class="modal modal-wide onboarding-modal"><div class="modal-head"><div><span class="onboarding-step" id="onboardingStepLabel">Шаг 1 из 4</span><h2 id="onboardingTitle">Начало работы</h2></div><span class="spacer"></span><button class="btn icon" data-close="onboardingModal" aria-label="Закрыть обучение"><span class="ui-icon ui-icon-close" aria-hidden="true"></span></button></div><div class="modal-body"><div id="onboardingContent" class="onboarding-content"></div></div><div class="modal-foot"><button class="btn" id="onboardingBackBtn"><span class="ui-icon ui-icon-back" aria-hidden="true"></span>Назад</button><span class="spacer"></span><button class="btn primary" id="onboardingNextBtn">Далее<span class="ui-icon ui-icon-chevron-right" aria-hidden="true"></span></button></div></div></div>
 

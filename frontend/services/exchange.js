@@ -17,7 +17,7 @@
     if(result.some(row=>row.length!==header.length))throw Error('Неверное число колонок TXT.');
     return result;
   }
-  function count(s){if(s==='')return 0;if(!/^\d+$/.test(s)||!Number.isSafeInteger(Number(s)))throw Error('Некорректное количество детей.');return Number(s)}
+  function count(s){if(s==='')return 0;if(!/^\d+$/.test(s)||!Number.isSafeInteger(Number(s)))throw Error('Некорректное количество зависимых этапов.');return Number(s)}
   function isoDate(value,shortYear=false){
     const pattern=shortYear?/^(\d{2})\.(\d{2})\.(\d{2})$/:/^(\d{2})\.(\d{2})\.(\d{4})$/;
     const m=String(value||'').match(pattern);if(!m)throw Error('Неверный формат даты: '+value);
@@ -27,7 +27,7 @@
   // Structural preview only: manual statuses cannot be recovered from this contract.
   // Never call the normal Registry parser and never create a status LINK.
   function previewPair(outgoing,incoming){
-    const out=rows(outgoing,OUT_HEADER),input=rows(incoming,IN_HEADER);if(out.length!==1)throw Error('Требуется один корневой проект.');
+    const out=rows(outgoing,OUT_HEADER),input=rows(incoming,IN_HEADER);if(out.length!==1)throw Error('Требуется один основной проект.');
     const rootId=out[0][1];if(!rootId||D.orderToken(rootId)!==rootId)throw Error('Неверный ID заказа.');
     const stack=[{id:rootId,remaining:count(out[0][0]),depth:-1}],seen=new Set([rootId]),stages=[];
     for(const row of input){while(stack.length&&!stack.at(-1).remaining)stack.pop();if(!stack.length)throw Error('Лишние строки дерева.');
@@ -37,7 +37,7 @@
       stages.push({id,parentId:parent.id,depth:parent.depth+1,childCount:n,row:[...row],status:null});
       if(n)stack.push({id,remaining:n,depth:parent.depth+1});
     }
-    while(stack.length&&!stack.at(-1).remaining)stack.pop();if(stack.length)throw Error('Недостаточно дочерних строк.');
+    while(stack.length&&!stack.at(-1).remaining)stack.pop();if(stack.length)throw Error('Недостаточно строк зависимых этапов.');
     return{rootId,stages,manualStatusAvailable:false};
   }
   function importPair(outgoing,incoming){
@@ -48,7 +48,7 @@
       const row=item.row,seq=Number(item.id.slice(tree.rootId.length+1)),uid=`import-${seq}`;
       uidById.set(item.id,uid);
       const parentUid=item.parentId===tree.rootId?null:uidById.get(item.parentId);
-      if(item.parentId!==tree.rootId&&!parentUid)throw Error('Родитель этапа не найден: '+item.parentId);
+      if(item.parentId!==tree.rootId&&!parentUid)throw Error('Головной этап не найден: '+item.parentId);
       const sort=(siblingSort.get(parentUid)||0)+1;siblingSort.set(parentUid,sort);
       stages.push({uid,seq,sort,parentUid,title:row[1].trim(),executor:row[4].trim(),addressees:row[5].trim(),start:isoDate(row[3]),deadline:isoDate(row[6]),status:'new',comment:''});
     }

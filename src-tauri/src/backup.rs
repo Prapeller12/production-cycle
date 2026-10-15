@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}};
 use tauri::State;
 use uuid::Uuid;
+use crate::infrastructure::network::NetworkRuntime;
 
 use crate::production::{initialize_schema, ProductionDb, SCHEMA_VERSION};
 
@@ -254,18 +255,18 @@ impl ProductionDb {
 }
 
 #[tauri::command]
-pub fn backup_list(db: State<'_, ProductionDb>) -> Result<Vec<BackupSummary>, String> {
-    db.list_backups()
+pub fn backup_list(db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> Result<Vec<BackupSummary>, String> {
+    network.with_read(&db, || db.list_backups())
 }
 
 #[tauri::command]
-pub fn backup_create(admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>) -> Result<BackupSummary, String> {
-    db.create_backup_as_admin(admin_user_id, &admin_pin)
+pub fn backup_create(admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> Result<BackupSummary, String> {
+    network.with_read(&db, || db.create_backup_as_admin(admin_user_id, &admin_pin))
 }
 
 #[tauri::command]
-pub fn backup_restore(file_name: String, admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>) -> Result<RestoreReport, String> {
-    db.restore_backup_as_admin(&file_name, admin_user_id, &admin_pin)
+pub fn backup_restore(file_name: String, admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> Result<RestoreReport, String> {
+    network.with_write(&db, || db.restore_backup_as_admin(&file_name, admin_user_id, &admin_pin))
 }
 
 #[cfg(test)]

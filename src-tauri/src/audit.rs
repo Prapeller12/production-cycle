@@ -10,6 +10,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use tauri::State;
 use uuid::Uuid;
+use crate::infrastructure::network::NetworkRuntime;
 
 use crate::production::{
     load_snapshot_by_id_conn, save_snapshot_tx, validate_snapshot, DictionaryKind,
@@ -322,7 +323,7 @@ fn snapshot_changes(previous: Option<&ProductionSnapshot>, current: &ProductionS
         ("Исполнитель / получатель", before_project.executor.as_str(), after_project.executor.as_str()),
         ("Предприятие", before_project.enterprise.as_str(), after_project.enterprise.as_str()),
         ("Начало", before_project.start.as_str(), after_project.start.as_str()),
-        ("Дедлайн", before_project.deadline.as_str(), after_project.deadline.as_str()),
+        ("Срок исполнения", before_project.deadline.as_str(), after_project.deadline.as_str()),
     ] {
         add_change(&mut changes, "Проект", None, field, shown(before), shown(after));
     }
@@ -336,11 +337,11 @@ fn snapshot_changes(previous: Option<&ProductionSnapshot>, current: &ProductionS
         };
         for (field, old, new) in [
             ("Название", shown(&before.title), shown(&stage.title)),
-            ("Родитель", parent_label(previous, before.parent_uid.as_deref()), parent_label(current, stage.parent_uid.as_deref())),
+            ("Головной этап / основной проект", parent_label(previous, before.parent_uid.as_deref()), parent_label(current, stage.parent_uid.as_deref())),
             ("Исполнитель", shown(&before.executor), shown(&stage.executor)),
             ("Адресат", shown(&before.addressees), shown(&stage.addressees)),
             ("Начало", shown(&before.start), shown(&stage.start)),
-            ("Дедлайн", shown(&before.deadline), shown(&stage.deadline)),
+            ("Срок исполнения", shown(&before.deadline), shown(&stage.deadline)),
             ("Статус", status_label(before.status).into(), status_label(stage.status).into()),
             ("Комментарий", shown(&before.comment), shown(&stage.comment)),
             ("Порядок", before.sort.to_string(), stage.sort.to_string()),
@@ -572,6 +573,20 @@ impl ProductionDb {
         authenticate(&conn, user_id, pin, RoleRequirement::Admin).map(|_| ())
     }
 
+    pub fn authorize_user(&self, user_id: i64, pin: &str) -> std::result::Result<AuditUserSummary, String> {
+        let conn = self.conn.lock().map_err(|_| "База данных занята".to_string())?;
+        let (user, _) = authenticate(&conn, user_id, pin, RoleRequirement::AnySigner)?;
+        conn.query_row(
+            "SELECT id,display_name,role,key_fingerprint,active,created_at FROM audit_user WHERE id=?1",
+            [user.id],
+            |row| Ok(AuditUserSummary {
+                id: row.get(0)?, display_name: row.get(1)?, role: row.get(2)?,
+                key_fingerprint: row.get(3)?, active: row.get::<_, i64>(4)? == 1,
+                created_at: row.get(5)?,
+            }),
+        ).map_err(|e| e.to_string())
+    }
+
     pub fn create_audit_user(
         &self,
         input: CreateAuditUserInput,
@@ -682,7 +697,7 @@ impl ProductionDb {
             })?;
             let requested_uids = value.stage_uids.iter().map(String::as_str).collect::<std::collections::HashSet<_>>();
             if requested_uids.len() != value.stage_uids.len() || requested_uids != completed_uids {
-                return Err("Состав подтверждаемых этапов не совпадает с фактическими изменениями. Закройте один этап либо явно выберите закрытие всей родительской ветки.".into());
+                return Err("Состав подтверждаемых этапов не совпадает с фактическими изменениями. Закройте один этап либо явно выберите закрытие головного и всех зависимых этапов.".into());
             }
             let document_type = clean(&value.document_type);
             let document_reference = validate_comment(&value.document_reference, "Номер и дата документа")?;
@@ -909,25 +924,25 @@ pub fn attach_completion_confirmations(
 }
 
 #[tauri::command]
-pub fn audit_list_users(db: State<'_, ProductionDb>) -> std::result::Result<Vec<AuditUserSummary>, String> { db.list_audit_users() }
+pub fn audit_list_users(db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<Vec<AuditUserSummary>, String> { network.with_read(&db, || db.list_audit_users()) }
 
 #[tauri::command]
-pub fn audit_authorize_admin(user_id: i64, pin: String, db: State<'_, ProductionDb>) -> std::result::Result<(), String> { db.authorize_admin(user_id,&pin) }
+pub fn audit_authorize_admin(user_id: i64, pin: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<(), String> { network.with_read(&db, || db.authorize_admin(user_id,&pin)) }
 
 #[tauri::command]
-pub fn audit_create_user(input: CreateAuditUserInput, db: State<'_, ProductionDb>) -> std::result::Result<AuditUserSummary, String> { db.create_audit_user(input) }
+pub fn audit_create_user(input: CreateAuditUserInput, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<AuditUserSummary, String> { network.with_write(&db, || db.create_audit_user(input)) }
 
 #[tauri::command]
-pub fn audit_save_snapshot(snapshot: ProductionSnapshot, user_id: i64, pin: String, comment: String, evidence: Option<CompletionEvidenceInput>, db: State<'_, ProductionDb>) -> std::result::Result<SignedSaveResult, String> { db.save_signed_snapshot(&snapshot,user_id,&pin,&comment,evidence) }
+pub fn audit_save_snapshot(snapshot: ProductionSnapshot, user_id: i64, pin: String, comment: String, evidence: Option<CompletionEvidenceInput>, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<SignedSaveResult, String> { network.with_write(&db, || db.save_signed_snapshot(&snapshot,user_id,&pin,&comment,evidence)) }
 
 #[tauri::command]
-pub fn audit_list_events(project_id: Option<i64>, db: State<'_, ProductionDb>) -> std::result::Result<Vec<AuditEventSummary>, String> { db.list_audit_events(project_id) }
+pub fn audit_list_events(project_id: Option<i64>, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<Vec<AuditEventSummary>, String> { network.with_read(&db, || db.list_audit_events(project_id)) }
 
 #[tauri::command]
-pub fn audit_verify_log(admin_user_id: i64, admin_pin: String, project_id: Option<i64>, db: State<'_, ProductionDb>) -> std::result::Result<AuditVerificationReport, String> { db.verify_audit_log(admin_user_id,&admin_pin,project_id) }
+pub fn audit_verify_log(admin_user_id: i64, admin_pin: String, project_id: Option<i64>, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<AuditVerificationReport, String> { network.with_read(&db, || db.verify_audit_log(admin_user_id,&admin_pin,project_id)) }
 
 #[tauri::command]
-pub fn audit_replace_dictionary_value(kind: DictionaryKind, from_value: String, to_value: String, user_id: i64, pin: String, comment: String, db: State<'_, ProductionDb>) -> std::result::Result<DictionaryReplaceResult, String> { db.replace_dictionary_value_signed(kind,&from_value,&to_value,user_id,&pin,&comment) }
+pub fn audit_replace_dictionary_value(kind: DictionaryKind, from_value: String, to_value: String, user_id: i64, pin: String, comment: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<DictionaryReplaceResult, String> { network.with_write(&db, || db.replace_dictionary_value_signed(kind,&from_value,&to_value,user_id,&pin,&comment)) }
 
 #[cfg(test)]
 mod tests {
@@ -1003,7 +1018,7 @@ mod tests {
     fn completion_scope_must_match_exactly_and_branch_requires_explicit_targets() {
         let db=ProductionDb::memory().unwrap();let owner=admin(&db);
         let mut snapshot=sample(StageStatus::Work);
-        snapshot.stages.push(ProductionStageInput { uid:"stage-2".into(),seq:2,sort:1,parent_uid:Some("stage-1".into()),title:"Дочерний этап".into(),executor:"Исполнитель".into(),addressees:"Предприятие".into(),start:"2026-09-02".into(),deadline:"2026-09-19".into(),status:StageStatus::Work,comment:String::new() });
+        snapshot.stages.push(ProductionStageInput { uid:"stage-2".into(),seq:2,sort:1,parent_uid:Some("stage-1".into()),title:"Зависимый этап".into(),executor:"Исполнитель".into(),addressees:"Предприятие".into(),start:"2026-09-02".into(),deadline:"2026-09-19".into(),status:StageStatus::Work,comment:String::new() });
         snapshot.next_seq=3;
         let created=db.save_signed_snapshot(&snapshot,owner.id,"739201","Создание",None).unwrap();
         snapshot.database_id=Some(created.project_id);
@@ -1039,7 +1054,7 @@ mod tests {
         db.save_signed_snapshot(&snapshot,owner.id,"739201","Уточнение графика",None).unwrap();
         let events=db.list_audit_events(Some(created.project_id)).unwrap();
         let changed=&events[0];
-        assert!(changed.changes.iter().any(|change|change.entity=="Проект"&&change.field=="Дедлайн"&&change.before=="2026-09-30"&&change.after=="2026-10-15"));
+        assert!(changed.changes.iter().any(|change|change.entity=="Проект"&&change.field=="Срок исполнения"&&change.before=="2026-09-30"&&change.after=="2026-10-15"));
         assert!(changed.changes.iter().any(|change|change.entity=="Этап"&&change.field=="Исполнитель"&&change.before=="Исполнитель"&&change.after=="Новый исполнитель"));
         assert!(changed.changes.iter().any(|change|change.entity=="Этап"&&change.field=="Комментарий"&&change.before=="—"&&change.after=="Получено письмо"));
         let report=db.verify_audit_log(owner.id,"739201",Some(created.project_id)).unwrap();
