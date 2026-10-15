@@ -245,6 +245,7 @@ impl NetworkRuntime {
     }
 
     fn try_acquire_slot(&self,user_id:Option<i64>,display_name:&str,role:&str)->Result<Option<ActiveSession>,String>{
+        let _presence_guard=self.acquire_presence_lock()?;
         let sessions=self.root()?.join("shared/sessions");
         for slot in 1..=self.maximum{
             let path=sessions.join(format!("slot-{slot}.lock"));
@@ -288,7 +289,21 @@ impl NetworkRuntime {
 
     // Metadata can survive a crash. Only the OS/SMB lock proves that a slot
     // is occupied; an old heartbeat must never evict a still-running client.
+    fn acquire_presence_lock(&self)->Result<File,String>{
+        // Serialize probes and admission: a probe's short-lived slot lock
+        // must never be mistaken for an actual client by another process.
+        let file=OpenOptions::new().create(true).read(true).write(true)
+            .open(self.root()?.join("shared/sessions/presence.lock")).map_err(|e|e.to_string())?;
+        let started=Instant::now();
+        loop{match file.try_lock_exclusive(){
+            Ok(())=>return Ok(file),
+            Err(error) if error.raw_os_error()==fs2::lock_contended_error().raw_os_error() && started.elapsed()<Duration::from_secs(5)=>thread::sleep(Duration::from_millis(10)),
+            Err(error)=>return Err(format!("Не удалось проверить сетевые сеансы. Повторите попытку: {error}")),
+        }}
+    }
+
     fn occupied_slots(&self)->Result<(usize,Vec<SessionMetadata>),String>{
+        let _presence_guard=self.acquire_presence_lock()?;
         let sessions=self.root()?.join("shared/sessions");
         let mut occupied=0;
         let mut active=Vec::new();
@@ -621,6 +636,24 @@ mod tests{
         fs::remove_file(metadata).unwrap();assert_eq!(observer.status().unwrap().occupied,2);
         drop(client);assert_eq!(observer.status().unwrap().occupied,1);
         observer.release().unwrap();assert_eq!(observer.status().unwrap().occupied,0);
+        drop(observer);let _=fs::remove_dir_all(root);
+    }
+    #[test]fn simultaneous_logins_and_status_probes_admit_exactly_three_clients(){
+        let root=env::temp_dir().join(format!("production-session-concurrent-{}",Uuid::new_v4()));
+        let observer=runtime(&root,"observer");
+        let barrier=std::sync::Arc::new(std::sync::Barrier::new(5));
+        let mut handles=Vec::new();
+        for index in 1..=4{
+            let client=runtime(&root,&format!("client-{index}"));let barrier=barrier.clone();
+            handles.push(thread::spawn(move||{barrier.wait();let result=client.login(Some(user(index,"project_manager"))).unwrap();(client,result)}));
+        }
+        barrier.wait();
+        for _ in 0..10{assert!(observer.status().unwrap().occupied<=3);}
+        let clients:Vec<_>=handles.into_iter().map(|handle|handle.join().unwrap()).collect();
+        assert_eq!(clients.iter().filter(|(_,result)|result.state=="active").count(),3);
+        assert_eq!(clients.iter().filter(|(_,result)|result.state=="full").count(),1);
+        assert_eq!(observer.status().unwrap().occupied,3);
+        drop(clients);assert_eq!(observer.status().unwrap().occupied,0);
         drop(observer);let _=fs::remove_dir_all(root);
     }
     #[test]fn old_heartbeat_does_not_release_a_live_slot(){
