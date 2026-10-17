@@ -6,6 +6,7 @@
   function toSnapshot(state){
     return {
       databaseId:Number.isSafeInteger(state.databaseId)?state.databaseId:null,
+      baseRevision:typeof state.baseRevision==='string'?state.baseRevision:null,
       project:{
         name:state.project.name,
         orderNo:state.project.orderNo,
@@ -23,6 +24,7 @@
     if(!snapshot)return null;
     return {
       databaseId:Number.isSafeInteger(snapshot.databaseId)?snapshot.databaseId:null,
+      baseRevision:typeof snapshot.baseRevision==='string'?snapshot.baseRevision:null,
       project:{
         name:snapshot.project.name,
         orderNo:snapshot.project.orderNo,
@@ -113,6 +115,10 @@
     if(!native())return {location:'standalone',savedAt:new Date().toISOString()};
     return invoke('network_save_draft',{snapshot:toSnapshot(state)});
   }
+  async function networkLogout(){
+    if(!native())return true;
+    await invoke('network_logout');return true;
+  }
   async function networkFinishEviction(){
     if(!native())return true;
     await invoke('network_finish_eviction');return true;
@@ -153,5 +159,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report});
 })();

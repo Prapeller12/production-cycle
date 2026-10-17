@@ -82,15 +82,28 @@ function Run-FunctionalSmoke([string]$path,[string]$phase){
   Write-Host "$phase checks: $($result.checks -join '; ')"
 }
 function Wait-SessionCount([string]$report,[int]$expected){
-  $deadline=[DateTime]::UtcNow.AddSeconds(30)
+  # A new WebView must finish its functional smoke before it starts writing the
+  # held-client report. Keep its startup allowance separate from the 30-second
+  # bound for presence changes in an already running client.
+  $started=[DateTime]::UtcNow
+  $startupDeadline=$started.AddSeconds(90)
+  $counterDeadline=$null
+  $lastDetail='Report has not been created'
   do {
-    try{$result=Get-Content $report -Raw -ErrorAction Stop | ConvertFrom-Json
-      if($result.ok -and $result.network.active -and $result.network.occupied -eq $expected){return $result}
+    try{$lastDetail=Get-Content $report -Raw -ErrorAction Stop;$result=$lastDetail | ConvertFrom-Json
       if($result.error){throw "Session probe failed: $($result.error)"}
+      $ready=$result.ok -and $result.frontendReady -and $result.windowVisible -and $result.network.active -and @($result.checks).Count -ge 1
+      if($ready -and $null -eq $counterDeadline){
+        $counterDeadline=[DateTime]::UtcNow.AddSeconds(30)
+        Write-Host "Held client ready after $([Math]::Round(([DateTime]::UtcNow-$started).TotalSeconds,1)) seconds: $report"
+      }
+      if($ready -and $result.network.occupied -eq $expected){return $result}
     }catch{if($_ -match 'Session probe failed'){throw}}
     Start-Sleep -Milliseconds 200
+    $deadline=if($null -eq $counterDeadline){$startupDeadline}else{$counterDeadline}
   }while([DateTime]::UtcNow -lt $deadline)
-  throw "Session count did not become $expected in $report"
+  if($null -eq $counterDeadline){throw "Client did not finish its smoke within 90 seconds: $report. Last report: $lastDetail"}
+  throw "Session count did not become $expected within 30 seconds after readiness: $report. Last report: $lastDetail"
 }
 function Start-HeldSmoke([string]$path,[string]$phase,[string]$profile=$localProfile){
   $report=Join-Path $testRoot "network-$phase.json"
@@ -157,16 +170,18 @@ try{
   # decrease after both a normal window close and a forced process kill.
   $first=Start-HeldSmoke $unc 'session-first'
   $firstResult=Wait-SessionCount $first.report 1
-  $second=Start-HeldSmoke $unc 'session-second' (Join-Path $localProfile 'second-computer')
+  $second=Start-HeldSmoke $unc 'session-second'
   $secondResult=Wait-SessionCount $second.report 2
+  if($firstResult.profile -eq $secondResult.profile -or $firstResult.database -eq $secondResult.database){throw 'Two windows of one Windows profile share a writable data/profile directory'}
   Wait-SessionCount $first.report 2 | Out-Null
   # Find by PID, since both client windows have the same title.
   $secondProcess=Get-Process -Id $secondResult.processId
   if(-not $secondProcess.CloseMainWindow()){throw 'Cannot close second client window'}
   if(-not $secondProcess.WaitForExit(30000)){throw 'Second client did not exit normally'}
   Wait-SessionCount $first.report 1 | Out-Null
-  $second=Start-HeldSmoke $unc 'session-forced' (Join-Path $localProfile 'second-computer')
+  $second=Start-HeldSmoke $unc 'session-forced'
   $secondResult=Wait-SessionCount $second.report 2
+  if($firstResult.profile -eq $secondResult.profile -or $firstResult.database -eq $secondResult.database){throw 'Two windows of one Windows profile share a writable data/profile directory'}
   Wait-SessionCount $first.report 2 | Out-Null
   Stop-Process -Id $second.launcher.Id -Force -ErrorAction SilentlyContinue
   Stop-Process -Id $secondResult.processId -Force

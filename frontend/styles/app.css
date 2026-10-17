@@ -4,9 +4,9 @@
   --head:#111a22;--accent:#0f766e;--accent2:#0b5f59;--danger:#b42318;--warn:#b54708;--ok:#067647;
   --chip:#eef2f4;--shadow:0 1px 2px rgba(16,24,40,.06);
 }
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;font-family:Inter,Segoe UI,Arial,sans-serif;color:var(--text);background:var(--bg);font-size:14px}
+*{box-sizing:border-box}[hidden]{display:none!important}html,body{margin:0;min-height:100%;font-family:Inter,Segoe UI,Arial,sans-serif;color:var(--text);background:var(--bg);font-size:14px}
 button,input,select,textarea{font:inherit}button{cursor:pointer}
-.appbar{height:38px;background:var(--head);color:#fff;display:flex;align-items:center;padding:0 16px;gap:18px;font-size:12px}
+.appbar{height:38px;background:var(--head);color:#fff;display:flex;flex-wrap:wrap;align-items:center;padding:0 16px;gap:18px;font-size:12px}
 .appbar strong{font-size:13px;letter-spacing:.15px}.appbar .spacer{flex:1}.appbar .muted{opacity:.65}
 .top-action{border:1px solid #52616d;background:#24313b;color:#fff;border-radius:6px;padding:5px 9px;font-size:12px}.top-action:hover{background:#344652}.top-action:focus-visible{outline:3px solid rgba(94,234,212,.45);outline-offset:2px}
 .tabs{height:42px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:flex-end;padding:0 14px;gap:20px}
