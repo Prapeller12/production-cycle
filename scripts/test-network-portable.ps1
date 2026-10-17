@@ -85,14 +85,19 @@ function Wait-SessionCount([string]$report,[int]$expected){
   # A new WebView must finish its functional smoke before it starts writing the
   # held-client report. Keep its startup allowance separate from the 30-second
   # bound for presence changes in an already running client.
-  $startupDeadline=[DateTime]::UtcNow.AddSeconds(90)
+  $started=[DateTime]::UtcNow
+  $startupDeadline=$started.AddSeconds(90)
   $counterDeadline=$null
   $lastDetail='Report has not been created'
   do {
     try{$lastDetail=Get-Content $report -Raw -ErrorAction Stop;$result=$lastDetail | ConvertFrom-Json
-      if($result.ok -and $null -eq $counterDeadline){$counterDeadline=[DateTime]::UtcNow.AddSeconds(30)}
-      if($result.ok -and $result.network.active -and $result.network.occupied -eq $expected){return $result}
       if($result.error){throw "Session probe failed: $($result.error)"}
+      $ready=$result.ok -and $result.frontendReady -and $result.windowVisible -and $result.network.active -and @($result.checks).Count -ge 1
+      if($ready -and $null -eq $counterDeadline){
+        $counterDeadline=[DateTime]::UtcNow.AddSeconds(30)
+        Write-Host "Held client ready after $([Math]::Round(([DateTime]::UtcNow-$started).TotalSeconds,1)) seconds: $report"
+      }
+      if($ready -and $result.network.occupied -eq $expected){return $result}
     }catch{if($_ -match 'Session probe failed'){throw}}
     Start-Sleep -Milliseconds 200
     $deadline=if($null -eq $counterDeadline){$startupDeadline}else{$counterDeadline}
