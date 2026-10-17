@@ -82,15 +82,23 @@ function Run-FunctionalSmoke([string]$path,[string]$phase){
   Write-Host "$phase checks: $($result.checks -join '; ')"
 }
 function Wait-SessionCount([string]$report,[int]$expected){
-  $deadline=[DateTime]::UtcNow.AddSeconds(30)
+  # A new WebView must finish its functional smoke before it starts writing the
+  # held-client report. Keep its startup allowance separate from the 30-second
+  # bound for presence changes in an already running client.
+  $startupDeadline=[DateTime]::UtcNow.AddSeconds(90)
+  $counterDeadline=$null
+  $lastDetail='Report has not been created'
   do {
-    try{$result=Get-Content $report -Raw -ErrorAction Stop | ConvertFrom-Json
+    try{$lastDetail=Get-Content $report -Raw -ErrorAction Stop;$result=$lastDetail | ConvertFrom-Json
+      if($result.ok -and $null -eq $counterDeadline){$counterDeadline=[DateTime]::UtcNow.AddSeconds(30)}
       if($result.ok -and $result.network.active -and $result.network.occupied -eq $expected){return $result}
       if($result.error){throw "Session probe failed: $($result.error)"}
     }catch{if($_ -match 'Session probe failed'){throw}}
     Start-Sleep -Milliseconds 200
+    $deadline=if($null -eq $counterDeadline){$startupDeadline}else{$counterDeadline}
   }while([DateTime]::UtcNow -lt $deadline)
-  throw "Session count did not become $expected in $report"
+  if($null -eq $counterDeadline){throw "Client did not finish its smoke within 90 seconds: $report. Last report: $lastDetail"}
+  throw "Session count did not become $expected within 30 seconds after readiness: $report. Last report: $lastDetail"
 }
 function Start-HeldSmoke([string]$path,[string]$phase,[string]$profile=$localProfile){
   $report=Join-Path $testRoot "network-$phase.json"
