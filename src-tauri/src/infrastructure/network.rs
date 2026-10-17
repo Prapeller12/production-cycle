@@ -20,6 +20,8 @@ use crate::{audit::AuditUserSummary, production::{ProductionDb, ProductionSnapsh
 
 const NETWORK_CLIENT_ENV: &str = "PRODUCTION_CYCLE_NETWORK_CLIENT";
 const NETWORK_ROOT_ENV: &str = "PRODUCTION_CYCLE_SHARED_ROOT";
+const NETWORK_RECOVERY_ENV: &str = "PRODUCTION_CYCLE_NETWORK_RECOVERY";
+const CACHE_ORIGIN_MARKER: &str = ".network-shared-root";
 const DEFAULT_MAX_CLIENTS: usize = 3;
 const MAX_SESSION_METADATA_BYTES: u64 = 16 * 1024;
 const MAX_PENDING_DRAFT_BYTES: u64 = 32 * 1024 * 1024;
@@ -142,8 +144,17 @@ impl NetworkRuntime {
     }
     // Call only while holding store.lock and after validating/publishing the DB.
     fn mark_store_initialized(&self)->Result<(),String>{
-        if self.store_was_initialized()?{return Ok(())}
-        atomic_write(&self.root()?.join("shared/database/initialized.json"),
+        let marker=self.root()?.join("shared/database/initialized.json");
+        if self.store_was_initialized()?{
+            if !marker.is_file(){return Err("Метка общей базы не является файлом.".into())}
+            let file=File::open(&marker).map_err(|e|format!("Не удалось прочитать метку общей базы: {e}"))?;
+            let mut bytes=Vec::new();file.take(MAX_SESSION_METADATA_BYTES+1).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
+            if bytes.len() as u64>MAX_SESSION_METADATA_BYTES{return Err("Метка общей базы повреждена.".into())}
+            let value:serde_json::Value=serde_json::from_slice(&bytes).map_err(|e|format!("Метка общей базы повреждена: {e}"))?;
+            if value["format"]!="production-cycle-shared-store-v1"{return Err("Неизвестный формат метки общей базы.".into())}
+            return Ok(())
+        }
+        atomic_write(&marker,
             &serde_json::to_vec_pretty(&serde_json::json!({"format":"production-cycle-shared-store-v1","initializedAt":Local::now().to_rfc3339()})).map_err(|e|e.to_string())?)
     }
 
@@ -539,12 +550,14 @@ impl Drop for NetworkRuntime{fn drop(&mut self){let _=self.release();}}
 pub fn maybe_relaunch_network_client()->Result<bool,String>{
     if env::var_os(NETWORK_CLIENT_ENV).is_some(){return Ok(false)}
     let exe=env::current_exe().map_err(|e|e.to_string())?;
-    let root=exe.parent().ok_or_else(||"Не удалось определить папку программы.".to_string())?;
+    let root=exe.parent().ok_or_else(||"Не удалось определить папку программы.".to_string())?.canonicalize().map_err(|e|e.to_string())?;
     let config_path=root.join("config/network.json");
     if !config_path.is_file(){return Ok(false)}
     let config=read_network_config(&config_path)?;
     if !config.enabled{return Ok(false)}
     let local_base=local_cache_base()?;
+    let origin=shared_root_key(&root);
+    let recovery=workspace_recovery_directory(&local_base,&origin)?;
     // A cache may be used by several interactive sessions of the same Windows user.
     // Serialize preparation so one launcher cannot delete another one's staging/cache.
     crate::infrastructure::startup::update("Подготовка локальной копии. Первый запуск может занять несколько минут…");
@@ -554,9 +567,14 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
         if waiting.elapsed()>Duration::from_secs(240){return Err(format!("Другой запуск не завершил подготовку локальной копии: {error}"));}
         thread::sleep(Duration::from_millis(100));
     }
+    // Preserve every legacy queue before any versioned cache can be replaced.
+    // Old packages did not record a shared-root identity, so their files are
+    // retained for manual recovery and never replayed into a guessed database.
+    let archived=migrate_cached_recovery(&local_base,&recovery)?;
+    if archived>0{crate::infrastructure::startup::update(&format!("Найдены прежние локальные данные для ручного восстановления: {}\nЗапуск программы…",recovery.join("legacy").display()));}
     let cache=local_base.join(&config.version);
     let marker=cache.join(".network-cache-ready");
-    let ready=marker.is_file()&&fs::read_to_string(&marker).map(|value|value.trim()==config.version).unwrap_or(false)&&["production-cycle.exe","frontend/index.html","runtime/webview2/msedgewebview2.exe","config/portable.json"].iter().all(|name|cache.join(name).is_file());
+    let ready=marker.is_file()&&fs::read_to_string(&marker).map(|value|value.trim()==config.version).unwrap_or(false)&&fs::read_to_string(cache.join(CACHE_ORIGIN_MARKER)).map(|value|value.trim()==origin).unwrap_or(false)&&["production-cycle.exe","frontend/index.html","runtime/webview2/msedgewebview2.exe","config/portable.json"].iter().all(|name|cache.join(name).is_file());
     if !ready{
         fs::create_dir_all(&local_base).map_err(|e|e.to_string())?;
         let staging=local_base.join(format!(".staging-{}",Uuid::new_v4()));
@@ -566,6 +584,7 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
             if let Err(error)=copy_entry(&source,&staging.join(name)){let _=fs::remove_dir_all(&staging);return Err(format!("Не удалось получить {name} из общей папки: {error}"));}
         }
         fs::write(staging.join(".network-cache-ready"),format!("{}\n",config.version)).map_err(|e|e.to_string())?;
+        fs::write(staging.join(CACHE_ORIGIN_MARKER),format!("{origin}\n")).map_err(|e|e.to_string())?;
         if cache.exists(){fs::remove_dir_all(&cache).map_err(|e|format!("Не удалось обновить локальный кэш: {e}"))?;}
         fs::rename(&staging,&cache).map_err(|e|format!("Не удалось активировать локальный кэш: {e}"))?;
     }
@@ -575,13 +594,71 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
     command.arg("--network-client");
     for argument in env::args().skip(1){if argument!="--network-client"{command.arg(argument);}}
     let smoke=env::args().any(|argument|argument=="--smoke-test");
-    let mut child=command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,root).current_dir(&cache).spawn().map_err(|e|format!("Не удалось запустить локальный клиент: {e}"))?;
+    let mut child=command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,&root).env(NETWORK_RECOVERY_ENV,&recovery).current_dir(&cache).spawn().map_err(|e|format!("Не удалось запустить локальный клиент: {e}"))?;
     crate::infrastructure::startup::stop();
     if smoke{
         let status=child.wait().map_err(|e|format!("Не удалось дождаться сетевого self-test: {e}"))?;
         if !status.success(){return Err(format!("Сетевой self-test завершился с кодом {:?}.",status.code()))}
     }
     Ok(true)
+}
+
+fn shared_root_key(root:&Path)->String{
+    let identity=root.to_string_lossy();
+    #[cfg(windows)]let identity=identity.to_lowercase();
+    format!("{:x}",Sha256::digest(identity.as_bytes()))
+}
+
+fn workspace_recovery_directory(cache_base:&Path,origin:&str)->Result<PathBuf,String>{
+    if origin.len()!=64||!origin.bytes().all(|byte|byte.is_ascii_hexdigit()){return Err("Некорректный идентификатор локального рабочего пространства.".into())}
+    let parent=cache_base.parent().ok_or_else(||"Не найдена локальная папка рабочих пространств.".to_string())?;
+    let path=parent.join("workspaces").join(origin).join("data");
+    fs::create_dir_all(&path).map_err(|e|e.to_string())?;
+    let real=path.canonicalize().map_err(|e|e.to_string())?;
+    if !is_local_disk(&real){return Err("Папка восстановления оказалась на сетевом диске. Нужна локальная папка Windows.".into())}
+    Ok(real)
+}
+
+fn migrate_cached_recovery(cache_base:&Path,current_recovery:&Path)->Result<usize,String>{
+    let mut archived=0;
+    for entry in fs::read_dir(cache_base).map_err(|e|e.to_string())?{
+        let entry=entry.map_err(|e|e.to_string())?;if !entry.file_type().map_err(|e|e.to_string())?.is_dir(){continue}
+        let cache=entry.path();
+        let origin=fs::read_to_string(cache.join(CACHE_ORIGIN_MARKER)).ok().map(|value|value.trim().to_string()).filter(|value|value.len()==64&&value.bytes().all(|byte|byte.is_ascii_hexdigit()));
+        let target=match origin.as_deref(){Some(value)=>workspace_recovery_directory(cache_base,value)?,None=>current_recovery.join("legacy").join(entry.file_name())};
+        let mut copied=0;
+        for name in ["network-pending","network-unsent"]{copied+=copy_recovery_entries(&cache.join("data").join(name),&target.join(name))?;}
+        if origin.is_none(){archived+=copied;}
+    }
+    Ok(archived)
+}
+
+fn recovery_file_hash(path:&Path)->Result<Vec<u8>,String>{
+    let mut file=File::open(path).map_err(|e|e.to_string())?;let mut digest=Sha256::new();let mut buffer=[0u8;65536];
+    loop{let count=file.read(&mut buffer).map_err(|e|e.to_string())?;if count==0{break}digest.update(&buffer[..count]);}
+    Ok(digest.finalize().to_vec())
+}
+
+fn copy_recovery_entries(source:&Path,target:&Path)->Result<usize,String>{
+    let metadata=match fs::symlink_metadata(source){Ok(value)=>value,Err(error) if error.kind()==std::io::ErrorKind::NotFound=>return Ok(0),Err(error)=>return Err(error.to_string())};
+    if !metadata.is_dir(){return Err(format!("Очередь восстановления не является обычной папкой: {}",source.display()))}
+    fs::create_dir_all(target).map_err(|e|e.to_string())?;let mut copied=0;
+    for entry in fs::read_dir(source).map_err(|e|e.to_string())?{
+        let entry=entry.map_err(|e|e.to_string())?;let kind=entry.file_type().map_err(|e|e.to_string())?;let path=entry.path();let destination=target.join(entry.file_name());
+        if kind.is_dir(){copied+=copy_recovery_entries(&path,&destination)?;continue}
+        if !kind.is_file(){return Err(format!("Нельзя безопасно перенести файл восстановления: {}",path.display()))}
+        if destination.exists(){
+            if !destination.is_file()||recovery_file_hash(&path)?!=recovery_file_hash(&destination)?{return Err(format!("Обнаружены разные файлы восстановления с одним именем. Кэш сохранён без удаления: {} и {}",path.display(),destination.display()))}
+            continue
+        }
+        let mut input=File::open(&path).map_err(|e|e.to_string())?;
+        let mut output=OpenOptions::new().write(true).create_new(true).open(&destination).map_err(|e|e.to_string())?;
+        let result=std::io::copy(&mut input,&mut output).and_then(|_|output.sync_all());drop(output);
+        if let Err(error)=result{let _=fs::remove_file(&destination);return Err(error.to_string())}
+        if recovery_file_hash(&path)?!=recovery_file_hash(&destination)?{return Err(format!("Файл восстановления изменился при копировании. Исходный кэш сохранён: {}",path.display()))}
+        copied+=1;
+    }
+    Ok(copied)
 }
 
 #[tauri::command]
@@ -667,11 +744,19 @@ fn copy_checked_database(source:&Path,target:&Path)->Result<(),String>{
 
 fn atomic_write(path:&Path,bytes:&[u8])->Result<(),String>{atomic_write_io(path,bytes).map_err(|e|e.to_string())}
 fn atomic_write_io(path:&Path,bytes:&[u8])->std::io::Result<()>{
-    if let Some(parent)=path.parent(){fs::create_dir_all(parent)?;}
-    let pending=path.with_extension(format!("pending-{}",Uuid::new_v4().simple()));
+    let parent=path.parent().filter(|parent|!parent.as_os_str().is_empty()).unwrap_or_else(||Path::new("."));
+    fs::create_dir_all(parent)?;
+    // Windows' native MoveFileExW needs an extended absolute path for paths
+    // exceeding MAX_PATH. Canonicalize the existing directory, since the final
+    // destination need not exist yet. A short sibling name also avoids making
+    // a long draft filename even longer while preserving same-volume rename.
+    let directory=parent.canonicalize()?;
+    let name=path.file_name().ok_or_else(||std::io::Error::new(std::io::ErrorKind::InvalidInput,"Не указано имя файла для атомарной записи."))?;
+    let target=directory.join(name);
+    let pending=directory.join(format!(".tmp-{}",Uuid::new_v4().simple()));
     let result=(||{
-        let mut file=File::create(&pending)?;file.write_all(bytes)?;file.sync_all()?;drop(file);
-        atomic_replace_io(&pending,path)
+        let mut file=OpenOptions::new().create_new(true).write(true).open(&pending)?;file.write_all(bytes)?;file.sync_all()?;drop(file);
+        atomic_replace_io(&pending,&target)
     })();
     if result.is_err(){let _=fs::remove_file(&pending);}
     result
@@ -726,6 +811,33 @@ mod tests{
     fn draft_snapshot()->ProductionSnapshot{
         serde_json::from_value(serde_json::json!({"databaseId":null,"project":{"name":"Локальный черновик","orderNo":"DRAFT","initiator":"И","executor":"И","enterprise":"П","start":"2026-09-01","deadline":"2026-11-30"},"stages":[],"nextSeq":1})).unwrap()
     }
+    #[test]fn recovery_survives_version_upgrade_and_rebuild_without_guessing_legacy_owner(){
+        let root=env::temp_dir().join(format!("production-cache-recovery-{}",Uuid::new_v4()));let base=root.join("cache");let share=root.join("share");fs::create_dir_all(&base).unwrap();fs::create_dir_all(&share).unwrap();
+        let origin=shared_root_key(&share.canonicalize().unwrap());let recovery=workspace_recovery_directory(&base,&origin).unwrap();
+        assert!(!recovery.starts_with(base.canonicalize().unwrap()));
+        let old=base.join("v1");fs::create_dir_all(old.join("data/network-pending")).unwrap();fs::create_dir_all(old.join("data/network-unsent")).unwrap();
+        fs::write(old.join("data/network-pending/session-project.json"),b"legacy draft").unwrap();fs::write(old.join("data/network-unsent/unsent-old.db"),b"legacy database").unwrap();
+        assert_eq!(migrate_cached_recovery(&base,&recovery).unwrap(),2);
+        assert_eq!(fs::read(recovery.join("legacy/v1/network-pending/session-project.json")).unwrap(),b"legacy draft");
+        assert_eq!(fs::read(recovery.join("legacy/v1/network-unsent/unsent-old.db")).unwrap(),b"legacy database");
+        assert!(!recovery.join("network-pending/session-project.json").exists());fs::remove_dir_all(&old).unwrap();
+        let next=base.join("v2");fs::create_dir_all(next.join("data/network-pending")).unwrap();fs::create_dir_all(next.join("data/network-unsent")).unwrap();fs::write(next.join(CACHE_ORIGIN_MARKER),&origin).unwrap();
+        fs::write(next.join("data/network-pending/known.json"),b"identified draft").unwrap();fs::write(next.join("data/network-unsent/known.db"),b"identified database").unwrap();
+        assert_eq!(migrate_cached_recovery(&base,&recovery).unwrap(),0);fs::remove_dir_all(&next).unwrap();fs::create_dir_all(&next).unwrap();
+        assert_eq!(workspace_recovery_directory(&base,&origin).unwrap(),recovery);
+        assert_eq!(fs::read(recovery.join("network-pending/known.json")).unwrap(),b"identified draft");assert_eq!(fs::read(recovery.join("network-unsent/known.db")).unwrap(),b"identified database");
+        assert_eq!(fs::read(recovery.join("legacy/v1/network-unsent/unsent-old.db")).unwrap(),b"legacy database");
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]fn recovery_migration_keeps_other_share_separate_and_never_overwrites_collisions(){
+        let root=env::temp_dir().join(format!("production-cache-identity-{}",Uuid::new_v4()));let base=root.join("cache");fs::create_dir_all(&base).unwrap();
+        let first="a".repeat(64);let second="b".repeat(64);let recovery=workspace_recovery_directory(&base,&first).unwrap();let other=workspace_recovery_directory(&base,&second).unwrap();
+        let cache=base.join("v1");fs::create_dir_all(cache.join("data/network-pending")).unwrap();fs::write(cache.join(CACHE_ORIGIN_MARKER),second).unwrap();fs::write(cache.join("data/network-pending/other.json"),b"other share").unwrap();
+        migrate_cached_recovery(&base,&recovery).unwrap();assert!(!recovery.join("network-pending/other.json").exists());assert_eq!(fs::read(other.join("network-pending/other.json")).unwrap(),b"other share");
+        fs::write(cache.join("data/network-pending/other.json"),b"different contents").unwrap();assert!(migrate_cached_recovery(&base,&recovery).is_err());
+        assert_eq!(fs::read(other.join("network-pending/other.json")).unwrap(),b"other share");assert_eq!(fs::read(cache.join("data/network-pending/other.json")).unwrap(),b"different contents");
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]fn network_config_requires_three_clients(){
         let root=env::temp_dir().join(format!("production-network-config-{}",Uuid::new_v4()));fs::create_dir_all(&root).unwrap();
         fs::write(root.join("network.json"),br#"{"enabled":true,"version":"test","maxClients":3}"#).unwrap();
@@ -742,6 +854,17 @@ mod tests{
     #[test]fn atomic_write_replaces_complete_document(){
         let root=env::temp_dir().join(format!("production-network-atomic-{}",Uuid::new_v4()));fs::create_dir_all(&root).unwrap();let path=root.join("value.json");
         atomic_write(&path,b"first").unwrap();atomic_write(&path,b"second").unwrap();assert_eq!(fs::read(path).unwrap(),b"second");let _=fs::remove_dir_all(root);
+    }
+    #[test]fn atomic_write_handles_long_draft_paths_without_leaving_temporary_files(){
+        let root=env::temp_dir().join(format!("production-atomic-long-{}",Uuid::new_v4()));
+        let directory=root.join(format!("nested-{}","x".repeat(100)));
+        let path=directory.join(format!("{}-new-{}.json",Uuid::new_v4(),"a".repeat(64)));
+        assert!(path.to_string_lossy().encode_utf16().count()>260);
+        atomic_write(&path,b"first complete draft").unwrap();
+        atomic_write(&path,b"second complete draft").unwrap();
+        assert_eq!(fs::read(&path).unwrap(),b"second complete draft");
+        assert_eq!(fs::read_dir(&directory).unwrap().count(),1);
+        let _=fs::remove_dir_all(root);
     }
     #[test]fn initialized_store_is_never_recreated_after_snapshot_deletion(){
         let root=env::temp_dir().join(format!("production-store-marker-{}",Uuid::new_v4()));
@@ -777,6 +900,17 @@ mod tests{
         client.login(None).unwrap();client.with_write(&db,||{called=true;Ok(())}).unwrap();assert!(called);
         client.release().unwrap();called=false;
         assert!(client.with_write(&db,||{called=true;Ok(())}).is_err());assert!(!called);
+        drop((client,db));let _=fs::remove_dir_all(root);
+    }
+    #[test]fn invalid_initialization_marker_never_reports_success_or_replaces_valid_snapshot(){
+        let root=env::temp_dir().join(format!("production-store-invalid-marker-{}",Uuid::new_v4()));
+        let client=runtime(&root,"client");let db=ProductionDb::open(&client.local_data.join("production-cycle.db")).unwrap();
+        let shared=client.shared_database().unwrap();db.export_database(&shared).unwrap();
+        let marker=root.join("shared/database/initialized.json");fs::create_dir(&marker).unwrap();
+        assert!(client.ensure_shared_database(&db).is_err());validate_database(&shared).unwrap();
+        fs::remove_dir(&marker).unwrap();fs::write(&marker,b"invalid marker").unwrap();
+        assert!(client.ensure_shared_database(&db).is_err());validate_database(&shared).unwrap();
+        fs::remove_file(&marker).unwrap();client.ensure_shared_database(&db).unwrap();assert!(marker.is_file());
         drop((client,db));let _=fs::remove_dir_all(root);
     }
     #[test]fn logout_waits_for_an_admitted_write_to_finish_publishing(){
