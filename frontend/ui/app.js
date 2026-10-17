@@ -5,7 +5,7 @@ const {STATUS}=Production.config;
 const D=Production.domain, J=Production.projectFile, B=Production.backend;
 let state={databaseId:null,project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};
 let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',ganttScale='quarter',structureCollapsed=true,importFiles={out:null,in:null},importCandidate=null,importPreviewKind='out',dictionaryEntries=[],projectListItems=[],deadlineControlItems=[],auditUsers=[],pendingSignatureAction=null,persistedStatuses=new Map(),adminSession=null,onboardingStep=0;
-let networkMode=false,networkSessionActive=false,networkTimer=null,networkDraftTimer=null,lastNetworkDraftFingerprint='',networkEvictionStarted=false;
+let networkMode=false,networkSessionActive=false,networkTimer=null,networkDraftTimer=null,lastNetworkDraftFingerprint='',networkEvictionStarted=false,networkTransition=false,networkPollPending=null,networkDraftPending=null,networkEpoch=0;
 const modalReturnFocus=new Map();
 const $=id=>document.getElementById(id);
 const els={projectName:$('projectName'),orderNo:$('orderNo'),initiator:$('initiator'),executor:$('executor'),projectAddressees:$('projectAddressees'),projectStart:$('projectStart'),projectDeadline:$('projectDeadline')};
@@ -31,7 +31,7 @@ function icon(name,extra=''){return `<svg class="ui-icon ui-icon-${name}${extra?
 function hydrateStaticIcons(root=document){root.querySelectorAll('span.ui-icon').forEach(source=>{const token=[...source.classList].find(name=>name.startsWith('ui-icon-'));if(!token)return;const name=token.slice(8),extra=[...source.classList].filter(value=>value!=='ui-icon'&&value!==token).join(' '),template=document.createElement('template');template.innerHTML=icon(name,extra);source.replaceWith(template.content.firstElementChild)})}
 function rememberPersistedStatuses(){persistedStatuses=new Map(state.stages.map(stage=>[stage.uid,stage.status]))}
 function newlyCompletedStages(model=state){return model.stages.filter(stage=>stage.status==='done'&&persistedStatuses.get(stage.uid)!=='done')}
-function cloneState(model=state){return {databaseId:model.databaseId,project:{...model.project},stages:model.stages.map(stage=>({...stage})),nextSeq:model.nextSeq,collapsed:{...(model.collapsed||{})}}}
+function cloneState(model=state){return {databaseId:model.databaseId,baseRevision:model.baseRevision,project:{...model.project},stages:model.stages.map(stage=>({...stage})),nextSeq:model.nextSeq,collapsed:{...(model.collapsed||{})}}}
 function stageByUid(model,id){return model.stages.find(stage=>stage.uid===id)||null}
 function completionTargets(model,uids){const wanted=new Set(uids||[]);return model.stages.filter(stage=>wanted.has(stage.uid))}
 function updateFromForm(){for(const [k,el] of Object.entries(els)){const key=k==='projectName'?'name':k==='projectAddressees'?'addressees':k==='projectStart'?'start':k==='projectDeadline'?'deadline':k;state.project[key]=clean(el.value)}render(false)}
@@ -177,9 +177,14 @@ async function confirmSignedAction(){
  let evidence=null;if(needsEvidence){evidence={documentType:$('evidenceType').value,documentReference:clean($('evidenceReference').value),comment:clean($('evidenceComment').value),stageUids:[...(action.completionStageUids||[])]};const evidenceMissing=[];if(!evidence.documentType)evidenceMissing.push('evidenceType');if(!evidence.documentReference)evidenceMissing.push('evidenceReference');if(!evidence.comment)evidenceMissing.push('evidenceComment');if(evidenceMissing.length)return signatureError('Заполните выделенные поля официального документа.',evidenceMissing);if(!evidence.stageUids.length)return completionMismatchError()}
  $('confirmSignedSaveBtn').disabled=true;
  try{
-  if(action.type==='save'){const isNew=!Number.isSafeInteger(actionState.databaseId),completedBeforeSave=newlyCompletedStages(actionState),result=await B.saveSigned(actionState,{userId,pin,comment,evidence});actionState.databaseId=result.projectId;state=actionState;syncForm();render();savedSnapshot=J.fingerprint(state);rememberPersistedStatuses();updateSavedState();await refreshAutocomplete();if(completedBeforeSave.length&&completionFilter==='active'){const ids=completedBeforeSave.map(stage=>stageId(stage)).join(', ');messageWithAction('info',`${completedBeforeSave.length===1?'Этап':'Этапы'} ${ids} выполнен${completedBeforeSave.length===1?'':'ы'} и скрыт${completedBeforeSave.length===1?'':'ы'} фильтром «Только невыполненные».`,'Показать все этапы',showAllStages)}else message(result.backupWarning?'warn':'ok',result.backupWarning||(isNew?'Проект подписан, сохранён и включён в резервную копию.':'Изменения подписаны, сохранены в журнале и резервной копии.'))}
-  else if(action.type==='dictionary'){const result=await B.replaceDictionaryValue(action.kind,action.from,action.to,{userId,pin,comment});replaceCurrentDictionaryValue(action.kind,action.from,action.to);syncForm();render();savedSnapshot=J.fingerprint(state);rememberPersistedStatuses();updateSavedState();await refreshAutocomplete();await loadDictionary();const total=(result.affectedProjectRows||0)+(result.affectedStageRows||0);message('ok',`Изменение справочника подписано; обновлено строк: ${total}.`)}
-  closeModal('saveConfirmationModal');pendingSignatureAction=null
+  if(action.type==='save'){const isNew=!Number.isSafeInteger(actionState.databaseId),completedBeforeSave=newlyCompletedStages(actionState),result=await B.saveSigned(actionState,{userId,pin,comment,evidence});actionState.databaseId=result.projectId;actionState.baseRevision=result.baseRevision;state=actionState;syncForm();render();savedSnapshot=J.fingerprint(state);rememberPersistedStatuses();updateSavedState();await refreshAutocomplete();if(completedBeforeSave.length&&completionFilter==='active'){const ids=completedBeforeSave.map(stage=>stageId(stage)).join(', ');messageWithAction('info',`${completedBeforeSave.length===1?'Этап':'Этапы'} ${ids} выполнен${completedBeforeSave.length===1?'':'ы'} и скрыт${completedBeforeSave.length===1?'':'ы'} фильтром «Только невыполненные».`,'Показать все этапы',showAllStages)}else message(result.backupWarning?'warn':'ok',result.backupWarning||(isNew?'Проект подписан, сохранён и включён в резервную копию.':'Изменения подписаны, сохранены в журнале и резервной копии.'))}
+  else if(action.type==='dictionary'){
+   const currentWasSaved=J.fingerprint(state)===savedSnapshot,result=await B.replaceDictionaryValue(action.kind,action.from,action.to,{userId,pin,comment});
+   replaceCurrentDictionaryValue(action.kind,action.from,action.to);
+   if(currentWasSaved&&Number.isSafeInteger(state.databaseId)){const refreshed=await B.loadById(state.databaseId);if(refreshed){state=refreshed;savedSnapshot=J.fingerprint(state);rememberPersistedStatuses()}}
+   syncForm();render();updateSavedState();await refreshAutocomplete();await loadDictionary();const total=(result.affectedProjectRows||0)+(result.affectedStageRows||0);message('ok',`Изменение справочника подписано; обновлено строк: ${total}.`)
+  }
+  closeModal('saveConfirmationModal',true);pendingSignatureAction=null
  }catch(e){const text=String(e);if(text.includes('Состав подтверждаемых этапов'))completionMismatchError();else if(text.includes('ключ администратора')||text.includes('профиль администратора'))signatureError(text,['saveSigner','saveSignerPin']);else signatureError(text)}finally{$('confirmSignedSaveBtn').disabled=false}
 }
 function auditEventLabel(type){return ({project_created:'Создан проект',project_changed:'Изменён проект',project_saved:'Сохранён проект',stage_completed:'Подтверждено выполнение',dictionary_replaced:'Изменён справочник'})[type]||type}
@@ -317,32 +322,59 @@ function updateNetworkState(status,text=''){
  const occupied=status?.occupied??0,maximum=status?.maximum??3;chip.className='network-state '+(status?.active?'connected':'waiting');
  chip.textContent=text||(status?.active?`Сетевые сеансы: ${occupied} из ${maximum} · ${status.displayName||'сеанс активен'}`:`Сетевые сеансы: ${occupied} из ${maximum}`);
 }
+function lockNetworkWorkspace(locked){
+ document.querySelector('.shell').inert=locked;document.querySelector('.tabs').inert=locked;
+ $('profilesBtn').disabled=locked;$('auditBtn').disabled=locked;
+ $('networkLogoutBtn').hidden=!networkMode||!networkSessionActive;
+}
+function startNetworkPolling(){clearInterval(networkTimer);networkTimer=setInterval(()=>void pollNetworkSession(),2000)}
 function scheduleNetworkDraft(){
- if(!networkMode||!networkSessionActive||networkEvictionStarted||(!state.project.name&&!state.project.orderNo&&!state.stages.length))return;
+ if(!networkMode||!networkSessionActive||networkTransition||networkEvictionStarted||(!state.project.name&&!state.project.orderNo&&!state.stages.length))return;
  clearTimeout(networkDraftTimer);networkDraftTimer=setTimeout(()=>void flushNetworkDraft(false),800);
 }
 async function flushNetworkDraft(force){
+ if(networkDraftPending){await networkDraftPending.catch(()=>{});return flushNetworkDraft(force)}
  if(!networkMode||!networkSessionActive)return true;
  const fingerprint=J.fingerprint(state);if(!force&&fingerprint===lastNetworkDraftFingerprint)return true;
- try{const result=await B.networkSaveDraft(state);lastNetworkDraftFingerprint=fingerprint;if(result.location==='localRecoveryQueue')updateNetworkState({active:true,occupied:'?',maximum:3},'Сеть недоступна · черновик сохранён на этом компьютере');return true}
+ const pending=B.networkSaveDraft(state);networkDraftPending=pending;
+ try{const result=await pending;lastNetworkDraftFingerprint=fingerprint;if(result.location==='localRecoveryQueue')updateNetworkState({active:true,occupied:'?',maximum:3},'Сеть недоступна · черновик сохранён на этом компьютере');return true}
  catch(error){updateNetworkState({active:false,occupied:'?',maximum:3},'Нет связи · изменения остаются на этом компьютере');return false}
+ finally{if(networkDraftPending===pending)networkDraftPending=null}
 }
 async function pollNetworkSession(){
- if(!networkMode||networkEvictionStarted)return;
- try{const status=await B.networkStatus();updateNetworkState(status);if(status.evictionRequested){networkEvictionStarted=true;clearInterval(networkTimer);updateNetworkState(status,'Входит администратор · сохраняем черновик и закрываем сеанс…');await flushNetworkDraft(true);await B.networkFinishEviction();}}
+ if(!networkMode||networkTransition||networkEvictionStarted||networkPollPending)return;
+ const epoch=networkEpoch,pending=B.networkStatus();networkPollPending=pending;
+ try{const status=await pending;if(epoch!==networkEpoch)return;updateNetworkState(status);
+  if(networkSessionActive&&!status.active){networkSessionActive=false;clearTimeout(networkDraftTimer);lockNetworkWorkspace(true);$('networkLoginPin').value='';$('networkLoginModal').classList.add('open');$('networkLoginStatus').className='network-login-status error';$('networkLoginStatus').textContent='Сеанс завершён. Войдите повторно. Несохранённый проект остаётся в этом окне.';return}
+  if(status.evictionRequested){networkEvictionStarted=true;updateNetworkState(status,'Входит администратор · сохраняем черновик и закрываем сеанс…');if(!await flushNetworkDraft(true))throw Error('Не удалось сохранить черновик');await B.networkFinishEviction();}
+ }
  catch(_error){updateNetworkState({active:false,occupied:'?',maximum:3},'Общая папка временно недоступна')}
+ finally{if(networkPollPending===pending)networkPollPending=null;networkEvictionStarted=false}
 }
 function activateNetworkSession(status,showOnboarding=true){
- networkSessionActive=true;$('networkLoginModal').classList.remove('open');$('networkLoginPin').value='';updateNetworkState(status);clearInterval(networkTimer);networkTimer=setInterval(()=>void pollNetworkSession(),2000);void pollNetworkSession();scheduleNetworkDraft();if(showOnboarding&&!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250);
+ networkEpoch++;networkSessionActive=true;lockNetworkWorkspace(false);$('networkLoginModal').classList.remove('open');$('networkLoginPin').value='';updateNetworkState(status);startNetworkPolling();void pollNetworkSession();scheduleNetworkDraft();if(showOnboarding&&!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250);
+}
+async function logoutNetworkSession(){
+ if(!networkMode||!networkSessionActive||networkTransition)return;
+ if($('confirmSignedSaveBtn').disabled){message('info','Дождитесь завершения подписанного сохранения перед выходом.');return}
+ networkTransition=true;networkEpoch++;clearTimeout(networkDraftTimer);$('networkLogoutBtn').disabled=true;lockNetworkWorkspace(true);
+ try{
+  if(!await flushNetworkDraft(true))throw Error('Не удалось сохранить черновик. Сеанс оставлен открытым; повторите выход.');
+  await B.networkLogout();networkSessionActive=false;adminSession=null;pendingSignatureAction=null;lastNetworkDraftFingerprint='';
+  document.querySelectorAll('input[type="password"]').forEach(input=>input.value='');document.querySelectorAll('.modal-backdrop.open').forEach(modal=>modal.classList.remove('open'));
+  state={databaseId:null,project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};savedSnapshot=null;persistedStatuses=new Map();syncForm();render();setWorkspace('registry');
+  await initializeNetworkMode();
+ }catch(error){message('err',String(error))}
+ finally{networkTransition=false;$('networkLogoutBtn').disabled=false;lockNetworkWorkspace(!networkSessionActive);void pollNetworkSession()}
 }
 async function submitNetworkLogin(){
- const button=$('networkLoginBtn'),statusBox=$('networkLoginStatus'),userId=$('networkLoginUser').value;button.disabled=true;statusBox.className='network-login-status';statusBox.textContent='Проверяем PIN и свободное место…';
+ const button=$('networkLoginBtn'),statusBox=$('networkLoginStatus'),userId=$('networkLoginUser').value;if(button.disabled||networkTransition)return;button.disabled=true;statusBox.className='network-login-status';statusBox.textContent='Проверяем PIN и свободное место…';
  try{const result=await B.networkLogin(userId?Number(userId):null,$('networkLoginPin').value);if(result.state==='active'||result.state==='standalone'){activateNetworkSession({active:true,occupied:result.occupied,maximum:result.maximum,displayName:$('networkLoginUser').selectedOptions[0]?.textContent||''});return}statusBox.className='network-login-status error';statusBox.textContent=result.state==='full'?'Все 3 места заняты. Закройте программу на одном из компьютеров и повторите вход.':'Администратор запросил освобождение места. Подождите несколько секунд и нажмите «Войти» ещё раз.'}
  catch(error){statusBox.className='network-login-status error';statusBox.textContent=String(error)}finally{button.disabled=false}
 }
 async function initializeNetworkMode(){
- try{$('networkLoginBtn').disabled=false;$('networkLoginStatus').textContent='';const status=await B.networkStatus();if(!status.enabled)return;networkMode=true;updateNetworkState(status);const users=await B.listAuditUsers();if(!users.length){const result=await B.networkLogin(null,'');if(result.state!=='active')throw Error('Нет свободного места для первичной настройки. Закройте лишние окна программы и нажмите «Повторить».');activateNetworkSession({active:true,occupied:result.occupied,maximum:result.maximum,displayName:'Первичная настройка'},false);await openProfiles();$('newAuditUserName').focus();return}const select=$('networkLoginUser');select.innerHTML=users.filter(user=>user.active).map(user=>`<option value="${user.id}">${escapeHtml(user.displayName)} · ${escapeHtml(roleLabel(user.role))}</option>`).join('');$('networkLoginModal').classList.add('open');requestAnimationFrame(()=>$('networkLoginUser').focus())}
- catch(error){networkMode=true;$('networkLoginModal').classList.add('open');$('networkLoginBtn').disabled=true;$('networkLoginStatus').className='network-login-status error';$('networkLoginStatus').textContent='Не удалось открыть общую рабочую папку: '+error}
+ try{$('networkLoginBtn').disabled=false;$('networkLoginStatus').textContent='';const status=await B.networkStatus();if(!status.enabled)return;networkMode=true;updateNetworkState(status);startNetworkPolling();lockNetworkWorkspace(!networkSessionActive);const users=await B.listAuditUsers();if(!users.length){const result=await B.networkLogin(null,'');if(result.state!=='active')throw Error('Нет свободного места для первичной настройки. Закройте лишние окна программы и нажмите «Повторить».');activateNetworkSession({active:true,occupied:result.occupied,maximum:result.maximum,displayName:'Первичная настройка'},false);await openProfiles();$('newAuditUserName').focus();return}const select=$('networkLoginUser');select.innerHTML=users.filter(user=>user.active).map(user=>`<option value="${user.id}">${escapeHtml(user.displayName)} · ${escapeHtml(roleLabel(user.role))}</option>`).join('');$('networkLoginModal').classList.add('open');requestAnimationFrame(()=>$('networkLoginUser').focus())}
+ catch(error){networkMode=true;lockNetworkWorkspace(true);$('networkLoginModal').classList.add('open');$('networkLoginBtn').disabled=true;$('networkLoginStatus').className='network-login-status error';$('networkLoginStatus').textContent='Не удалось открыть общую рабочую папку: '+error}
 }
 
 function newProject(){if((state.project.name||state.stages.length)&&!confirm('Очистить текущий проект и начать новый?'))return;state={databaseId:null,project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};savedSnapshot=null;persistedStatuses=new Map();syncForm();render();refreshAutocomplete();message('ok','Создан новый пустой проект.')}
@@ -357,7 +389,7 @@ function loadDemo(){if((state.project.name||state.stages.length)&&!confirm('За
 {uid:'d8',seq:8,sort:6,parentUid:null,title:'Привода',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-07-15',deadline:'2026-11-30',status:'new'}]};savedSnapshot=null;persistedStatuses=new Map();syncForm();render();refreshAutocomplete();message('ok','Загружен демонстрационный производственный цикл.')}
 function focusable(container){return [...container.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(element=>element.offsetParent!==null)}
 function openModal(id){const backdrop=$(id);modalReturnFocus.set(id,document.activeElement);backdrop.classList.add('open');requestAnimationFrame(()=>{const controls=focusable(backdrop),preferred=controls.find(element=>element.matches('input:not([type="hidden"]),select,textarea'));(preferred||controls[0]||backdrop.querySelector('.modal')).focus()})}
-function closeModal(id){if(id==='networkLoginModal'&&!networkSessionActive)return;const backdrop=$(id);if(!backdrop?.classList.contains('open'))return;if(id==='onboardingModal')markOnboardingSeen();backdrop.classList.remove('open');if(id==='saveConfirmationModal')pendingSignatureAction=null;const target=modalReturnFocus.get(id);modalReturnFocus.delete(id);if(target?.isConnected)target.focus()}
+function closeModal(id,force=false){if(id==='networkLoginModal'&&!networkSessionActive)return;if(id==='saveConfirmationModal'&&!force&&$('confirmSignedSaveBtn').disabled)return;const backdrop=$(id);if(!backdrop?.classList.contains('open'))return;if(id==='onboardingModal')markOnboardingSeen();backdrop.classList.remove('open');if(id==='saveConfirmationModal')pendingSignatureAction=null;const target=modalReturnFocus.get(id);modalReturnFocus.delete(id);if(target?.isConnected)target.focus()}
 function topOpenModal(){return [...document.querySelectorAll('.modal-backdrop.open')].at(-1)||null}
 function trapModalFocus(event,modal){const controls=focusable(modal);if(!controls.length)return;const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}
 function enhanceAccessibility(){document.querySelectorAll('.modal-backdrop').forEach((backdrop,index)=>{backdrop.setAttribute('role','dialog');backdrop.setAttribute('aria-modal','true');const heading=backdrop.querySelector('h2');if(heading){if(!heading.id)heading.id=`modalTitle${index+1}`;backdrop.setAttribute('aria-labelledby',heading.id)}const close=backdrop.querySelector('[data-close]');if(close&&!close.getAttribute('aria-label'))close.setAttribute('aria-label','Закрыть окно')});document.querySelectorAll('label:not([for])').forEach((label,index)=>{const control=label.querySelector('input,select,textarea')||label.nextElementSibling;if(control?.matches?.('input,select,textarea')){if(!control.id)control.id=`field${index+1}`;label.htmlFor=control.id}})}
@@ -378,7 +410,7 @@ function previousOnboarding(){if(onboardingStep>0){onboardingStep--;renderOnboar
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('mousedown',e=>{if(e.target===m&&m.id!=='networkLoginModal')closeModal(m.id)}));
 $('createChildStageBtn').onclick=createChildFromOpenStage;
 $('saveStageBtn').onclick=saveStage;$('deleteStageBtn').onclick=()=>editStageUid&&deleteStage(editStageUid);$('pdfReportBtn').onclick=printPdfReport;$('validateBtn').onclick=showValidation;$('exportBtn').onclick=openExport;$('saveJsonBtn').onclick=saveProject;$('loadJsonBtn').onclick=showProjects;$('profilesBtn').onclick=openProfiles;$('auditBtn').onclick=openAudit;$('confirmAdminLoginBtn').onclick=confirmAdminLogin;$('closeAdminBtn').onclick=closeAdminWorkspace;$('confirmSignedSaveBtn').onclick=confirmSignedAction;$('createAuditUserBtn').onclick=createAuditUser;$('refreshAuditBtn').onclick=loadAuditEvents;$('verifyAuditBtn').onclick=verifyAudit;$('importBtn').onclick=openImport;$('jsonFile').onchange=e=>{if(e.target.files[0])loadJsonFile(e.target.files[0]);e.target.value=''};$('newBtn').onclick=newProject;$('demoBtn').onclick=loadDemo;$('completeProjectBtn').onclick=completeRootProject;$('onboardingBackBtn').onclick=previousOnboarding;$('onboardingNextBtn').onclick=nextOnboarding;
-$('networkRetryBtn').onclick=initializeNetworkMode;$('networkLoginBtn').onclick=submitNetworkLogin;$('networkLoginPin').addEventListener('keydown',event=>{if(event.key==='Enter')submitNetworkLogin()});
+$('networkRetryBtn').onclick=initializeNetworkMode;$('networkLoginBtn').onclick=submitNetworkLogin;$('networkLogoutBtn').onclick=logoutNetworkSession;$('networkLoginPin').addEventListener('keydown',event=>{if(event.key==='Enter')submitNetworkLogin()});
 document.querySelector('.more-actions-menu').addEventListener('click',event=>{if(event.target.closest('button'))event.currentTarget.closest('details').removeAttribute('open')});
 $('stageStatus').onchange=updateCompletionScope;$('completionScope').onchange=updateCompletionScope;
 $('refreshBackupsBtn').onclick=loadBackups;$('createBackupBtn').onclick=createBackup;

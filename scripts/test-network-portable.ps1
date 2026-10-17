@@ -157,16 +157,18 @@ try{
   # decrease after both a normal window close and a forced process kill.
   $first=Start-HeldSmoke $unc 'session-first'
   $firstResult=Wait-SessionCount $first.report 1
-  $second=Start-HeldSmoke $unc 'session-second' (Join-Path $localProfile 'second-computer')
+  $second=Start-HeldSmoke $unc 'session-second'
   $secondResult=Wait-SessionCount $second.report 2
+  if($firstResult.profile -eq $secondResult.profile -or $firstResult.database -eq $secondResult.database){throw 'Two windows of one Windows profile share a writable data/profile directory'}
   Wait-SessionCount $first.report 2 | Out-Null
   # Find by PID, since both client windows have the same title.
   $secondProcess=Get-Process -Id $secondResult.processId
   if(-not $secondProcess.CloseMainWindow()){throw 'Cannot close second client window'}
   if(-not $secondProcess.WaitForExit(30000)){throw 'Second client did not exit normally'}
   Wait-SessionCount $first.report 1 | Out-Null
-  $second=Start-HeldSmoke $unc 'session-forced' (Join-Path $localProfile 'second-computer')
+  $second=Start-HeldSmoke $unc 'session-forced'
   $secondResult=Wait-SessionCount $second.report 2
+  if($firstResult.profile -eq $secondResult.profile -or $firstResult.database -eq $secondResult.database){throw 'Two windows of one Windows profile share a writable data/profile directory'}
   Wait-SessionCount $first.report 2 | Out-Null
   Stop-Process -Id $second.launcher.Id -Force -ErrorAction SilentlyContinue
   Stop-Process -Id $secondResult.processId -Force
