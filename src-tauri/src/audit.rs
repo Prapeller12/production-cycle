@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::infrastructure::network::NetworkRuntime;
 
 use crate::production::{
-    load_snapshot_by_id_conn, save_snapshot_tx, validate_snapshot, DictionaryKind,
+    load_snapshot_by_id_conn, save_snapshot_tx, validate_snapshot, validate_snapshot_revision, DictionaryKind,
     DictionaryReplaceResult, ProductionDb, ProductionReport, ProductionSnapshot, StageStatus,
 };
 
@@ -159,6 +159,7 @@ pub struct CompletionEvidenceInput {
 #[serde(rename_all = "camelCase")]
 pub struct SignedSaveResult {
     pub project_id: i64,
+    pub base_revision: String,
     pub change_event_id: String,
     pub completion_event_ids: Vec<String>,
     pub backup: Option<crate::backup::BackupSummary>,
@@ -486,7 +487,10 @@ pub(crate) fn authenticate_admin(conn: &Connection, user_id: i64, pin: &str) -> 
 }
 
 fn snapshot_hash(snapshot: &ProductionSnapshot) -> std::result::Result<String, String> {
-    serde_json::to_vec(snapshot)
+    // Concurrency metadata is not part of the historically signed domain data.
+    let mut content = snapshot.clone();
+    content.base_revision = None;
+    serde_json::to_vec(&content)
         .map(|bytes| sha256_hex(&bytes))
         .map_err(|e| e.to_string())
 }
@@ -657,6 +661,7 @@ impl ProductionDb {
         let comment = validate_comment(comment, "Комментарий к изменению")?;
         let mut conn = self.conn.lock().map_err(|_| "База данных занята".to_string())?;
         let (user, signing_key) = authenticate(&conn, user_id, pin, RoleRequirement::AnySigner)?;
+        validate_snapshot_revision(&conn, snapshot).map_err(|e| e.to_string())?;
         let previous = match snapshot.database_id {
             Some(project_id) => load_snapshot_by_id_conn(&conn, project_id).map_err(|e| e.to_string())?,
             None => None,
@@ -673,16 +678,16 @@ impl ProductionDb {
                     && old_statuses.get(&stage.uid).map(String::as_str) != Some("done")
             })
             .collect();
-        let reopened: Vec<_> = snapshot
-            .stages
-            .iter()
-            .filter(|stage| {
-                old_statuses.get(&stage.uid).map(String::as_str) == Some("done")
-                    && stage.status != StageStatus::Done
-            })
-            .collect();
-        if !reopened.is_empty() && user.role != "admin" {
-            return Err("Возвратить выполненный этап в работу может только администратор.".into());
+        // A removed or replaced UID must not bypass the administrator-only
+        // transition from a completed stage. Check the persisted stages as well.
+        let current_statuses = snapshot.stages.iter()
+            .map(|stage| (stage.uid.as_str(), stage.status))
+            .collect::<HashMap<_, _>>();
+        let changed_completed_stage = old_statuses.iter().any(|(uid, status)| {
+            status == "done" && current_statuses.get(uid.as_str()) != Some(&StageStatus::Done)
+        });
+        if changed_completed_stage && user.role != "admin" {
+            return Err("Возвратить выполненный этап в работу, удалить его или изменить его идентификатор может только администратор.".into());
         }
         let completed_uids = completed.iter().map(|stage| stage.uid.as_str()).collect::<std::collections::HashSet<_>>();
         let evidence = if completed.is_empty() {
@@ -710,8 +715,10 @@ impl ProductionDb {
         let is_new = snapshot.database_id.is_none();
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         let project_id = save_snapshot_tx(&tx, snapshot).map_err(|e| e.to_string())?;
-        let mut persisted = snapshot.clone();
-        persisted.database_id = Some(project_id);
+        let persisted = load_snapshot_by_id_conn(&tx, project_id).map_err(|e| e.to_string())?
+            .ok_or_else(|| "Сохранённый проект не найден.".to_string())?;
+        let base_revision = persisted.base_revision.clone()
+            .ok_or_else(|| "Не удалось определить версию сохранённого проекта.".to_string())?;
         let hash = snapshot_hash(&persisted)?;
         let change_event_id = append_event(
             &tx,
@@ -753,7 +760,7 @@ impl ProductionDb {
             Ok(value) => (Some(value), None),
             Err(error) => (None, Some(format!("Проект сохранён, но резервная копия не создана: {error}"))),
         };
-        Ok(SignedSaveResult { project_id, change_event_id, completion_event_ids, backup, backup_warning })
+        Ok(SignedSaveResult { project_id, base_revision, change_event_id, completion_event_ids, backup, backup_warning })
     }
 
     pub fn list_audit_events(
@@ -808,6 +815,7 @@ impl ProductionDb {
             digest_input.extend_from_slice(payload_json.as_bytes());
             if sha256_hex(&digest_input) != *event_hash { event_errors.push("контрольная сумма события не совпадает".to_string()); }
             if verify_signature(event_hash, signature, public_key).is_err() { event_errors.push("криптографическая подпись недействительна".to_string()); }
+            if let Err(error) = verify_event_signer(&conn, *actor_user_id, key_fingerprint, public_key) { event_errors.push(error); }
             let stored_changes = serde_json::from_str::<Vec<AuditChange>>(changes_json).ok();
             match serde_json::from_str::<StoredAuditPayload>(payload_json) {
                 Ok(payload) if payload.event_id==event_id.as_str()&&payload.project_id==*pid&&payload.stage_uid.as_deref()==stage_uid.as_deref()&&payload.stage_reg_number.as_deref()==stage_reg_number.as_deref()&&payload.event_type==event_type.as_str()&&payload.actor_user_id==*actor_user_id&&payload.actor_name==actor_name.as_str()&&payload.key_fingerprint==key_fingerprint.as_str()&&payload.comment==comment.as_str()&&payload.evidence_type.as_deref()==evidence_type.as_deref()&&payload.evidence_reference.as_deref()==evidence_reference.as_deref()&&stored_changes.as_ref()==Some(&payload.changes)&&payload.snapshot_hash==snapshot_hash.as_str()&&payload.previous_hash==previous_hash.as_str()&&payload.created_at==created_at.as_str() => {},
@@ -903,6 +911,29 @@ fn verify_signature(event_hash: &str, signature: &str, public_key: &str) -> std:
     verifying_key.verify(event_hash.as_bytes(), &signature).map_err(|_| "Подпись не прошла проверку.".to_string())
 }
 
+fn verify_event_signer(
+    conn: &Connection,
+    actor_user_id: i64,
+    key_fingerprint: &str,
+    public_key: &str,
+) -> std::result::Result<(), String> {
+    let key_bytes = fixed::<32>(B64.decode(public_key).map_err(|_| "Открытый ключ повреждён.".to_string())?, "открытый ключ")?;
+    if sha256_hex(&key_bytes)[..16].to_uppercase() != key_fingerprint {
+        return Err("отпечаток подписавшего ключа не совпадает с открытым ключом".into());
+    }
+    // Historical signatures remain valid after a profile is deactivated or
+    // migrated to another role. Its original key must still match the event.
+    let profile: Option<(String, String)> = conn.query_row(
+        "SELECT public_key,key_fingerprint FROM audit_user WHERE id=?1",
+        [actor_user_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional().map_err(|e| e.to_string())?;
+    match profile {
+        Some((stored_key, stored_fingerprint)) if stored_key == public_key && stored_fingerprint == key_fingerprint => Ok(()),
+        _ => Err("ключ события не соответствует зарегистрированному профилю автора".into()),
+    }
+}
+
 pub fn attach_completion_confirmations(
     db: &ProductionDb,
     project_id: i64,
@@ -916,7 +947,9 @@ pub fn attach_completion_confirmations(
         let Ok(payload)=serde_json::from_str::<StoredAuditPayload>(&payload_json) else { continue };
         let Some(uid)=payload.stage_uid.clone() else { continue };
         let mut digest_input=previous_hash.as_bytes().to_vec();digest_input.extend_from_slice(payload_json.as_bytes());
-        let signature_valid=sha256_hex(&digest_input)==event_hash&&verify_signature(&event_hash,&signature,&public_key).is_ok();
+        let signature_valid=sha256_hex(&digest_input)==event_hash
+            &&verify_signature(&event_hash,&signature,&public_key).is_ok()
+            &&verify_event_signer(&conn,payload.actor_user_id,&payload.key_fingerprint,&public_key).is_ok();
         latest.entry(uid).or_insert_with(|| CompletionConfirmation { confirmer:payload.actor_name,key_fingerprint:payload.key_fingerprint,created_at:payload.created_at,document_type:payload.evidence_type.unwrap_or_default(),document_reference:payload.evidence_reference.unwrap_or_default(),comment:payload.comment,signature_valid });
     }
     for row in &mut report.stages { row.completion_confirmation = latest.remove(&row.stage.uid); }
@@ -952,6 +985,7 @@ mod tests {
     fn sample(status: StageStatus) -> ProductionSnapshot {
         ProductionSnapshot {
             database_id: None,
+            base_revision: None,
             project: ProductionProjectInput { name:"Подписываемый проект".into(),order_no:"AUD-1".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-30".into() },
             stages: vec![ProductionStageInput { uid:"stage-1".into(),seq:1,sort:1,parent_uid:None,title:"Приёмка".into(),executor:"Исполнитель".into(),addressees:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-20".into(),status,comment:String::new() }],
             next_seq: 2,
@@ -972,9 +1006,10 @@ mod tests {
         assert!(duplicate_admin.contains("уже есть администратор"));
         let mut snapshot=sample(StageStatus::Work);
         let created=db.save_signed_snapshot(&snapshot,manager.id,"111111","Создание руководителем",None).unwrap();
-        snapshot.database_id=Some(created.project_id);snapshot.stages[0].status=StageStatus::Done;
+        snapshot=db.load_snapshot_by_id(created.project_id).unwrap().unwrap();snapshot.stages[0].status=StageStatus::Done;
         let evidence=CompletionEvidenceInput{document_type:"Акт приёмки".into(),document_reference:"№21".into(),comment:"Этап принят".into(),stage_uids:vec!["stage-1".into()]};
         assert_eq!(db.save_signed_snapshot(&snapshot,manager.id,"111111","Завершение руководителем",Some(evidence)).unwrap().completion_event_ids.len(),1);
+        snapshot=db.load_snapshot_by_id(created.project_id).unwrap().unwrap();
         snapshot.stages[0].status=StageStatus::Work;
         assert!(db.save_signed_snapshot(&snapshot,reviewer.id,"222222","Возврат проверяющим",None).unwrap_err().contains("только администратор"));
         assert!(db.save_signed_snapshot(&snapshot,owner.id,"739201","Возврат администратором",None).is_ok());
@@ -1003,7 +1038,7 @@ mod tests {
         let db=ProductionDb::memory().unwrap();let owner=admin(&db);
         let mut initial=sample(StageStatus::Work);
         let created=db.save_signed_snapshot(&initial,owner.id,"739201","Создание",None).unwrap();
-        initial.database_id=Some(created.project_id);initial.stages[0].status=StageStatus::Done;
+        initial=db.load_snapshot_by_id(created.project_id).unwrap().unwrap();initial.stages[0].status=StageStatus::Done;
         assert!(db.save_signed_snapshot(&initial,owner.id,"739201","Завершение",None).is_err());
         let saved=db.save_signed_snapshot(&initial,owner.id,"739201","Завершение",Some(CompletionEvidenceInput{document_type:"Акт приёмки".into(),document_reference:"№15 от 18.09.2026".into(),comment:"Работы приняты".into(),stage_uids:vec!["stage-1".into()]})).unwrap();
         assert_eq!(saved.completion_event_ids.len(),1);
@@ -1021,7 +1056,7 @@ mod tests {
         snapshot.stages.push(ProductionStageInput { uid:"stage-2".into(),seq:2,sort:1,parent_uid:Some("stage-1".into()),title:"Зависимый этап".into(),executor:"Исполнитель".into(),addressees:"Предприятие".into(),start:"2026-09-02".into(),deadline:"2026-09-19".into(),status:StageStatus::Work,comment:String::new() });
         snapshot.next_seq=3;
         let created=db.save_signed_snapshot(&snapshot,owner.id,"739201","Создание",None).unwrap();
-        snapshot.database_id=Some(created.project_id);
+        snapshot=db.load_snapshot_by_id(created.project_id).unwrap().unwrap();
         snapshot.stages.iter_mut().for_each(|stage| stage.status=StageStatus::Done);
         let one_stage=CompletionEvidenceInput { document_type:"Акт приёмки".into(),document_reference:"№16".into(),comment:"Подтверждён один этап".into(),stage_uids:vec!["stage-1".into()] };
         let error=db.save_signed_snapshot(&snapshot,owner.id,"739201","Завершение",Some(one_stage)).unwrap_err();
@@ -1043,11 +1078,94 @@ mod tests {
     }
 
     #[test]
+    fn completed_stage_cannot_be_deleted_or_reidentified_without_admin() {
+        let db=ProductionDb::memory().unwrap();let owner=admin(&db);
+        let manager=db.create_audit_user(CreateAuditUserInput { display_name:"Руководитель".into(),pin:"111111".into(),is_admin:false,role:Some("project_manager".into()),admin_user_id:Some(owner.id),admin_pin:Some("739201".into()) }).unwrap();
+        let created=db.save_signed_snapshot(&sample(StageStatus::Done),owner.id,"739201","Создание выполненного этапа",Some(CompletionEvidenceInput { document_type:"Акт приёмки".into(),document_reference:"№18".into(),comment:"Работы приняты".into(),stage_uids:vec!["stage-1".into()] })).unwrap();
+        let original=db.load_snapshot_by_id(created.project_id).unwrap().unwrap();
+        let mut removed=original.clone();removed.stages.clear();
+        assert!(db.save_signed_snapshot(&removed,manager.id,"111111","Удаление выполненного этапа",None).unwrap_err().contains("только администратор"));
+        let mut replaced=original.clone();replaced.stages[0].uid="replacement-stage".into();replaced.stages[0].status=StageStatus::Work;
+        assert!(db.save_signed_snapshot(&replaced,manager.id,"111111","Замена идентификатора",None).unwrap_err().contains("только администратор"));
+        assert_eq!(db.load_snapshot_by_id(created.project_id).unwrap().unwrap().stages[0].status,StageStatus::Done);
+        let saved=db.save_signed_snapshot(&removed,owner.id,"739201","Удаление администратором",None).unwrap();
+        let loaded=db.load_snapshot_by_id(created.project_id).unwrap().unwrap();
+        assert!(loaded.stages.is_empty());
+        assert_eq!(loaded.base_revision.as_deref(),Some(saved.base_revision.as_str()));
+        assert_eq!(db.verify_audit_log(owner.id,"739201",Some(created.project_id)).unwrap().invalid_events,0);
+    }
+
+    #[test]
+    fn event_cannot_use_an_unregistered_signing_key_even_with_a_matching_fingerprint() {
+        let db=ProductionDb::memory().unwrap();let owner=admin(&db);
+        let created=db.save_signed_snapshot(&sample(StageStatus::Done),owner.id,"739201","Создание",Some(CompletionEvidenceInput { document_type:"Акт приёмки".into(),document_reference:"№19".into(),comment:"Работы приняты".into(),stage_uids:vec!["stage-1".into()] })).unwrap();
+        let completion_id=&created.completion_event_ids[0];
+        let forged_key=SigningKey::from_bytes(&[77;32]);
+        let forged_public=B64.encode(forged_key.verifying_key().to_bytes());
+        {
+            let conn=db.conn.lock().unwrap();
+            let event_hash:String=conn.query_row("SELECT event_hash FROM audit_event WHERE event_id=?1",[completion_id],|row|row.get(0)).unwrap();
+            let forged_signature=B64.encode(forged_key.sign(event_hash.as_bytes()).to_bytes());
+            conn.execute("UPDATE audit_event SET public_key=?1,signature=?2 WHERE event_id=?3",params![forged_public,forged_signature,completion_id]).unwrap();
+        }
+        let report=db.verify_audit_log(owner.id,"739201",Some(created.project_id)).unwrap();
+        assert_eq!(report.invalid_events,1);
+        assert!(report.errors.iter().any(|error|error.contains("отпечаток")));
+        // Re-sign the payload with the attacker's matching fingerprint as well.
+        // Cryptographic self-consistency must not establish the author's identity.
+        {
+            let conn=db.conn.lock().unwrap();
+            let (payload_json,previous_hash):(String,String)=conn.query_row("SELECT payload_json,previous_hash FROM audit_event WHERE event_id=?1",[completion_id],|row|Ok((row.get(0)?,row.get(1)?))).unwrap();
+            let mut payload:serde_json::Value=serde_json::from_str(&payload_json).unwrap();
+            let fingerprint=sha256_hex(&forged_key.verifying_key().to_bytes())[..16].to_uppercase();
+            payload["keyFingerprint"]=serde_json::Value::String(fingerprint.clone());
+            let payload_json=serde_json::to_string(&payload).unwrap();
+            let mut digest_input=previous_hash.as_bytes().to_vec();digest_input.extend_from_slice(payload_json.as_bytes());
+            let event_hash=sha256_hex(&digest_input);
+            let signature=B64.encode(forged_key.sign(event_hash.as_bytes()).to_bytes());
+            conn.execute("UPDATE audit_event SET key_fingerprint=?1,payload_json=?2,event_hash=?3,signature=?4 WHERE event_id=?5",params![fingerprint,payload_json,event_hash,signature,completion_id]).unwrap();
+        }
+        let report=db.verify_audit_log(owner.id,"739201",Some(created.project_id)).unwrap();
+        assert_eq!(report.invalid_events,1);
+        assert!(report.errors.iter().any(|error|error.contains("зарегистрированному профилю")));
+        let loaded=db.load_snapshot_by_id(created.project_id).unwrap().unwrap();
+        let mut printable=crate::production::build_report(&loaded,chrono::NaiveDate::from_ymd_opt(2026,9,18).unwrap()).unwrap();
+        attach_completion_confirmations(&db,created.project_id,&mut printable).unwrap();
+        assert!(!printable.stages[0].completion_confirmation.as_ref().unwrap().signature_valid);
+    }
+
+    #[test]
+    fn legacy_event_without_changes_survives_profile_deactivation_and_revision_metadata() {
+        let db=ProductionDb::memory().unwrap();let owner=admin(&db);
+        let signer=db.create_audit_user(CreateAuditUserInput { display_name:"Прежний проверяющий".into(),pin:"111111".into(),is_admin:false,role:Some("reviewer".into()),admin_user_id:Some(owner.id),admin_pin:Some("739201".into()) }).unwrap();
+        let created=db.save_signed_snapshot(&sample(StageStatus::Work),signer.id,"111111","Создание",None).unwrap();
+        {
+            let conn=db.conn.lock().unwrap();
+            let (_,key)=authenticate(&conn,signer.id,"111111",RoleRequirement::AnySigner).unwrap();
+            let payload_json:String=conn.query_row("SELECT payload_json FROM audit_event WHERE event_id=?1",[&created.change_event_id],|row|row.get(0)).unwrap();
+            let mut payload:serde_json::Value=serde_json::from_str(&payload_json).unwrap();
+            payload.as_object_mut().unwrap().remove("changes");
+            let payload_json=serde_json::to_string(&payload).unwrap();
+            let event_hash=sha256_hex(payload_json.as_bytes());
+            let signature=B64.encode(key.sign(event_hash.as_bytes()).to_bytes());
+            conn.execute("UPDATE audit_event SET payload_json=?1,event_hash=?2,signature=?3,changes_json='[]' WHERE event_id=?4",params![payload_json,event_hash,signature,created.change_event_id]).unwrap();
+            conn.execute("UPDATE audit_user SET active=0,revoked_at='2026-10-01' WHERE id=?1",[signer.id]).unwrap();
+        }
+        let report=db.verify_audit_log(owner.id,"739201",Some(created.project_id)).unwrap();
+        assert_eq!(report.invalid_events,0);
+        let mut loaded=db.load_snapshot_by_id(created.project_id).unwrap().unwrap();
+        let signed_hash=snapshot_hash(&loaded).unwrap();
+        loaded.base_revision=None;
+        assert!(!serde_json::to_string(&loaded).unwrap().contains("baseRevision"));
+        assert_eq!(snapshot_hash(&loaded).unwrap(),signed_hash);
+    }
+
+    #[test]
     fn signed_change_event_contains_automatic_before_after_values() {
         let db=ProductionDb::memory().unwrap();let owner=admin(&db);
         let mut snapshot=sample(StageStatus::Work);
         let created=db.save_signed_snapshot(&snapshot,owner.id,"739201","Создание",None).unwrap();
-        snapshot.database_id=Some(created.project_id);
+        snapshot=db.load_snapshot_by_id(created.project_id).unwrap().unwrap();
         snapshot.project.deadline="2026-10-15".into();
         snapshot.stages[0].executor="Новый исполнитель".into();
         snapshot.stages[0].comment="Получено письмо".into();

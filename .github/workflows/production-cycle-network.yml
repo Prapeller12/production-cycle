@@ -3,7 +3,7 @@ on:
   push:
     branches: [feat/network-share-multiuser]
   pull_request:
-    branches: [codex/production-cycle-prototype]
+    branches: [codex/production-cycle-prototype, feat/network-share-multiuser]
   workflow_dispatch:
 permissions:
   contents: read
