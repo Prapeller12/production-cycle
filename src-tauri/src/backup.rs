@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}};
 use tauri::State;
 use uuid::Uuid;
+use crate::infrastructure::network::NetworkRuntime;
 
 use crate::production::{initialize_schema, ProductionDb, SCHEMA_VERSION};
 
@@ -254,18 +255,18 @@ impl ProductionDb {
 }
 
 #[tauri::command]
-pub fn backup_list(db: State<'_, ProductionDb>) -> Result<Vec<BackupSummary>, String> {
-    db.list_backups()
+pub fn backup_list(db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> Result<Vec<BackupSummary>, String> {
+    network.with_read(&db, || db.list_backups())
 }
 
 #[tauri::command]
-pub fn backup_create(admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>) -> Result<BackupSummary, String> {
-    db.create_backup_as_admin(admin_user_id, &admin_pin)
+pub fn backup_create(admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> Result<BackupSummary, String> {
+    network.with_read(&db, || db.create_backup_as_admin(admin_user_id, &admin_pin))
 }
 
 #[tauri::command]
-pub fn backup_restore(file_name: String, admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>) -> Result<RestoreReport, String> {
-    db.restore_backup_as_admin(&file_name, admin_user_id, &admin_pin)
+pub fn backup_restore(file_name: String, admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> Result<RestoreReport, String> {
+    network.with_write(&db, || db.restore_backup_as_admin(&file_name, admin_user_id, &admin_pin))
 }
 
 #[cfg(test)]
@@ -281,6 +282,7 @@ mod tests {
     fn snapshot(name: &str) -> ProductionSnapshot {
         ProductionSnapshot {
             database_id: None,
+            base_revision: None,
             project: ProductionProjectInput { name:name.into(),order_no:"BACKUP-1".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-30".into() },
             stages: vec![ProductionStageInput { uid:"stage-1".into(),seq:1,sort:1,parent_uid:None,title:"Контроль".into(),executor:"Исполнитель".into(),addressees:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-20".into(),status:StageStatus::Work,comment:String::new() }],
             next_seq: 2,
@@ -295,7 +297,7 @@ mod tests {
         let mut initial=snapshot("До изменения");
         let first=db.save_signed_snapshot(&initial,owner.id,"739201","Первое сохранение",None).unwrap();
         let first_backup=first.backup.unwrap();assert!(first_backup.valid);
-        initial.database_id=Some(first.project_id);initial.project.name="После изменения".into();
+        initial=db.load_snapshot_by_id(first.project_id).unwrap().unwrap();initial.project.name="После изменения".into();
         db.save_signed_snapshot(&initial,owner.id,"739201","Изменение названия",None).unwrap();
         assert_eq!(db.load_snapshot_by_id(first.project_id).unwrap().unwrap().project.name,"После изменения");
         let restored=db.restore_backup_as_admin(&first_backup.file_name,owner.id,"739201").unwrap();
