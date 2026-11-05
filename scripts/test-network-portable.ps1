@@ -45,6 +45,7 @@ public static class LaunchWindows {
 }
 '@
 Add-Type -Path (Join-Path $PSScriptRoot 'launch-limited-token.cs')
+. (Join-Path $PSScriptRoot 'trace-standard-user-startup.ps1')
 $script:LimitedLaunch=$false
 function Wait-VisibleWindow([string]$title,[int]$seconds=90){
   $deadline=[DateTime]::UtcNow.AddSeconds($seconds)
@@ -72,7 +73,7 @@ function Run-FunctionalSmoke([string]$path,[string]$phase){
     if($dialog -ne [IntPtr]::Zero){[LaunchWindows]::Dismiss($dialog) | Out-Null}
     if($script:LimitedLaunch -and -not $sampled -and [DateTime]::UtcNow -ge $sampleAt){
       $sampled=$true
-      $processes=@(Get-CimInstance Win32_Process | Where-Object {$_.Name -in @('production-cycle.exe','msedgewebview2.exe')} | Select-Object Name,ProcessId,ParentProcessId,SessionId,ExecutablePath,CommandLine)
+      $processes=@(Get-CimInstance Win32_Process | Where-Object {$_.Name -in @('production-cycle.exe','msedgewebview2.exe')} | Select-Object Name,ProcessId,ParentProcessId,SessionId,ExecutablePath,CommandLine,@{Name='Owner';Expression={try{$owner=Invoke-CimMethod -InputObject $_ -MethodName GetOwner;"$($owner.Domain)\$($owner.User)"}catch{"$($_.Exception.Message)"}}})
       $profiles=@(foreach($item in $processes){
         if($item.CommandLine -match '--user-data-dir=(?:"([^"]+)"|(\S+))'){
           $folder=if($Matches[1]){$Matches[1]}else{$Matches[2]}
@@ -185,9 +186,14 @@ try{
     Set-Acl $fixture $acl
   }
   Start-Service seclogon
+  $standardError=$null;$trace=$null
+  try{$trace=Start-StandardUserTrace}catch{Write-Warning "Optional CI trace unavailable: $_"}
   $script:LimitedLaunch=$true
-  try{[LimitedLaunch]::Configure($limitedName,$limitedPassword);Run-FunctionalSmoke $unc 'limited-user'}finally{
+  try{[LimitedLaunch]::Configure($limitedName,$limitedPassword);Run-FunctionalSmoke $unc 'limited-user'}catch{
+    $standardError=$_;Write-Warning "Standard-user startup failed; continuing other mandatory scenarios: $_"
+  }finally{
     [LimitedLaunch]::Restore();$script:LimitedLaunch=$false
+    try{Stop-StandardUserTrace $trace (Join-Path $testRoot 'network-standard-user-file-events.csv')}catch{Write-Warning "Optional CI trace export failed: $_"}
   }
   Run-FunctionalSmoke $unc 'unc-first-run'
   Run-FunctionalSmoke $unc 'unc-relaunch'
@@ -313,6 +319,7 @@ try{
   if(-not (Test-Path (Join-Path $root 'shared/database/production-cycle.db'))){throw 'Shared database snapshot missing'}
   if(-not (Test-Path (Join-Path $cache 'runtime/webview2/msedgewebview2.exe'))){throw 'Local Fixed Runtime missing'}
   if(Test-Path (Join-Path $root 'temp/webview2')){throw 'WebView profile created in shared folder'}
+  if($null -ne $standardError){throw $standardError}
 }finally{
   foreach($key in $old.Keys){[Environment]::SetEnvironmentVariable($key,$old[$key],'Process')}
   $env:PRODUCTION_CYCLE_SMOKE_REPORT=$null;$env:PRODUCTION_CYCLE_SMOKE_HOLD=$null;$env:PRODUCTION_CYCLE_STARTUP_REPORT=$null
