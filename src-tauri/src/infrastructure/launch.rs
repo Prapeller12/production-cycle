@@ -16,6 +16,23 @@ pub fn io_error(operation:&str,path:&Path,error:std::io::Error)->String{
 }
 pub fn create_dir(path:&Path)->Result<(),String>{fs::create_dir_all(path).map_err(|e|io_error("Не удалось создать папку",path,e))}
 
+/// Preserve canonical paths for validation and IO. At Windows process/WebView
+/// boundaries use ordinary drive syntax for the same verified local location.
+pub fn native_local_path(path:&Path)->PathBuf{
+    #[cfg(windows)]{
+        use std::path::Prefix;
+        let mut parts=path.components();
+        if let Some(Component::Prefix(prefix))=parts.next(){
+            if let Prefix::VerbatimDisk(letter)=prefix.kind(){
+                let mut native=PathBuf::from(format!("{}:\\",letter as char));
+                for part in parts{match part{Component::RootDir=>{},Component::Normal(name)=>native.push(name),_=>return path.to_path_buf()}}
+                return native
+            }
+        }
+    }
+    path.to_path_buf()
+}
+
 /// Check the operations used by this application, not just directory existence.
 pub fn probe_directory(path:&Path)->Result<(),String>{
     create_dir(path)?;
@@ -183,5 +200,10 @@ pub fn wait_for_window(child:&mut Child,status:&Path,client:&Path,budget:Duratio
     }
     #[test]fn source_corruption_cannot_become_a_ready_client(){
         let root=folder();let source=root.join("source");let base=root.join("cache");fs::create_dir_all(&source).unwrap();fs::create_dir_all(&base).unwrap();let m=fixture(&source);fs::write(source.join("frontend/index.html"),b"broken").unwrap();assert!(prepare_cache(&source,&base,&"a".repeat(64),"test",&m).unwrap_err().contains("Повреждён"));for entry in fs::read_dir(&base).unwrap(){assert!(!entry.unwrap().path().join(FINGERPRINT).exists())}fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(windows)]#[test]fn win32_drive_paths_keep_the_same_directory_and_do_not_rewrite_unc(){
+        let root=folder();let profile=root.join("Профиль браузера");fs::create_dir_all(&profile).unwrap();
+        let native=native_local_path(&profile);assert!(!native.to_string_lossy().starts_with(r"\\?\"));assert_eq!(native.canonicalize().unwrap(),profile);
+        let share=Path::new(r"\\?\UNC\server\share\folder");assert_eq!(native_local_path(share),share);fs::remove_dir_all(root).unwrap();
     }
 }

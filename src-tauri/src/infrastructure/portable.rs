@@ -62,7 +62,7 @@ impl Paths {
             use std::os::windows::process::CommandExt;
             let system=std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(||PathBuf::from("C:/Windows"));
             let helper=system.join("System32/icacls.exe");
-            let status=std::process::Command::new(&helper).arg(&result.runtime)
+            let status=std::process::Command::new(&helper).arg(super::launch::native_local_path(&result.runtime))
                 .args(["/grant", "*S-1-15-2-2:(OI)(CI)(RX)", "*S-1-15-2-1:(OI)(CI)(RX)","/Q"])
                 .creation_flags(0x08000000).output();
             // Hardened hosts may prohibit the ACL helper while existing runtime
@@ -73,9 +73,10 @@ impl Paths {
                 Err(error)=>Some(super::launch::io_error("Windows запретила вспомогательную настройку прав Runtime",&helper,error)),
             };
         }
-        std::env::set_var("TEMP",&result.process_temp); std::env::set_var("TMP",&result.process_temp);
-        std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",&result.runtime);
-        std::env::set_var("WEBVIEW2_USER_DATA_FOLDER",&result.webview);
+        let native_temp=super::launch::native_local_path(&result.process_temp);
+        std::env::set_var("TEMP",&native_temp); std::env::set_var("TMP",&native_temp);
+        std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",super::launch::native_local_path(&result.runtime));
+        std::env::set_var("WEBVIEW2_USER_DATA_FOLDER",super::launch::native_local_path(&result.webview));
         Ok(result)
     }
 }

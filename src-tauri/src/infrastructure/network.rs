@@ -591,9 +591,9 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
             let budget=Duration::from_secs(290).saturating_sub(overall.elapsed()).min(Duration::from_secs(120));
             if budget.is_zero(){return Err("Превышено общее время подготовки локального клиента.".into())}
             super::startup::update("Открытие локального клиента. Ожидание готового рабочего окна…");
-            let mut command=Command::new(&local_exe);command.arg("--network-client");
+            let mut command=Command::new(L::native_local_path(&local_exe));command.arg("--network-client");
             for argument in env::args().skip(1){if argument!="--network-client"{command.arg(argument);}}
-            let mut child=command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,&root).env(NETWORK_RECOVERY_ENV,&recovery).env(L::STATUS_ENV,&status).current_dir(&cache).spawn().map_err(|e|L::io_error("Windows запретила запуск локального клиента",&local_exe,e))?;
+            let mut child=command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,&root).env(NETWORK_RECOVERY_ENV,&recovery).env(L::STATUS_ENV,&status).current_dir(L::native_local_path(&cache)).spawn().map_err(|e|L::io_error("Windows запретила запуск локального клиента",&local_exe,e))?;
             let ready=match L::wait_for_window(&mut child,&status,&local_exe,budget){Ok(value)=>value,Err(error)=>{let _=child.kill();let _=child.wait();let _=fs::remove_file(&status);return Err(error)}};
             L::diagnostic_report(&serde_json::json!({"state":"ready","client":ready,"sharedRoot":root,"cache":cache,"recovery":recovery,"fallbackUsed":!errors.is_empty(),"previousAttempts":errors}));
             Ok((child,local_exe))

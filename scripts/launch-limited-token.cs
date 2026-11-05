@@ -15,6 +15,8 @@ public static class LimitedLaunch {
  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool LogonUserW(string user,string domain,string password,int kind,int provider,out IntPtr token);
  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool CreateProcessWithLogonW(string user,string domain,string password,uint logonFlags,string executable,StringBuilder command,uint flags,IntPtr environment,string directory,ref StartupInfo startup,out ProcessInfo process);
  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr CreateMutexW(IntPtr security,bool owned,string name);
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr OpenMutexW(uint access,bool inherit,string name);
  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
  [DllImport("user32.dll")] static extern IntPtr GetProcessWindowStation();
  [DllImport("user32.dll")] static extern IntPtr GetThreadDesktop(uint thread);
@@ -25,6 +27,11 @@ public static class LimitedLaunch {
  static IntPtr stationHandle,desktopHandle;
  static byte[] stationSecurity,desktopSecurity;
  static void Check(bool result) { if(!result)throw new Win32Exception(Marshal.GetLastWin32Error()); }
+ public static string ProbeNamedObjects() {
+  var unique=CreateMutexW(IntPtr.Zero,false,"Local\\PcLaunchProbe-"+Guid.NewGuid().ToString("N"));var createError=Marshal.GetLastWin32Error();if(unique!=IntPtr.Zero)CloseHandle(unique);
+  var chrome=OpenMutexW(0x1F0001,false,"Local\\ChromeProcessSingletonStartup!");var openError=Marshal.GetLastWin32Error();if(chrome!=IntPtr.Zero)CloseHandle(chrome);
+  return "Create unique local mutex: "+(unique!=IntPtr.Zero)+", Win32 error: "+createError+Environment.NewLine+"Open Chromium startup mutex: "+(chrome!=IntPtr.Zero)+", Win32 error: "+openError;
+ }
  static string Name(IntPtr handle) { var text=new StringBuilder(256);uint needed;Check(GetUserObjectInformationW(handle,2,text,512,out needed));return text.ToString(); }
  static byte[] Grant(IntPtr handle,SecurityIdentifier sid,int mask) {
   uint info=4,needed;GetUserObjectSecurity(handle,ref info,null,0,out needed);
@@ -61,6 +68,8 @@ public static class LimitedLaunch {
   var report=Environment.GetEnvironmentVariable("PRODUCTION_CYCLE_SMOKE_REPORT");
   var folder=Path.GetDirectoryName(report);var bootstrap=Path.Combine(folder,"network-standard-user-bootstrap.cmd");
   var log=Path.Combine(folder,"network-standard-user-webview.log");
+  var probe=Path.Combine(folder,"network-standard-user-probe.cs").Replace("'","''");
+  var probeReport=Path.Combine(folder,"network-standard-user-probe.txt").Replace("'","''");
   // NULL environment is essential: APPDATA/USERPROFILE/USERNAME and HKCU must
   // belong to this user, not the runner administrator. A batch keeps the loaded
   // profile alive and waits for the GUI EXE; it adds only CI report destinations.
@@ -69,7 +78,9 @@ public static class LimitedLaunch {
    "set \"PRODUCTION_CYCLE_STARTUP_REPORT="+Environment.GetEnvironmentVariable("PRODUCTION_CYCLE_STARTUP_REPORT")+"\"\r\n"+
    "set \"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--enable-logging --log-file=\""+log+"\" --v=1\"\r\n"+
    "whoami /all > \""+Path.Combine(folder,"network-standard-user-identity.txt")+"\"\r\n"+
-   "\""+executable+"\" --smoke-test\r\nexit /b %errorlevel%\r\n";
+   "\""+executable+"\" --smoke-test\r\nset PC_SMOKE_EXIT=%errorlevel%\r\n"+
+   "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"Add-Type -Path '"+probe+"'; [LimitedLaunch]::ProbeNamedObjects() | Set-Content -LiteralPath '"+probeReport+"'\"\r\n"+
+   "exit /b %PC_SMOKE_EXIT%\r\n";
   File.WriteAllText(bootstrap,batch,new UTF8Encoding(false));
   var shell=Path.Combine(Environment.GetEnvironmentVariable("SystemRoot"),"System32","cmd.exe");
   var startup=new StartupInfo{cb=Marshal.SizeOf(typeof(StartupInfo)),desktop=desktop};ProcessInfo info;

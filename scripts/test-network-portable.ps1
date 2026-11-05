@@ -187,6 +187,7 @@ try{
     Set-Acl $fixture $acl
   }
   Start-Service seclogon
+  Copy-Item (Join-Path $PSScriptRoot 'launch-limited-token.cs') (Join-Path $testRoot 'network-standard-user-probe.cs')
   $standardError=$null;$trace=$null
   try{$trace=Start-StandardUserTrace}catch{Write-Warning "Optional CI trace unavailable: $_"}
   $script:LimitedLaunch=$true

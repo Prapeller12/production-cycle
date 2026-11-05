@@ -74,7 +74,7 @@ fn main(){
             WebviewWindowBuilder::new(app,"main",WebviewUrl::CustomProtocol("production://localhost/index.html".parse()?))
                 .title("Производственный цикл — self-test v1")
                 .inner_size(1440.0,900.0).min_inner_size(700.0,500.0)
-                .data_directory(paths.webview.clone())
+                .data_directory(infrastructure::launch::native_local_path(&paths.webview))
                 .on_page_load(move |window,payload|{if smoke && payload.event()==tauri::webview::PageLoadEvent::Finished {let _=window.eval(if network_enabled{smoke::NETWORK_SCRIPT}else{smoke::SCRIPT});}})
                 .on_navigation(|url|matches!(url.scheme(),"production") || url.host_str()==Some("production.localhost"))
                 .build().map_err(|error|format!("Не удалось создать рабочее окно: {error}\nRuntime: {}\nПрофиль: {}\n{}",paths.runtime.display(),paths.webview.display(),paths.runtime_warning.as_deref().unwrap_or("")))?;
