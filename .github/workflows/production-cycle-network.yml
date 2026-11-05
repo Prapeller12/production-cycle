@@ -57,7 +57,7 @@ jobs:
           $version='network-test-'+$env:GITHUB_SHA.Substring(0,7)
           ./scripts/package-network-windows.ps1 -FixedRuntimePath $runtime -Version $version -OutputPath ./dist/network
       - name: Test real SMB UNC/IP launch and every native workflow
-        timeout-minutes: 15
+        timeout-minutes: 20
         shell: pwsh
         run: |
           $version='network-test-'+$env:GITHUB_SHA.Substring(0,7)
@@ -69,6 +69,10 @@ jobs:
           path: |
             src-tauri/Cargo.lock
             ${{ runner.temp }}/Сетевая проверка программы/network-*.json
+            ${{ runner.temp }}/Сетевая проверка программы/network-standard-user-*.log
+            ${{ runner.temp }}/Сетевая проверка программы/network-standard-user-identity.txt
+            ${{ runner.temp }}/Сетевая проверка программы/network-standard-user-probe.txt
+            ${{ runner.temp }}/Сетевая проверка программы/network-standard-user-file-events.csv
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ProductionCycle-network-test-windows10-11-x64-${{ matrix.os }}

@@ -3,15 +3,19 @@ use std::sync::{atomic::{AtomicBool, Ordering}, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 static COMPLETE: AtomicBool = AtomicBool::new(false);
+static CANCELLED: AtomicBool = AtomicBool::new(false);
 static MESSAGE: OnceLock<Mutex<String>> = OnceLock::new();
 
 pub fn update(message: &str) {
     if let Ok(mut text) = MESSAGE.get_or_init(|| Mutex::new(String::new())).lock() {
         *text = message.to_string();
     }
+    super::launch::signal_status(serde_json::json!({"state":"starting","processId":std::process::id(),"stage":message}));
 }
 
 pub fn is_ready() -> bool { COMPLETE.load(Ordering::Acquire) }
+pub fn cancelled() -> bool { CANCELLED.load(Ordering::Acquire) }
+pub fn current_message()->String{MESSAGE.get().and_then(|value|value.lock().ok().map(|text|text.clone())).unwrap_or_else(||"Запуск программы".into())}
 
 pub fn stop() { COMPLETE.store(true, Ordering::Release); }
 
@@ -20,6 +24,7 @@ pub fn frontend_ready(window: tauri::WebviewWindow) -> Result<(), String> {
     if window.label() != "main" || !window.is_visible().map_err(|e|e.to_string())? {
         return Err("Основное окно не открыто.".into());
     }
+    super::launch::signal_status(serde_json::json!({"state":"ready","processId":std::process::id(),"windowVisible":true,"frontendReady":true,"executable":std::env::current_exe().ok()}));
     stop();
     Ok(())
 }
@@ -38,6 +43,8 @@ pub fn show_error(message: &str) { eprintln!("{message}"); }
 
 pub fn start() {
     update("Запуск программы…");
+    // The network launcher remains visible until this client's real UI is ready.
+    if std::env::var_os(super::launch::STATUS_ENV).is_some(){return}
     #[cfg(windows)]
     std::thread::spawn(|| {
         use windows_sys::Win32::{UI::WindowsAndMessaging::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleW};
@@ -54,7 +61,7 @@ pub fn start() {
             loop {
                 if COMPLETE.load(Ordering::Acquire){DestroyWindow(hwnd);break;}
                 while PeekMessageW(&mut msg,std::ptr::null_mut(),0,0,PM_REMOVE)!=0 {TranslateMessage(&msg);DispatchMessageW(&msg);}
-                if IsWindow(hwnd)==0 {std::process::exit(0);}
+                if IsWindow(hwnd)==0 {CANCELLED.store(true,Ordering::Release);break;}
                 if let Ok(text)=MESSAGE.get().unwrap().lock(){SetWindowTextW(label,wide(text.as_str()).as_ptr());}
                 if started.elapsed()>Duration::from_secs(deadline){crate::startup_failure("Превышено время ожидания запуска. Проверьте доступность общей папки, свободное место на локальном диске и разрешение запуска программы в настройках защиты. Окно интерфейса не подтвердило готовность.");}
                 std::thread::sleep(Duration::from_millis(100));

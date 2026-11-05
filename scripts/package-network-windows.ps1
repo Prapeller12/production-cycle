@@ -26,6 +26,17 @@ $network=$network.Replace('NETWORK_VERSION',$Version)
 Copy-Item (Join-Path $source 'docs') $root -Recurse
 Copy-Item (Join-Path $source 'README.md') $root
 Copy-Item (Join-Path $source 'start.cmd') (Join-Path $root 'app/start.cmd')
+Copy-Item (Join-Path $source 'scripts/diagnose-startup.cmd') (Join-Path $root 'app/diagnose-startup.cmd')
+# Hash only the executable payload; mutable shared data is never cached.
+$entries=@(foreach($name in @('production-cycle.exe','frontend','runtime','config','app')){
+  $item=Get-Item (Join-Path $root $name)
+  $files=if($item.PSIsContainer){Get-ChildItem $item.FullName -File -Recurse}else{@($item)}
+  foreach($file in $files){
+    @{path=$file.FullName.Substring($root.Length+1).Replace('\','/');bytes=$file.Length;sha256=(Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+  }
+})
+$manifest=@{format='production-cycle-launch-v1';version=$Version;files=@($entries | Sort-Object path)} | ConvertTo-Json -Depth 6
+[IO.File]::WriteAllText((Join-Path $root 'launch-manifest.json'),$manifest,(New-Object Text.UTF8Encoding($false)))
 $readme=@"
 СЕТЕВАЯ ТЕСТОВАЯ ВЕРСИЯ
 
@@ -34,6 +45,7 @@ $readme=@"
 3. Программа сама копирует исполняемую часть и WebView2 в локальный профиль Windows. Общие проекты остаются в папке shared.
 4. Одновременно допускаются три компьютера. Четвёртый обычный пользователь не войдёт. Администратор может занять место последнего вошедшего обычного пользователя после автосохранения его черновика.
 5. Не переносите один только EXE: рядом нужны frontend, runtime, config и app.
+6. Если окно не открывается, запустите app/diagnose-startup.cmd. Он сохранит отдельный отчёт запуска во временной папке и покажет его путь; PIN и содержимое проектов в отчёт не включаются.
 
 Это отдельная версия для тестовой работы. Перед началом испытаний сделайте резервную копию всей папки ProductionCycleNetwork.
 "@

@@ -11,13 +11,13 @@ pub struct Config {
     pub exports: String,
     pub technical_logging: bool,
 }
-pub struct Paths { pub frontend: PathBuf, pub runtime: PathBuf, pub webview: PathBuf, pub data: PathBuf, pub recovery:PathBuf, pub exports: PathBuf, pub smoke_report:PathBuf, process_temp:PathBuf }
+pub struct Paths { pub frontend: PathBuf, pub runtime: PathBuf, pub webview: PathBuf, pub data: PathBuf, pub recovery:PathBuf, pub exports: PathBuf, pub smoke_report:PathBuf, pub runtime_warning:Option<String>, process_temp:PathBuf }
 fn inside(root: &Path, relative: &str) -> Result<PathBuf, String> {
     let p = Path::new(relative);
     if p.is_absolute() || p.components().any(|c| !matches!(c, std::path::Component::Normal(_))) { return Err("Invalid portable path".into()); }
     let result = root.join(p);
-    fs::create_dir_all(&result).map_err(|e| e.to_string())?;
-    let real = result.canonicalize().map_err(|e| e.to_string())?;
+    super::launch::create_dir(&result)?;
+    let real = result.canonicalize().map_err(|e| super::launch::io_error("Не удалось определить рабочую папку",&result,e))?;
     if !real.starts_with(root) { return Err("Portable path escapes program folder".into()); }
     Ok(real)
 }
@@ -35,7 +35,7 @@ impl Paths {
             real
         }else{inside(root,&c.working_data)?};
         let working_root=if network_client{inside(root,&format!("temp/clients/{}-{}",std::process::id(),uuid::Uuid::new_v4()))?}else{root.to_path_buf()};
-        Ok(Self{frontend:inside(root,&c.frontend)?,runtime:inside(root,&c.webview_runtime)?,webview:inside(&working_root,&c.webview_data)?,data:inside(&working_root,&c.working_data)?,recovery,exports:inside(root,&c.exports)?,smoke_report:inside(root,"temp")?.join("self-test.json"),process_temp:inside(&working_root,"temp/process")?})
+        Ok(Self{frontend:inside(root,&c.frontend)?,runtime:inside(root,&c.webview_runtime)?,webview:inside(&working_root,&c.webview_data)?,data:inside(&working_root,&c.working_data)?,recovery,exports:inside(root,&c.exports)?,smoke_report:inside(root,"temp")?.join("self-test.json"),runtime_warning:None,process_temp:inside(&working_root,"temp/process")?})
     }
     pub fn load() -> Result<Self, String> {
         // Current ZIP layout: root/production-cycle.exe. The legacy app/backend layout
@@ -49,7 +49,10 @@ impl Paths {
         if c.technical_logging { return Err("Technical logging is not implemented in this prototype".into()); }
         let network_client=std::env::var_os("PRODUCTION_CYCLE_NETWORK_CLIENT").is_some();
         let recovery=std::env::var_os("PRODUCTION_CYCLE_NETWORK_RECOVERY").map(PathBuf::from);
-        let result=Self::resolve(&root,&c,network_client,recovery.as_deref())?;
+        let mut result=Self::resolve(&root,&c,network_client,recovery.as_deref())?;
+        // Report the exact writable profile/temp path before WebView2 can hang
+        // in its own profile-lock initialization with an opaque failure.
+        for path in [&result.webview,&result.data,&result.recovery,&result.exports,&result.process_temp]{super::launch::probe_directory(path)?;}
         if !result.runtime.join("msedgewebview2.exe").is_file() { return Err("Missing bundled Fixed WebView2 Runtime. Extract the complete portable ZIP.".into()); }
         if network_client && [&result.runtime,&result.webview,&result.data,&result.recovery].iter().any(|path|!super::network::is_local_disk(path)) {return Err("Runtime, профиль или рабочие данные клиента оказались на сетевом диске. Запуск отменён: нужна локальная папка клиента.".into());}
         // Microsoft Fixed Runtime >=120 needs these runtime-folder rights on Windows 10.
@@ -57,13 +60,23 @@ impl Paths {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            let status=std::process::Command::new("icacls.exe").arg(&result.runtime)
+            let system=std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(||PathBuf::from("C:/Windows"));
+            let helper=system.join("System32/icacls.exe");
+            let status=std::process::Command::new(&helper).arg(super::launch::native_local_path(&result.runtime))
                 .args(["/grant", "*S-1-15-2-2:(OI)(CI)(RX)", "*S-1-15-2-1:(OI)(CI)(RX)","/Q"])
-                .creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
-            if !status.status.success(){return Err("Cannot grant read/execute access to the bundled runtime. Use a local folder owned by your user.".into());}
+                .creation_flags(0x08000000).output();
+            // Hardened hosts may prohibit the ACL helper while existing runtime
+            // permissions already work. Let actual WebView creation decide.
+            result.runtime_warning=match status{
+                Ok(value) if value.status.success()=>None,
+                Ok(value)=>Some(format!("Не удалось подготовить права Runtime {}: {}",result.runtime.display(),String::from_utf8_lossy(&value.stderr).trim())),
+                Err(error)=>Some(super::launch::io_error("Windows запретила вспомогательную настройку прав Runtime",&helper,error)),
+            };
         }
-        std::env::set_var("TEMP",&result.process_temp); std::env::set_var("TMP",&result.process_temp);
-        std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",&result.runtime);
+        let native_temp=super::launch::native_local_path(&result.process_temp);
+        std::env::set_var("TEMP",&native_temp); std::env::set_var("TMP",&native_temp);
+        std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",super::launch::native_local_path(&result.runtime));
+        std::env::set_var("WEBVIEW2_USER_DATA_FOLDER",super::launch::native_local_path(&result.webview));
         Ok(result)
     }
 }
