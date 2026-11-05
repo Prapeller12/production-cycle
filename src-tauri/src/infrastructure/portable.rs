@@ -50,6 +50,9 @@ impl Paths {
         let network_client=std::env::var_os("PRODUCTION_CYCLE_NETWORK_CLIENT").is_some();
         let recovery=std::env::var_os("PRODUCTION_CYCLE_NETWORK_RECOVERY").map(PathBuf::from);
         let mut result=Self::resolve(&root,&c,network_client,recovery.as_deref())?;
+        // Report the exact writable profile/temp path before WebView2 can hang
+        // in its own profile-lock initialization with an opaque failure.
+        for path in [&result.webview,&result.data,&result.recovery,&result.exports,&result.process_temp]{super::launch::probe_directory(path)?;}
         if !result.runtime.join("msedgewebview2.exe").is_file() { return Err("Missing bundled Fixed WebView2 Runtime. Extract the complete portable ZIP.".into()); }
         if network_client && [&result.runtime,&result.webview,&result.data,&result.recovery].iter().any(|path|!super::network::is_local_disk(path)) {return Err("Runtime, профиль или рабочие данные клиента оказались на сетевом диске. Запуск отменён: нужна локальная папка клиента.".into());}
         // Microsoft Fixed Runtime >=120 needs these runtime-folder rights on Windows 10.

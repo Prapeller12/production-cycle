@@ -66,9 +66,21 @@ function Run-FunctionalSmoke([string]$path,[string]$phase){
   $env:PRODUCTION_CYCLE_STARTUP_REPORT=Join-Path $testRoot "network-launch-$phase.json"
   $launcher=Start-NetworkProcess $path '--smoke-test'
   $deadline=[DateTime]::UtcNow.AddSeconds(300)
+  $sampleAt=[DateTime]::UtcNow.AddSeconds(10);$sampled=$false
   while(-not $launcher.HasExited -and [DateTime]::UtcNow -lt $deadline){
     $dialog=[LaunchWindows]::Find('Производственный цикл — ошибка запуска')
     if($dialog -ne [IntPtr]::Zero){[LaunchWindows]::Dismiss($dialog) | Out-Null}
+    if($script:LimitedLaunch -and -not $sampled -and [DateTime]::UtcNow -ge $sampleAt){
+      $sampled=$true
+      $processes=@(Get-CimInstance Win32_Process | Where-Object {$_.Name -in @('production-cycle.exe','msedgewebview2.exe')} | Select-Object Name,ProcessId,ParentProcessId,SessionId,ExecutablePath,CommandLine)
+      $profiles=@(foreach($item in $processes){
+        if($item.CommandLine -match '--user-data-dir=(?:"([^"]+)"|(\S+))'){
+          $folder=if($Matches[1]){$Matches[1]}else{$Matches[2]}
+          try{@{path=$folder;sddl=(Get-Acl -LiteralPath $folder).Sddl;entries=@(Get-ChildItem -LiteralPath $folder -Force | Select-Object Name,Attributes,Length)}}catch{@{path=$folder;error="$($_.Exception.Message)"}}
+        }
+      })
+      @{processes=$processes;profiles=$profiles} | ConvertTo-Json -Depth 7 | Set-Content (Join-Path $testRoot 'network-standard-user-processes.json') -Encoding utf8
+    }
     Start-Sleep -Milliseconds 200
     $launcher.Refresh()
   }
@@ -160,8 +172,6 @@ try{
   $unc="\\127.0.0.1\$share\ProductionCycleNetwork"
   if(-not (Test-Path (Join-Path $unc 'production-cycle.exe'))){throw 'Loopback SMB share is unavailable'}
   $env:LOCALAPPDATA=$localProfile
-  Run-FunctionalSmoke $unc 'unc-first-run'
-  Run-FunctionalSmoke $unc 'unc-relaunch'
   # A real standard account with its profile loaded, not a synthetic restricted
   # token (which WebView2 does not support). Only the isolated CI fixtures and
   # this runner's desktop receive access; production permissions are untouched.
@@ -179,6 +189,8 @@ try{
   try{[LimitedLaunch]::Configure($limitedName,$limitedPassword);Run-FunctionalSmoke $unc 'limited-user'}finally{
     [LimitedLaunch]::Restore();$script:LimitedLaunch=$false
   }
+  Run-FunctionalSmoke $unc 'unc-first-run'
+  Run-FunctionalSmoke $unc 'unc-relaunch'
   # A stale or damaged cache must be rebuilt without overwriting a locked EXE.
   $initial=Get-Content (Join-Path $testRoot 'network-launch-unc-first-run.json') -Raw | ConvertFrom-Json
   $sentinel=Join-Path $initial.cache 'data/keep-on-rebuild.txt'
