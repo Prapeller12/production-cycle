@@ -128,7 +128,7 @@ impl NetworkRuntime {
         if !config.enabled{return Err("Сетевой режим отключён в config/network.json".into())}
         if config.max_clients!=DEFAULT_MAX_CLIENTS{return Err("Тестовая сетевая версия поддерживает ровно 3 одновременных компьютера.".into())}
         for relative in ["shared/database","shared/sessions","shared/control","shared/drafts","shared/backups","shared/exports"]{
-            fs::create_dir_all(shared_root.join(relative)).map_err(|e|format!("Не удалось подготовить {relative}: {e}"))?;
+            super::launch::probe_directory(&shared_root.join(relative))?;
         }
         fs::create_dir_all(recovery_data.join("network-pending")).map_err(|e|e.to_string())?;
         Ok(Self {enabled:true,version:config.version,maximum:config.max_clients,shared_root:Some(shared_root),local_data,recovery_data,session:Mutex::new(None)})
@@ -548,59 +548,62 @@ impl NetworkRuntime {
 impl Drop for NetworkRuntime{fn drop(&mut self){let _=self.release();}}
 
 pub fn maybe_relaunch_network_client()->Result<bool,String>{
+    use super::launch as L;
     if env::var_os(NETWORK_CLIENT_ENV).is_some(){return Ok(false)}
     let exe=env::current_exe().map_err(|e|e.to_string())?;
-    let root=exe.parent().ok_or_else(||"Не удалось определить папку программы.".to_string())?.canonicalize().map_err(|e|e.to_string())?;
+    let direct=exe.parent().ok_or_else(||"Не удалось определить папку программы.".to_string())?;
+    let root=direct.canonicalize().map_err(|e|L::io_error("Нет доступа к папке запуска",direct,e))?;
     let config_path=root.join("config/network.json");
-    if !config_path.is_file(){return Ok(false)}
+    let exists=config_path.try_exists().map_err(|e|L::io_error("Не удалось проверить сетевую конфигурацию",&config_path,e))?;
+    if !exists{
+        if !is_local_disk(&root)||root.join(L::MANIFEST).is_file(){return Err(format!("В сетевой поставке отсутствует {}. Распакуйте новый ZIP целиком.",config_path.display()))}
+        return Ok(false)
+    }
     let config=read_network_config(&config_path)?;
-    if !config.enabled{return Ok(false)}
-    let local_base=local_cache_base()?;
-    let origin=shared_root_key(&root);
-    let recovery=workspace_recovery_directory(&local_base,&origin)?;
-    // A cache may be used by several interactive sessions of the same Windows user.
-    // Serialize preparation so one launcher cannot delete another one's staging/cache.
-    crate::infrastructure::startup::update("Подготовка локальной копии. Первый запуск может занять несколько минут…");
-    let cache_lock=OpenOptions::new().create(true).read(true).write(true).open(local_base.join("prepare.lock")).map_err(|e|e.to_string())?;
-    let waiting=Instant::now();
-    while let Err(error)=cache_lock.try_lock_exclusive(){
-        if waiting.elapsed()>Duration::from_secs(240){return Err(format!("Другой запуск не завершил подготовку локальной копии: {error}"));}
-        thread::sleep(Duration::from_millis(100));
+    if !config.enabled{
+        if !is_local_disk(&root)||root.join(L::MANIFEST).is_file(){return Err(format!("Сетевой режим отключён в {}. Клиент не будет запускаться непосредственно из общей папки.",config_path.display()))}
+        return Ok(false)
     }
-    // Preserve every legacy queue before any versioned cache can be replaced.
-    // Old packages did not record a shared-root identity, so their files are
-    // retained for manual recovery and never replayed into a guessed database.
-    let archived=migrate_cached_recovery(&local_base,&recovery)?;
-    if archived>0{crate::infrastructure::startup::update(&format!("Найдены прежние локальные данные для ручного восстановления: {}\nЗапуск программы…",recovery.join("legacy").display()));}
-    let cache=local_base.join(&config.version);
-    let marker=cache.join(".network-cache-ready");
-    let ready=marker.is_file()&&fs::read_to_string(&marker).map(|value|value.trim()==config.version).unwrap_or(false)&&fs::read_to_string(cache.join(CACHE_ORIGIN_MARKER)).map(|value|value.trim()==origin).unwrap_or(false)&&["production-cycle.exe","frontend/index.html","runtime/webview2/msedgewebview2.exe","config/portable.json"].iter().all(|name|cache.join(name).is_file());
-    if !ready{
-        fs::create_dir_all(&local_base).map_err(|e|e.to_string())?;
-        let staging=local_base.join(format!(".staging-{}",Uuid::new_v4()));
-        fs::create_dir_all(&staging).map_err(|e|e.to_string())?;
-        for name in ["production-cycle.exe","frontend","runtime","config","app"]{
-            let source=root.join(name);if !source.exists(){let _=fs::remove_dir_all(&staging);return Err(format!("В сетевой поставке отсутствует {name}."))}
-            if let Err(error)=copy_entry(&source,&staging.join(name)){let _=fs::remove_dir_all(&staging);return Err(format!("Не удалось получить {name} из общей папки: {error}"));}
+    let manifest=L::load_manifest(&root,&config.version)?;
+    let bases=L::cache_bases()?;let origin=shared_root_key(&root);let mut errors:Vec<String>=Vec::new();let mut stable_recovery:Option<PathBuf>=None;
+    for base in bases{
+        let attempt=(||{
+            let recovery=match &stable_recovery{Some(value)=>value.clone(),None=>{
+                let value=workspace_recovery_directory(&base,&origin)?;L::probe_directory(&value)?;stable_recovery=Some(value.clone());value
+            }};
+            let lock_path=base.join(format!("prepare-{}.lock",&origin[..16]));
+            let lock=OpenOptions::new().create(true).read(true).write(true).open(&lock_path).map_err(|e|L::io_error("Нет доступа к блокировке локальной подготовки",&lock_path,e))?;
+            let waiting=Instant::now();
+            while let Err(error)=lock.try_lock_exclusive(){
+                if super::startup::cancelled(){return Err("Запуск отменён пользователем.".into())}
+                if waiting.elapsed()>Duration::from_secs(60){return Err(L::io_error("Другой процесс удерживает локальную подготовку",&lock_path,error))}
+                thread::sleep(Duration::from_millis(100));
+            }
+            migrate_cached_recovery(&base,&recovery)?;
+            let cache=L::prepare_cache(&root,&base,&origin,&config.version,&manifest)?;
+            FileExt::unlock(&lock).map_err(|e|L::io_error("Не удалось освободить локальную подготовку",&lock_path,e))?;drop(lock);
+            let local_exe=cache.join("production-cycle.exe");let status=cache.join("temp").join(format!("launch-{}.json",Uuid::new_v4()));
+            super::startup::update("Открытие локального клиента. Ожидание готового рабочего окна…");
+            let mut command=Command::new(&local_exe);command.arg("--network-client");
+            for argument in env::args().skip(1){if argument!="--network-client"{command.arg(argument);}}
+            let mut child=command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,&root).env(NETWORK_RECOVERY_ENV,&recovery).env(L::STATUS_ENV,&status).current_dir(&cache).spawn().map_err(|e|L::io_error("Windows запретила запуск локального клиента",&local_exe,e))?;
+            let ready=match L::wait_for_window(&mut child,&status,&local_exe){Ok(value)=>value,Err(error)=>{let _=child.kill();let _=child.wait();let _=fs::remove_file(&status);return Err(error)}};
+            L::diagnostic_report(&serde_json::json!({"state":"ready","client":ready,"sharedRoot":root,"cache":cache,"recovery":recovery,"fallbackUsed":!errors.is_empty(),"previousAttempts":errors}));
+            Ok((child,local_exe))
+        })();
+        match attempt{
+            Ok((mut child,local_exe))=>{
+                super::startup::stop();
+                if env::args().any(|argument|argument=="--smoke-test"){
+                    let status=child.wait().map_err(|e|L::io_error("Не удалось дождаться функциональной проверки",&local_exe,e))?;
+                    if !status.success(){return Err(format!("Функциональная проверка клиента завершилась с кодом {:?}.",status.code()))}
+                }
+                return Ok(true)
+            },
+            Err(error)=>{errors.push(error);if super::startup::cancelled(){break}super::startup::update("Первый локальный путь недоступен. Проверка другого локального каталога…");}
         }
-        fs::write(staging.join(".network-cache-ready"),format!("{}\n",config.version)).map_err(|e|e.to_string())?;
-        fs::write(staging.join(CACHE_ORIGIN_MARKER),format!("{origin}\n")).map_err(|e|e.to_string())?;
-        if cache.exists(){fs::remove_dir_all(&cache).map_err(|e|format!("Не удалось обновить локальный кэш: {e}"))?;}
-        fs::rename(&staging,&cache).map_err(|e|format!("Не удалось активировать локальный кэш: {e}"))?;
     }
-    FileExt::unlock(&cache_lock).map_err(|e|e.to_string())?;
-    let local_exe=cache.join("production-cycle.exe");
-    let mut command=Command::new(local_exe);
-    command.arg("--network-client");
-    for argument in env::args().skip(1){if argument!="--network-client"{command.arg(argument);}}
-    let smoke=env::args().any(|argument|argument=="--smoke-test");
-    let mut child=command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,&root).env(NETWORK_RECOVERY_ENV,&recovery).current_dir(&cache).spawn().map_err(|e|format!("Не удалось запустить локальный клиент: {e}"))?;
-    crate::infrastructure::startup::stop();
-    if smoke{
-        let status=child.wait().map_err(|e|format!("Не удалось дождаться сетевого self-test: {e}"))?;
-        if !status.success(){return Err(format!("Сетевой self-test завершился с кодом {:?}.",status.code()))}
-    }
-    Ok(true)
+    Err(format!("Не удалось открыть локальный клиент из общей папки.\n\n{}",errors.join("\n\nСледующая попытка:\n")))
 }
 
 fn shared_root_key(root:&Path)->String{
@@ -688,22 +691,6 @@ pub fn network_finish_eviction(app:AppHandle,network:State<'_,NetworkRuntime>)->
 
 // Resolve junctions and mapped drives before accepting a cache. LOCALAPPDATA may be
 // redirected to SMB on domain PCs; Fixed WebView2 must NEVER execute there.
-fn local_cache_base()->Result<PathBuf,String>{
-    let mut candidates=Vec::new();
-    if let Some(path)=env::var_os("LOCALAPPDATA"){candidates.push(PathBuf::from(path));}
-    if let Some(path)=env::var_os("USERPROFILE"){candidates.push(PathBuf::from(path).join("AppData/Local"));}
-    candidates.push(env::temp_dir());
-    for candidate in candidates{
-        if fs::create_dir_all(&candidate).is_err(){continue;}
-        let Ok(real)=candidate.canonicalize() else {continue;};
-        if !is_local_disk(&real){continue;}
-        let base=real.join("ProductionCycleNetwork/cache");
-        if fs::create_dir_all(&base).is_err(){continue;}
-        let probe=base.join(format!(".write-test-{}",Uuid::new_v4()));
-        if fs::write(&probe,b"ok").is_ok(){let _=fs::remove_file(probe);return Ok(base);}
-    }
-    Err("Нет доступной локальной папки для клиента. Локальный профиль Windows или TEMP должен находиться на диске этого компьютера и разрешать запись. WebView2 нельзя запускать из сетевой папки.".into())
-}
 
 #[cfg(windows)]
 pub(crate) fn is_local_disk(path:&Path)->bool{
@@ -777,17 +764,7 @@ fn atomic_replace_io(pending:&Path,target:&Path)->std::io::Result<()>{
 #[cfg(not(windows))]
 fn atomic_replace_io(pending:&Path,target:&Path)->std::io::Result<()>{fs::rename(pending,target)}
 
-fn copy_entry(source:&Path,target:&Path)->Result<(),String>{
-    if source.is_dir(){
-        fs::create_dir_all(target).map_err(|e|e.to_string())?;
-        for entry in fs::read_dir(source).map_err(|e|e.to_string())?{let entry=entry.map_err(|e|e.to_string())?;copy_entry(&entry.path(),&target.join(entry.file_name()))?;}
-    }else{
-        if let Some(parent)=target.parent(){fs::create_dir_all(parent).map_err(|e|e.to_string())?;}
-        crate::infrastructure::startup::update(&format!("Получение локальной копии: {}\nПервый запуск может занять несколько минут. Не запускайте программу повторно.",source.file_name().unwrap_or_default().to_string_lossy()));
-        fs::copy(source,target).map_err(|e|e.to_string())?;
-    }
-    Ok(())
-}
+
 
 fn computer_fingerprint()->String{
     let mut source=String::new();

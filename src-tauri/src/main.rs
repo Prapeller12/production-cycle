@@ -11,6 +11,11 @@ use production::ProductionDb;
 use tauri::{Manager,WebviewUrl,WebviewWindowBuilder,http::Response};
 
 fn startup_failure(message:&str)->!{
+    let detailed=format!("Этап: {}\n{}",infrastructure::startup::current_message(),message);
+    let message=detailed.as_str();
+    let detail=serde_json::json!({"state":"failed","processId":std::process::id(),"error":message,"executable":std::env::current_exe().ok()});
+    infrastructure::launch::signal_status(detail.clone());
+    infrastructure::launch::diagnostic_report(&detail);
     if let Some(path)=std::env::var_os("PRODUCTION_CYCLE_SMOKE_REPORT").map(std::path::PathBuf::from){
         if !path.is_file(){
             if let Some(parent)=path.parent(){let _=std::fs::create_dir_all(parent);}
@@ -19,13 +24,14 @@ fn startup_failure(message:&str)->!{
         }
     }
     infrastructure::startup::stop();
+    if std::env::var_os(infrastructure::launch::STATUS_ENV).is_some(){std::process::exit(1)}
     infrastructure::startup::show_error(message);
     eprintln!("{message}");std::process::exit(1)
 }
 
 fn main(){
     infrastructure::startup::start();
-    match infrastructure::network::maybe_relaunch_network_client(){Ok(true)=>return,Ok(false)=>{},Err(e)=>startup_failure(&e)}
+    match infrastructure::network::maybe_relaunch_network_client(){Ok(true)=>return,Ok(false)=>{},Err(_) if infrastructure::startup::cancelled()=>return,Err(e)=>startup_failure(&e)}
     infrastructure::startup::update("Подготовка локального WebView2…");
     let paths=match Paths::load(){Ok(p)=>p,Err(e)=>startup_failure(&e)};
     infrastructure::startup::update("Подключение к общей папке и проверка базы…");
@@ -34,6 +40,7 @@ fn main(){
     if let Err(e)=network.prepare_local_database(&local_db){startup_failure(&e)}
     let db=match ProductionDb::open_with_backup_dir(&local_db,network.shared_backups()){Ok(db)=>db,Err(e)=>startup_failure(&e.to_string())};
     if let Err(e)=network.ensure_shared_database(&db){startup_failure(&e)}
+    if infrastructure::startup::cancelled(){return}
     let network_enabled=network.enabled();
     let frontend=paths.frontend.clone();
     let smoke=std::env::args().any(|arg|arg=="--smoke-test");
@@ -70,7 +77,7 @@ fn main(){
                 .data_directory(paths.webview.clone())
                 .on_page_load(move |window,payload|{if smoke && payload.event()==tauri::webview::PageLoadEvent::Finished {let _=window.eval(if network_enabled{smoke::NETWORK_SCRIPT}else{smoke::SCRIPT});}})
                 .on_navigation(|url|matches!(url.scheme(),"production") || url.host_str()==Some("production.localhost"))
-                .build()?;
+                .build().map_err(|error|format!("Не удалось создать рабочее окно: {error}\nRuntime: {}\nПрофиль: {}\n{}",paths.runtime.display(),paths.webview.display(),paths.runtime_warning.as_deref().unwrap_or("")))?;
             Ok(())
         })
         .build(tauri::generate_context!());
