@@ -215,7 +215,7 @@ impl NetworkRuntime {
 
     fn acquire_store_lock(&self)->Result<File,String>{
         let path=self.store_lock_path()?;
-        let file=OpenOptions::new().create(true).read(true).write(true).open(path).map_err(|e|e.to_string())?;
+        let file=OpenOptions::new().create(true).read(true).write(true).open(&path).map_err(|e|super::launch::io_error("Нет доступа к блокировке общей базы",&path,e))?;
         let started=Instant::now();
         loop{
             match file.try_lock_exclusive(){
@@ -567,7 +567,8 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
     }
     let manifest=L::load_manifest(&root,&config.version)?;
     let bases=L::cache_bases()?;let origin=shared_root_key(&root);let mut errors:Vec<String>=Vec::new();let mut stable_recovery:Option<PathBuf>=None;
-    for base in bases{
+    for candidate in bases{
+        let base=match candidate{Ok(base)=>base,Err(error)=>{errors.push(error);continue}};
         let attempt=(||{
             let recovery=match &stable_recovery{Some(value)=>value.clone(),None=>{
                 let value=workspace_recovery_directory(&base,&origin)?;L::probe_directory(&value)?;stable_recovery=Some(value.clone());value

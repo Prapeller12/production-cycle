@@ -48,12 +48,12 @@ pub fn probe_directory(path:&Path)->Result<(),String>{
     let _=fs::remove_file(&source);let _=fs::remove_file(&target);result
 }
 
-pub fn cache_bases()->Result<Vec<PathBuf>,String>{
+pub fn cache_bases()->Result<Vec<Result<PathBuf,String>>,String>{
     let mut candidates=Vec::new();
     if let Some(path)=env::var_os("LOCALAPPDATA"){candidates.push(PathBuf::from(path));}
     if let Some(path)=env::var_os("USERPROFILE"){candidates.push(PathBuf::from(path).join("AppData/Local"));}
     candidates.push(env::temp_dir());
-    let mut bases=Vec::new();let mut errors=Vec::new();
+    let mut bases=Vec::new();let mut valid=Vec::new();let mut errors=Vec::new();
     for candidate in candidates{
         let result=(||{
             create_dir(&candidate)?;
@@ -64,9 +64,9 @@ pub fn cache_bases()->Result<Vec<PathBuf>,String>{
             if !super::network::is_local_disk(&base){return Err(format!("Локальный кэш перенаправлен в сеть: {}",base.display()))}
             Ok(base)
         })();
-        match result{Ok(base)=>if !bases.contains(&base){bases.push(base)},Err(e)=>errors.push(e)}
+        match result{Ok(base)=>if !valid.contains(&base){valid.push(base.clone());bases.push(Ok(base))},Err(e)=>{errors.push(e.clone());bases.push(Err(e));}}
     }
-    if bases.is_empty(){return Err(format!("Нет доступной локальной папки клиента.\n{}",errors.join("\n\n")))}
+    if valid.is_empty(){return Err(format!("Нет доступной локальной папки клиента.\n{}",errors.join("\n\n")))}
     Ok(bases)
 }
 

@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 public static class LimitedLaunch {
  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct StartupInfo { public int cb; public string reserved,desktop,title; public int x,y,xSize,ySize,xChars,yChars,fill,flags; public short show,reserved2; public IntPtr reservedPtr,input,output,error; }
  [StructLayout(LayoutKind.Sequential)] struct ProcessInfo { public IntPtr process,thread; public uint pid,tid; }
@@ -91,7 +92,7 @@ public static class LimitedLaunch {
   if(stationSecurity!=null)Check(SetUserObjectSecurity(stationHandle,ref info,stationSecurity));
   password=null;user=null;desktopSecurity=null;stationSecurity=null;namedObjectsSecurity=null;namedObjectsHandle=IntPtr.Zero;
  }
- public static Process Start(string executable,string arguments,string directory) {
+ public static StartedProcess Start(string executable,string arguments,string directory) {
   if(user==null)throw new Exception("Standard-user CI account is not configured");
   if(arguments!="--smoke-test")throw new Exception("Standard-user helper only runs the native smoke");
   var report=Environment.GetEnvironmentVariable("PRODUCTION_CYCLE_SMOKE_REPORT");
@@ -114,6 +115,20 @@ public static class LimitedLaunch {
   var shell=Path.Combine(Environment.GetEnvironmentVariable("SystemRoot"),"System32","cmd.exe");
   var startup=new StartupInfo{cb=Marshal.SizeOf(typeof(StartupInfo)),desktop=desktop};ProcessInfo info;
   Check(CreateProcessWithLogonW(user,".",password,1,shell,new StringBuilder("\""+shell+"\" /d /c \"\""+bootstrap+"\"\""),0,IntPtr.Zero,Environment.GetEnvironmentVariable("SystemRoot"),ref startup,out info));
-  try{return Process.GetProcessById((int)info.pid);}finally{CloseHandle(info.thread);CloseHandle(info.process);}
+  try{return new StartedProcess(info.process,(int)info.pid);}finally{CloseHandle(info.thread);}
  }
+}
+// CreateProcessWithLogonW returns a full-access handle. Keep it: reopening an
+// already exiting process owned by the other account can lose its exit code.
+public sealed class StartedProcess : IDisposable {
+ readonly SafeProcessHandle handle;
+ [DllImport("kernel32.dll",SetLastError=true)] static extern uint WaitForSingleObject(SafeProcessHandle process,uint milliseconds);
+ [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetExitCodeProcess(SafeProcessHandle process,out uint code);
+ public int Id { get; private set; }
+ public StartedProcess(IntPtr process,int id){handle=new SafeProcessHandle(process,true);Id=id;}
+ public bool HasExited { get { var result=WaitForSingleObject(handle,0);if(result==0xFFFFFFFF)throw new Win32Exception(Marshal.GetLastWin32Error());return result==0; } }
+ public int ExitCode { get { uint code;if(!GetExitCodeProcess(handle,out code))throw new Win32Exception(Marshal.GetLastWin32Error());return unchecked((int)code); } }
+ public void Refresh() {}
+ public void WaitForExit(){if(WaitForSingleObject(handle,0xFFFFFFFF)!=0)throw new Win32Exception(Marshal.GetLastWin32Error());}
+ public void Dispose(){handle.Dispose();}
 }

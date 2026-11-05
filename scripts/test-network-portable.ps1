@@ -101,6 +101,7 @@ function Run-FunctionalSmoke([string]$path,[string]$phase){
   if($result.runtime -match '^\\\\(?!\?\\[A-Za-z]:)' -or $result.profile -match '^\\\\(?!\?\\[A-Za-z]:)'){throw 'Runtime/profile were not on a local drive'}
   if(@(Get-ChildItem (Join-Path $root 'shared/sessions') -Filter 'session-*.json').Count -ne 0){throw "Session metadata survived normal exit: $phase"}
   Write-Host "$phase checks: $($result.checks -join '; ')"
+  $launcher.Dispose()
 }
 function Wait-SessionCount([string]$report,[int]$expected){
   # A new WebView must finish its functional smoke before it starts writing the
@@ -222,6 +223,9 @@ try{
   $env:LOCALAPPDATA=$localProfile;$env:USERPROFILE=$old.USERPROFILE
   # Actual NTFS access-denied failures. Restore ACLs after each private fixture.
   $databaseHash=(Get-FileHash (Join-Path $root 'shared/database/production-cycle.db')).Hash
+  With-DeniedPath (Join-Path $root 'shared/database/store.lock') 'WriteData' {
+    Run-ExpectedLaunchFailure $unc 'denied-existing-store-lock' '(?s)store.lock.*Код ОС: 5'
+  }
   With-DeniedPath (Join-Path $root 'shared/drafts') 'CreateFiles' {
     Run-ExpectedLaunchFailure $unc 'denied-shared-write' '(?s)shared[\\/]drafts.*Код ОС: 5'
   }
@@ -248,6 +252,7 @@ try{
   }
   $fallbackLaunch=Get-Content (Join-Path $testRoot 'network-launch-denied-profile-fallback.json') -Raw | ConvertFrom-Json
   if($fallbackLaunch.cache -notlike "*$([IO.Path]::GetFileName($fallback))*"){throw 'Blocked profile did not use local fallback'}
+  if(-not $fallbackLaunch.fallbackUsed -or ($fallbackLaunch.previousAttempts -join ' ') -notmatch 'Код ОС: 5'){throw 'Blocked primary profile was omitted from startup diagnostics'}
   $env:LOCALAPPDATA=$localProfile;$env:USERPROFILE=$old.USERPROFILE;$env:TEMP=$old.TEMP;$env:TMP=$old.TMP
   $allBlocked=Join-Path $testRoot 'Все локальные папки запрещены';New-Item -ItemType Directory -Path $allBlocked -Force | Out-Null
   $env:LOCALAPPDATA=$allBlocked;$env:USERPROFILE=$allBlocked;$env:TEMP=$allBlocked;$env:TMP=$allBlocked
