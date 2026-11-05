@@ -13,7 +13,7 @@ function Start-StandardUserTrace {
   $pml=Join-Path $folder 'startup.pml';$csv=Join-Path $folder 'startup.csv'
   $process=Start-Process $exe -ArgumentList @('/AcceptEula','/Quiet','/Minimized','/NoFilter','/BackingFile',('"'+$pml+'"')) -PassThru
   Start-Sleep -Seconds 2
-  $stop=Start-ThreadJob -ScriptBlock {param($tool) Start-Sleep -Seconds 30;& $tool /Terminate /Quiet} -ArgumentList $exe
+  $stop=Start-ThreadJob -ScriptBlock {param($tool) Start-Sleep -Seconds 90;& $tool /Terminate /Quiet} -ArgumentList $exe
   return @{exe=$exe;pml=$pml;csv=$csv;process=$process;stop=$stop}
 }
 function Stop-StandardUserTrace($trace,[string]$destination){

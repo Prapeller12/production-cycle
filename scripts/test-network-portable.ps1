@@ -67,13 +67,14 @@ function Run-FunctionalSmoke([string]$path,[string]$phase){
   $env:PRODUCTION_CYCLE_STARTUP_REPORT=Join-Path $testRoot "network-launch-$phase.json"
   $launcher=Start-NetworkProcess $path '--smoke-test'
   $deadline=[DateTime]::UtcNow.AddSeconds(300)
-  $sampleAt=[DateTime]::UtcNow.AddSeconds(10);$sampled=$false
+  $sampleAt=[DateTime]::UtcNow.AddSeconds(3);$sampled=$false
   while(-not $launcher.HasExited -and [DateTime]::UtcNow -lt $deadline){
     $dialog=[LaunchWindows]::Find('Производственный цикл — ошибка запуска')
     if($dialog -ne [IntPtr]::Zero){[LaunchWindows]::Dismiss($dialog) | Out-Null}
     if($script:LimitedLaunch -and -not $sampled -and [DateTime]::UtcNow -ge $sampleAt){
-      $sampled=$true
+      $sampleAt=[DateTime]::UtcNow.AddSeconds(3)
       $processes=@(Get-CimInstance Win32_Process | Where-Object {$_.Name -in @('production-cycle.exe','msedgewebview2.exe')} | Select-Object Name,ProcessId,ParentProcessId,SessionId,ExecutablePath,CommandLine,@{Name='Owner';Expression={try{$owner=Invoke-CimMethod -InputObject $_ -MethodName GetOwner;"$($owner.Domain)\$($owner.User)"}catch{"$($_.Exception.Message)"}}})
+      $sampled=@($processes | Where-Object {$_.Name -eq 'msedgewebview2.exe'}).Count -gt 0
       $profiles=@(foreach($item in $processes){
         if($item.CommandLine -match '--user-data-dir=(?:"([^"]+)"|(\S+))'){
           $folder=if($Matches[1]){$Matches[1]}else{$Matches[2]}
@@ -151,13 +152,13 @@ function Run-ExpectedLaunchFailure([string]$path,[string]$phase,[string]$pattern
   Write-Host "PASS expected startup failure: $phase"
 }
 function With-DeniedPath([string]$path,[string]$permissions,[scriptblock]$body){
-  $acl=Get-Acl $path;$saved=$acl.Sddl
+  $acl=Get-Acl -LiteralPath $path;$saved=$acl.Sddl
   try{
-    $inherit=if((Get-Item $path).PSIsContainer){[Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'}else{[Security.AccessControl.InheritanceFlags]::None}
+    $inherit=if((Get-Item -LiteralPath $path).PSIsContainer){[Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'}else{[Security.AccessControl.InheritanceFlags]::None}
     $rule=[Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.WindowsIdentity]::GetCurrent().User,[Security.AccessControl.FileSystemRights]$permissions,$inherit,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Deny)
-    $acl.AddAccessRule($rule);Set-Acl -Path $path -AclObject $acl
+    $acl.AddAccessRule($rule);Set-Acl -LiteralPath $path -AclObject $acl
     & $body
-  }finally{$restore=Get-Acl $path;$restore.SetSecurityDescriptorSddlForm($saved);Set-Acl -Path $path -AclObject $restore}
+  }finally{$restore=Get-Acl -LiteralPath $path;$restore.SetSecurityDescriptorSddlForm($saved);Set-Acl -LiteralPath $path -AclObject $restore}
 }
 $share='PCNetworkTest'+$PID
 $account=[Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -200,13 +201,13 @@ try{
   # A stale or damaged cache must be rebuilt without overwriting a locked EXE.
   $initial=Get-Content (Join-Path $testRoot 'network-launch-unc-first-run.json') -Raw | ConvertFrom-Json
   $sentinel=Join-Path $initial.cache 'data/keep-on-rebuild.txt'
-  New-Item -ItemType Directory -Path (Split-Path $sentinel) -Force | Out-Null
+  [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($sentinel)) | Out-Null
   [IO.File]::WriteAllText($sentinel,'preserve this old cache')
   [IO.File]::AppendAllText((Join-Path $initial.cache 'frontend/index.html'),'damaged cache')
   $locked=[IO.File]::Open((Join-Path $initial.cache 'production-cycle.exe'),'Open','Read','ReadWrite')
   try{Run-FunctionalSmoke $unc 'damaged-locked-cache'}finally{$locked.Dispose()}
   $rebuilt=Get-Content (Join-Path $testRoot 'network-launch-damaged-locked-cache.json') -Raw | ConvertFrom-Json
-  if($rebuilt.cache -eq $initial.cache -or (Get-Content $sentinel -Raw) -ne 'preserve this old cache'){throw 'Cache repair overwrote or deleted old working files'}
+  if($rebuilt.cache -eq $initial.cache -or ([IO.File]::ReadAllText($sentinel)) -ne 'preserve this old cache'){throw 'Cache repair overwrote or deleted old working files'}
   & net.exe use N: "\\127.0.0.1\$share" /persistent:no | Out-Null
   if($LASTEXITCODE -ne 0){throw 'Cannot map SMB test drive'};$mapped=$true
   Run-FunctionalSmoke 'N:\ProductionCycleNetwork' 'mapped-relaunch'
@@ -317,7 +318,7 @@ try{
   $lastLaunch=Get-Content (Join-Path $testRoot 'network-launch-after-forced-relaunch.json') -Raw | ConvertFrom-Json
   $cache=$lastLaunch.cache
   if(-not (Test-Path (Join-Path $root 'shared/database/production-cycle.db'))){throw 'Shared database snapshot missing'}
-  if(-not (Test-Path (Join-Path $cache 'runtime/webview2/msedgewebview2.exe'))){throw 'Local Fixed Runtime missing'}
+  if(-not (Test-Path -LiteralPath (Join-Path $cache 'runtime/webview2/msedgewebview2.exe'))){throw 'Local Fixed Runtime missing'}
   if(Test-Path (Join-Path $root 'temp/webview2')){throw 'WebView profile created in shared folder'}
   if($null -ne $standardError){throw $standardError}
 }finally{
