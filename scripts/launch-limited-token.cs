@@ -12,6 +12,8 @@ using System.Text;
 public static class LimitedLaunch {
  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct StartupInfo { public int cb; public string reserved,desktop,title; public int x,y,xSize,ySize,xChars,yChars,fill,flags; public short show,reserved2; public IntPtr reservedPtr,input,output,error; }
  [StructLayout(LayoutKind.Sequential)] struct ProcessInfo { public IntPtr process,thread; public uint pid,tid; }
+ [StructLayout(LayoutKind.Sequential)] struct UnicodeString { public ushort length,maximum; public IntPtr buffer; }
+ [StructLayout(LayoutKind.Sequential)] struct ObjectAttributes { public int length; public IntPtr root,name; public uint attributes; public IntPtr security,quality; }
  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool LogonUserW(string user,string domain,string password,int kind,int provider,out IntPtr token);
  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool CreateProcessWithLogonW(string user,string domain,string password,uint logonFlags,string executable,StringBuilder command,uint flags,IntPtr environment,string directory,ref StartupInfo startup,out ProcessInfo process);
  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
@@ -23,9 +25,13 @@ public static class LimitedLaunch {
  [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool GetUserObjectInformationW(IntPtr handle,int kind,StringBuilder value,uint bytes,out uint needed);
  [DllImport("user32.dll",SetLastError=true)] static extern bool GetUserObjectSecurity(IntPtr handle,ref uint information,byte[] value,uint bytes,out uint needed);
  [DllImport("user32.dll",SetLastError=true)] static extern bool SetUserObjectSecurity(IntPtr handle,ref uint information,byte[] value);
+ [DllImport("ntdll.dll")] static extern int NtOpenDirectoryObject(out IntPtr handle,uint access,ref ObjectAttributes attributes);
+ [DllImport("ntdll.dll")] static extern uint RtlNtStatusToDosError(int status);
+ [DllImport("advapi32.dll",SetLastError=true)] static extern bool GetKernelObjectSecurity(IntPtr handle,uint information,byte[] value,uint bytes,out uint needed);
+ [DllImport("advapi32.dll",SetLastError=true)] static extern bool SetKernelObjectSecurity(IntPtr handle,uint information,byte[] value);
  static string user,password,desktop;
- static IntPtr stationHandle,desktopHandle;
- static byte[] stationSecurity,desktopSecurity;
+ static IntPtr stationHandle,desktopHandle,namedObjectsHandle;
+ static byte[] stationSecurity,desktopSecurity,namedObjectsSecurity;
  static void Check(bool result) { if(!result)throw new Win32Exception(Marshal.GetLastWin32Error()); }
  public static string ProbeNamedObjects() {
   var unique=CreateMutexW(IntPtr.Zero,false,"Local\\PcLaunchProbe-"+Guid.NewGuid().ToString("N"));var createError=Marshal.GetLastWin32Error();if(unique!=IntPtr.Zero)CloseHandle(unique);
@@ -43,6 +49,23 @@ public static class LimitedLaunch {
   var updated=new byte[descriptor.BinaryLength];descriptor.GetBinaryForm(updated,0);
   Check(SetUserObjectSecurity(handle,ref info,updated));return saved;
  }
+ static IntPtr OpenNamedObjects() {
+  var name="\\Sessions\\"+Process.GetCurrentProcess().SessionId+"\\BaseNamedObjects";
+  var text=Marshal.StringToHGlobalUni(name);var ptr=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(UnicodeString)));
+  try {
+   var value=new UnicodeString{length=(ushort)(name.Length*2),maximum=(ushort)((name.Length+1)*2),buffer=text};Marshal.StructureToPtr(value,ptr,false);
+   var attributes=new ObjectAttributes{length=Marshal.SizeOf(typeof(ObjectAttributes)),name=ptr,attributes=0x40};IntPtr handle;
+   int status=NtOpenDirectoryObject(out handle,0x60000,ref attributes);if(status<0)throw new Win32Exception((int)RtlNtStatusToDosError(status),"Cannot prepare the CI session's named-object directory");return handle;
+  }finally{Marshal.FreeHGlobal(ptr);Marshal.FreeHGlobal(text);}
+ }
+ static byte[] GrantNamedObjects(IntPtr handle,SecurityIdentifier sid) {
+  uint needed;GetKernelObjectSecurity(handle,4,null,0,out needed);var saved=new byte[needed];Check(GetKernelObjectSecurity(handle,4,saved,needed,out needed));
+  var descriptor=new RawSecurityDescriptor(saved,0);var acl=descriptor.DiscretionaryAcl;if(acl==null)throw new Exception("CI named-object directory has no DACL");
+  // Query/traverse/create object/create subdirectory. No token privileges or
+  // administrator membership are added to the standard test account.
+  acl.InsertAce(acl.Count,new CommonAce(AceFlags.None,AceQualifier.AccessAllowed,0xF,sid,false,null));
+  var updated=new byte[descriptor.BinaryLength];descriptor.GetBinaryForm(updated,0);Check(SetKernelObjectSecurity(handle,4,updated));return saved;
+ }
  public static void Configure(string account,string secret) {
   user=account;password=secret;IntPtr token=IntPtr.Zero;
   try {
@@ -53,14 +76,20 @@ public static class LimitedLaunch {
     desktop=Name(stationHandle)+"\\"+Name(desktopHandle);
     stationSecurity=Grant(stationHandle,identity.User,0xF037F);
     desktopSecurity=Grant(desktopHandle,identity.User,0xF01FF);
+    // A second logon in the runner's existing interactive session does not own
+    // that session's Local namespace. Prepare the same create rights it would
+    // receive in its own normal Windows logon session; restore after the smoke.
+    namedObjectsHandle=OpenNamedObjects();namedObjectsSecurity=GrantNamedObjects(namedObjectsHandle,identity.User);
    }
   }finally{if(token!=IntPtr.Zero)CloseHandle(token);}
  }
  public static void Restore() {
   uint info=4;
+  if(namedObjectsSecurity!=null)Check(SetKernelObjectSecurity(namedObjectsHandle,4,namedObjectsSecurity));
+  if(namedObjectsHandle!=IntPtr.Zero)CloseHandle(namedObjectsHandle);
   if(desktopSecurity!=null)Check(SetUserObjectSecurity(desktopHandle,ref info,desktopSecurity));
   if(stationSecurity!=null)Check(SetUserObjectSecurity(stationHandle,ref info,stationSecurity));
-  password=null;user=null;desktopSecurity=null;stationSecurity=null;
+  password=null;user=null;desktopSecurity=null;stationSecurity=null;namedObjectsSecurity=null;namedObjectsHandle=IntPtr.Zero;
  }
  public static Process Start(string executable,string arguments,string directory) {
   if(user==null)throw new Exception("Standard-user CI account is not configured");
