@@ -2,10 +2,9 @@
 // CreateRestrictedToken cannot represent an ordinary WebView2 user's login:
 // MicrosoftEdge/WebView2Feedback#4850.
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -58,14 +57,23 @@ public static class LimitedLaunch {
  }
  public static Process Start(string executable,string arguments,string directory) {
   if(user==null)throw new Exception("Standard-user CI account is not configured");
-  var values=new SortedDictionary<string,string>(StringComparer.OrdinalIgnoreCase);
-  foreach(DictionaryEntry item in Environment.GetEnvironmentVariables())values[(string)item.Key]=(string)item.Value;
-  var block=new StringBuilder();foreach(var item in values)block.Append(item.Key).Append('=').Append(item.Value).Append('\0');block.Append('\0');
-  IntPtr environment=Marshal.StringToHGlobalUni(block.ToString());
-  try {
-   var startup=new StartupInfo{cb=Marshal.SizeOf(typeof(StartupInfo)),desktop=desktop};ProcessInfo info;
-   Check(CreateProcessWithLogonW(user,".",password,1,executable,new StringBuilder("\""+executable+"\" "+arguments),0x400,environment,directory,ref startup,out info));
-   try{return Process.GetProcessById((int)info.pid);}finally{CloseHandle(info.thread);CloseHandle(info.process);}
-  }finally{Marshal.FreeHGlobal(environment);}
+  if(arguments!="--smoke-test")throw new Exception("Standard-user helper only runs the native smoke");
+  var report=Environment.GetEnvironmentVariable("PRODUCTION_CYCLE_SMOKE_REPORT");
+  var folder=Path.GetDirectoryName(report);var bootstrap=Path.Combine(folder,"network-standard-user-bootstrap.cmd");
+  var log=Path.Combine(folder,"network-standard-user-webview.log");
+  // NULL environment is essential: APPDATA/USERPROFILE/USERNAME and HKCU must
+  // belong to this user, not the runner administrator. A batch keeps the loaded
+  // profile alive and waits for the GUI EXE; it adds only CI report destinations.
+  var batch="@echo off\r\nchcp 65001 >nul\r\n"+
+   "set \"PRODUCTION_CYCLE_SMOKE_REPORT="+report+"\"\r\n"+
+   "set \"PRODUCTION_CYCLE_STARTUP_REPORT="+Environment.GetEnvironmentVariable("PRODUCTION_CYCLE_STARTUP_REPORT")+"\"\r\n"+
+   "set \"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--enable-logging --log-file=\""+log+"\" --v=1\"\r\n"+
+   "whoami /all > \""+Path.Combine(folder,"network-standard-user-identity.txt")+"\"\r\n"+
+   "\""+executable+"\" --smoke-test\r\nexit /b %errorlevel%\r\n";
+  File.WriteAllText(bootstrap,batch,new UTF8Encoding(false));
+  var shell=Path.Combine(Environment.GetEnvironmentVariable("SystemRoot"),"System32","cmd.exe");
+  var startup=new StartupInfo{cb=Marshal.SizeOf(typeof(StartupInfo)),desktop=desktop};ProcessInfo info;
+  Check(CreateProcessWithLogonW(user,".",password,1,shell,new StringBuilder("\""+shell+"\" /d /c \"\""+bootstrap+"\"\""),0,IntPtr.Zero,Environment.GetEnvironmentVariable("SystemRoot"),ref startup,out info));
+  try{return Process.GetProcessById((int)info.pid);}finally{CloseHandle(info.thread);CloseHandle(info.process);}
  }
 }

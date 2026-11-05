@@ -69,6 +69,8 @@ jobs:
           path: |
             src-tauri/Cargo.lock
             ${{ runner.temp }}/Сетевая проверка программы/network-*.json
+            ${{ runner.temp }}/Сетевая проверка программы/network-standard-user-*.log
+            ${{ runner.temp }}/Сетевая проверка программы/network-standard-user-identity.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ProductionCycle-network-test-windows10-11-x64-${{ matrix.os }}

@@ -176,11 +176,8 @@ try{
   }
   Start-Service seclogon
   $script:LimitedLaunch=$true
-  $env:USERPROFILE=$localProfile;$env:TEMP=Join-Path $localProfile 'standard-user-temp';$env:TMP=$env:TEMP
-  New-Item -ItemType Directory -Path $env:TEMP -Force | Out-Null
   try{[LimitedLaunch]::Configure($limitedName,$limitedPassword);Run-FunctionalSmoke $unc 'limited-user'}finally{
     [LimitedLaunch]::Restore();$script:LimitedLaunch=$false
-    $env:USERPROFILE=$old.USERPROFILE;$env:TEMP=$old.TEMP;$env:TMP=$old.TMP
   }
   # A stale or damaged cache must be rebuilt without overwriting a locked EXE.
   $initial=Get-Content (Join-Path $testRoot 'network-launch-unc-first-run.json') -Raw | ConvertFrom-Json
