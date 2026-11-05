@@ -10,6 +10,7 @@ pub fn update(message: &str) {
     if let Ok(mut text) = MESSAGE.get_or_init(|| Mutex::new(String::new())).lock() {
         *text = message.to_string();
     }
+    super::launch::signal_status(serde_json::json!({"state":"starting","processId":std::process::id(),"stage":message}));
 }
 
 pub fn is_ready() -> bool { COMPLETE.load(Ordering::Acquire) }

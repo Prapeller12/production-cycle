@@ -549,6 +549,7 @@ impl Drop for NetworkRuntime{fn drop(&mut self){let _=self.release();}}
 
 pub fn maybe_relaunch_network_client()->Result<bool,String>{
     use super::launch as L;
+    let overall=Instant::now();
     if env::var_os(NETWORK_CLIENT_ENV).is_some(){return Ok(false)}
     let exe=env::current_exe().map_err(|e|e.to_string())?;
     let direct=exe.parent().ok_or_else(||"Не удалось определить папку программы.".to_string())?;
@@ -571,8 +572,12 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
             let recovery=match &stable_recovery{Some(value)=>value.clone(),None=>{
                 let value=workspace_recovery_directory(&base,&origin)?;L::probe_directory(&value)?;stable_recovery=Some(value.clone());value
             }};
-            let lock_path=base.join(format!("prepare-{}.lock",&origin[..16]));
-            let lock=OpenOptions::new().create(true).read(true).write(true).open(&lock_path).map_err(|e|L::io_error("Нет доступа к блокировке локальной подготовки",&lock_path,e))?;
+            let lock_path=base.join(format!("prepare-v2-{}.lock",&origin[..16]));
+            let mut options=OpenOptions::new();options.create(true).read(true).write(true);
+            // Do not leave an elevated process's ACL/integrity on a permanent
+            // lock file for the next ordinary Explorer launch.
+            #[cfg(windows)]{use std::os::windows::fs::OpenOptionsExt;options.access_mode(0xC0010000).share_mode(7).custom_flags(0x04000000);}
+            let lock=options.open(&lock_path).map_err(|e|L::io_error("Нет доступа к блокировке локальной подготовки",&lock_path,e))?;
             let waiting=Instant::now();
             while let Err(error)=lock.try_lock_exclusive(){
                 if super::startup::cancelled(){return Err("Запуск отменён пользователем.".into())}
@@ -583,11 +588,13 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
             let cache=L::prepare_cache(&root,&base,&origin,&config.version,&manifest)?;
             FileExt::unlock(&lock).map_err(|e|L::io_error("Не удалось освободить локальную подготовку",&lock_path,e))?;drop(lock);
             let local_exe=cache.join("production-cycle.exe");let status=cache.join("temp").join(format!("launch-{}.json",Uuid::new_v4()));
+            let budget=Duration::from_secs(290).saturating_sub(overall.elapsed()).min(Duration::from_secs(120));
+            if budget.is_zero(){return Err("Превышено общее время подготовки локального клиента.".into())}
             super::startup::update("Открытие локального клиента. Ожидание готового рабочего окна…");
             let mut command=Command::new(&local_exe);command.arg("--network-client");
             for argument in env::args().skip(1){if argument!="--network-client"{command.arg(argument);}}
             let mut child=command.env(NETWORK_CLIENT_ENV,"1").env(NETWORK_ROOT_ENV,&root).env(NETWORK_RECOVERY_ENV,&recovery).env(L::STATUS_ENV,&status).current_dir(&cache).spawn().map_err(|e|L::io_error("Windows запретила запуск локального клиента",&local_exe,e))?;
-            let ready=match L::wait_for_window(&mut child,&status,&local_exe){Ok(value)=>value,Err(error)=>{let _=child.kill();let _=child.wait();let _=fs::remove_file(&status);return Err(error)}};
+            let ready=match L::wait_for_window(&mut child,&status,&local_exe,budget){Ok(value)=>value,Err(error)=>{let _=child.kill();let _=child.wait();let _=fs::remove_file(&status);return Err(error)}};
             L::diagnostic_report(&serde_json::json!({"state":"ready","client":ready,"sharedRoot":root,"cache":cache,"recovery":recovery,"fallbackUsed":!errors.is_empty(),"previousAttempts":errors}));
             Ok((child,local_exe))
         })();

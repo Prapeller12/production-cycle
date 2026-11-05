@@ -8,6 +8,7 @@ $localProfile=Join-Path $env:RUNNER_TEMP 'Локальный профиль кл
 foreach($path in @($testRoot,$localProfile)){if(Test-Path $path){Remove-Item $path -Recurse -Force};New-Item -ItemType Directory -Path $path -Force | Out-Null}
 Expand-Archive $Zip $testRoot
 $root=Join-Path $testRoot 'ProductionCycleNetwork'
+(Get-Item (Join-Path $root 'frontend/index.html')).IsReadOnly=$true
 if(Test-Path (Join-Path $root 'start.cmd')){throw 'CMD must not be exposed in the network package root'}
 foreach($required in @('production-cycle.exe','app/start.cmd','frontend/index.html','runtime/webview2/msedgewebview2.exe','config/network.json')){
   if(-not (Test-Path (Join-Path $root $required))){throw "Missing network package item: $required"}
@@ -209,6 +210,12 @@ try{
   }
   $fallbackLaunch=Get-Content (Join-Path $testRoot 'network-launch-denied-profile-fallback.json') -Raw | ConvertFrom-Json
   if($fallbackLaunch.cache -notlike "*$([IO.Path]::GetFileName($fallback))*"){throw 'Blocked profile did not use local fallback'}
+  $env:LOCALAPPDATA=$localProfile;$env:USERPROFILE=$old.USERPROFILE;$env:TEMP=$old.TEMP;$env:TMP=$old.TMP
+  $allBlocked=Join-Path $testRoot 'Все локальные папки запрещены';New-Item -ItemType Directory -Path $allBlocked -Force | Out-Null
+  $env:LOCALAPPDATA=$allBlocked;$env:USERPROFILE=$allBlocked;$env:TEMP=$allBlocked;$env:TMP=$allBlocked
+  With-DeniedPath $allBlocked 'CreateDirectories, CreateFiles' {
+    Run-ExpectedLaunchFailure $unc 'all-local-paths-denied' '(?s)Нет доступной локальной папки клиента.*Код ОС: 5'
+  }
   $env:LOCALAPPDATA=$localProfile;$env:USERPROFILE=$old.USERPROFILE;$env:TEMP=$old.TEMP;$env:TMP=$old.TMP
   $networkConfig=Join-Path $root 'config/network.json';$hiddenConfig=$networkConfig+'.saved'
   Move-Item $networkConfig $hiddenConfig

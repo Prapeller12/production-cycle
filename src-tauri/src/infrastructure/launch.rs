@@ -8,6 +8,8 @@ use uuid::Uuid;
 pub const STATUS_ENV:&str="PRODUCTION_CYCLE_LAUNCH_STATUS";
 pub const MANIFEST:&str="launch-manifest.json";
 const FINGERPRINT:&str=".launch-fingerprint";
+struct IncompleteCache{path:PathBuf,ready:bool}
+impl Drop for IncompleteCache{fn drop(&mut self){if !self.ready{let _=fs::remove_dir_all(&self.path);}}}
 
 pub fn io_error(operation:&str,path:&Path,error:std::io::Error)->String{
     format!("{operation}\nПуть: {}\nПричина: {error}\nКод ОС: {}",path.display(),error.raw_os_error().map(|v|v.to_string()).unwrap_or_else(||"не указан".into()))
@@ -110,6 +112,7 @@ pub fn prepare_cache(root:&Path,base:&Path,origin:&str,_version:&str,manifest:&M
             fs::read_to_string(cache.join(".network-shared-root")).ok().as_deref()==Some(origin) && verify(&cache,manifest).is_ok() && probe_directory(&cache.join("temp")).is_ok() && probe_directory(&cache.join("exports")).is_ok(){return Ok(cache)}
     }
     let cache=base.join(format!("{prefix}-{}",&Uuid::new_v4().simple().to_string()[..8]));create_dir(&cache)?;
+    let mut incomplete=IncompleteCache{path:cache.clone(),ready:false};
     for (index,item) in manifest.files.iter().enumerate(){
         if super::startup::cancelled(){return Err("Запуск отменён пользователем.".into())}
         super::startup::update(&format!("Подготовка локального клиента: файл {} из {}\n{}",index+1,manifest.files.len(),item.path));
@@ -123,6 +126,7 @@ pub fn prepare_cache(root:&Path,base:&Path,origin:&str,_version:&str,manifest:&M
     verify(&cache,manifest)?;probe_directory(&cache.join("temp"))?;probe_directory(&cache.join("exports"))?;
     fs::write(cache.join(".network-shared-root"),origin).map_err(|e|io_error("Не удалось записать привязку общей папки",&cache,e))?;
     fs::write(cache.join(FINGERPRINT),&manifest.fingerprint).map_err(|e|io_error("Не удалось подтвердить целостность клиента",&cache,e))?;
+    incomplete.ready=true;
     Ok(cache)
 }
 
@@ -138,18 +142,21 @@ fn write_status(path:&Path,value:&serde_json::Value)->Result<(),String>{
 pub fn diagnostic_report(value:&serde_json::Value){
     if let Some(path)=env::var_os("PRODUCTION_CYCLE_STARTUP_REPORT").map(PathBuf::from){let _=write_status(&path,value);}
 }
-pub fn wait_for_window(child:&mut Child,status:&Path,client:&Path)->Result<serde_json::Value,String>{
-    let started=Instant::now();
+pub fn wait_for_window(child:&mut Child,status:&Path,client:&Path,budget:Duration)->Result<serde_json::Value,String>{
+    let started=Instant::now();let mut last_stage="Запуск процесса клиента".to_string();
     loop{
-        if let Ok(bytes)=fs::read(status){
+        let bytes=match fs::read(status){Ok(value)=>Some(value),Err(error) if error.kind()==std::io::ErrorKind::NotFound=>None,Err(error)=>return Err(io_error("Нет доступа к подтверждению готовности клиента",status,error))};
+        if let Some(bytes)=bytes{
             if let Ok(value)=serde_json::from_slice::<serde_json::Value>(&bytes){
+                if value["processId"].as_u64()!=Some(child.id() as u64){return Err("Подтверждение запуска получено от другого процесса.".into())}
+                if let Some(stage)=value["stage"].as_str(){last_stage=stage.to_string();super::startup::update(&format!("Локальный клиент: {stage}"));}
                 if value["state"]=="ready"&&value["processId"].as_u64()==Some(child.id() as u64){let _=fs::remove_file(status);return Ok(value)}
                 if value["state"]=="failed"{let _=fs::remove_file(status);return Err(value["error"].as_str().unwrap_or("Клиент не открыл окно.").into())}
             }
         }
         if super::startup::cancelled(){let _=child.kill();let _=child.wait();return Err("Запуск отменён пользователем.".into())}
         if let Some(exit)=child.try_wait().map_err(|e|io_error("Не удалось проверить процесс клиента",client,e))?{return Err(format!("Локальный клиент завершился до открытия окна.\nПуть: {}\nКод завершения: {:?}\nПроверьте разрешение запуска EXE и WebView2 в настройках защиты Windows.",client.display(),exit.code()))}
-        if started.elapsed()>Duration::from_secs(120){let _=child.kill();let _=child.wait();return Err(format!("Клиент не подтвердил открытие окна за 120 секунд.\nПуть: {}\nПроверьте разрешения EXE, WebView2 и локального профиля.",client.display()))}
+        if started.elapsed()>budget{let _=child.kill();let _=child.wait();return Err(format!("Клиент не подтвердил открытие окна за {} секунд.\nПоследний этап клиента: {last_stage}\nПуть: {}\nПроверьте разрешения EXE, WebView2 и локального профиля.",budget.as_secs(),client.display()))}
         std::thread::sleep(Duration::from_millis(100));
     }
 }
