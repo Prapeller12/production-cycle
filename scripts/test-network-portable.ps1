@@ -148,6 +148,10 @@ function With-DeniedPath([string]$path,[string]$permissions,[scriptblock]$body){
 }
 $share='PCNetworkTest'+$PID
 $account=[Security.Principal.WindowsIdentity]::GetCurrent().Name
+$limitedName='pc_launch_'+$PID
+$limitedAccount=$env:COMPUTERNAME+'\'+$limitedName
+$limitedPassword='Pc!'+[Guid]::NewGuid().ToString('N')+'a9'
+$limitedCreated=$false
 $old=@{LOCALAPPDATA=$env:LOCALAPPDATA;USERPROFILE=$env:USERPROFILE;TEMP=$env:TEMP;TMP=$env:TMP}
 $mapped=$false
 try{
@@ -158,9 +162,26 @@ try{
   $env:LOCALAPPDATA=$localProfile
   Run-FunctionalSmoke $unc 'unc-first-run'
   Run-FunctionalSmoke $unc 'unc-relaunch'
-  # Real ordinary-token launch, not an elevated admin-only smoke.
+  # A real standard account with its profile loaded, not a synthetic restricted
+  # token (which WebView2 does not support). Only the isolated CI fixtures and
+  # this runner's desktop receive access; production permissions are untouched.
+  New-LocalUser -Name $limitedName -Password (ConvertTo-SecureString $limitedPassword -AsPlainText -Force) -AccountNeverExpires -PasswordNeverExpires | Out-Null
+  $limitedCreated=$true
+  Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $limitedName
+  Grant-SmbShareAccess -Name $share -AccountName $limitedAccount -AccessRight Full -Force | Out-Null
+  foreach($fixture in @($testRoot,$localProfile)){
+    $acl=Get-Acl $fixture
+    $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($limitedAccount,'Modify','ContainerInherit, ObjectInherit','None','Allow'))
+    Set-Acl $fixture $acl
+  }
+  Start-Service seclogon
   $script:LimitedLaunch=$true
-  try{Run-FunctionalSmoke $unc 'limited-user'}finally{$script:LimitedLaunch=$false}
+  $env:USERPROFILE=$localProfile;$env:TEMP=Join-Path $localProfile 'standard-user-temp';$env:TMP=$env:TEMP
+  New-Item -ItemType Directory -Path $env:TEMP -Force | Out-Null
+  try{[LimitedLaunch]::Configure($limitedName,$limitedPassword);Run-FunctionalSmoke $unc 'limited-user'}finally{
+    [LimitedLaunch]::Restore();$script:LimitedLaunch=$false
+    $env:USERPROFILE=$old.USERPROFILE;$env:TEMP=$old.TEMP;$env:TMP=$old.TMP
+  }
   # A stale or damaged cache must be rebuilt without overwriting a locked EXE.
   $initial=Get-Content (Join-Path $testRoot 'network-launch-unc-first-run.json') -Raw | ConvertFrom-Json
   $sentinel=Join-Path $initial.cache 'data/keep-on-rebuild.txt'
@@ -289,5 +310,6 @@ try{
   Get-CimInstance Win32_Process -Filter "Name='production-cycle.exe'" | Where-Object {$_.ExecutablePath -like "$localProfile*" -or $_.CommandLine -like "*$share*"} | ForEach-Object {Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}
   if($mapped){& net.exe use N: /delete /y | Out-Null}
   Remove-SmbShare -Name $share -Force -ErrorAction SilentlyContinue
+  if($limitedCreated){Remove-LocalUser -Name $limitedName -ErrorAction SilentlyContinue}
 }
 Write-Host 'PASS: actual SMB/IP first launch, relaunch, mapped drive, redirected profile, visible normal window, visible startup error and native functional UI/IPC.'

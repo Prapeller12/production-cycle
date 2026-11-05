@@ -30,8 +30,9 @@
 (`\\127.0.0.1\…`), а не подмену общей папки локальным файловым путём.
 
 - Холодный и повторный запуск; подключённый сетевой диск.
-- Запуск с ограниченным токеном без членства Administrators и с пониженной
-  целостностью; сам стенд использует административные права для подготовки SMB.
+- Запуск под отдельной стандартной учётной записью без членства Administrators,
+  с загрузкой её профиля Windows; сам стенд использует административные права
+  для подготовки SMB и изолированных тестовых разрешений.
 - Перенаправленный сетевой профиль с разрешённым локальным TEMP.
 - Повреждённая локальная HTML-копия и открытый без разрешения удаления EXE:
   создаётся новый клиент, прежние файлы остаются.
@@ -79,6 +80,8 @@ Windows 10/11, Windows Server 2019, двух отдельных ПК или се
 копия может стать отдельным источником данных.
 
 Источники требований платформы:
+- [Microsoft — ограничение WebView2 при искусственно ограниченном токене](https://github.com/MicrosoftEdge/WebView2Feedback/issues/4850)
+- [Microsoft — запуск с профилем стандартного пользователя и доступом к рабочему столу](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createprocesswithlogonw)
 - [Microsoft — Fixed Runtime, запрет сетевого расположения и права AppContainer](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)
 - [Microsoft — локальный доступный на запись профиль WebView2](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/user-data-folder)
 - [Microsoft — влияние политик защиты на запуск WebView2](https://learn.microsoft.com/en-us/deployedge/webview2-security-tools)
