@@ -17,16 +17,22 @@ if(-not $address){throw 'No network IPv4 available to exercise server setup'}
 $certificate=$null
 $manual=$null
 function Invoke-SetupAcceptance {
- $stdout=Join-Path $env:RUNNER_TEMP 'production-setup-output.txt';$stderr=Join-Path $env:RUNNER_TEMP 'production-setup-error.txt'
  $arguments=@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $root 'scripts/server/Configure-Easy.ps1')+'"'),'-Address',$address,'-Port',$port,'-RemoteAddresses','127.0.0.1','-Accept','-NoBrowser')
- $process=Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+ $info=New-Object Diagnostics.ProcessStartInfo
+ $info.FileName=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+ $info.Arguments=$arguments -join ' ';$info.UseShellExecute=$false;$info.CreateNoWindow=$true
+ $info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+ # A child Windows PowerShell must not inherit PowerShell 7's binary modules.
+ $info.EnvironmentVariables['PSModulePath']=@((Join-Path $env:ProgramFiles 'WindowsPowerShell/Modules'),(Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/Modules')) -join ';'
+ $process=[Diagnostics.Process]::Start($info)
+ $output=$process.StandardOutput.ReadToEndAsync();$errors=$process.StandardError.ReadToEndAsync()
  if(-not $process.WaitForExit(60000)){
-  Get-Content -LiteralPath $stdout,$stderr -ErrorAction SilentlyContinue | Write-Host
   Get-Process | Where-Object MainWindowTitle | Select-Object ProcessName,MainWindowTitle | Format-Table | Out-String | Write-Host
   Stop-Process -Id $process.Id
+  $output.Result | Write-Host;$errors.Result | Write-Host
   throw 'Windows PowerShell guided setup exceeded 60 seconds'
  }
- Get-Content -LiteralPath $stdout,$stderr -ErrorAction SilentlyContinue | Write-Host
+ $output.Result | Write-Host;$errors.Result | Write-Host
  if($process.ExitCode -ne 0){throw ('Windows PowerShell guided setup failed: '+$process.ExitCode)}
 }
 try{
