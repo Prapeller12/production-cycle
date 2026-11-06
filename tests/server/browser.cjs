@@ -6,7 +6,8 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
  const out=process.env.SERVER_QA_DIR||path.join(repo,'dist/server-qa');fs.mkdirSync(out,{recursive:true});
  try{
   for(const legacy of [false,true]){
-   const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];
+   const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[],external=[];
+   await context.route('**/*',route=>{const target=new URL(route.request().url());if(target.origin===server.url)return route.continue();external.push(target.href);return route.abort('blockedbyclient')});
    page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
    await page.addInitScript(()=>{localStorage.setItem('production-cycle-onboarding-v1','done');Object.defineProperty(window.crypto,'randomUUID',{value:undefined,configurable:true});});
    await page.goto(server.url+(legacy?'/?legacy=1':'/'));
@@ -15,7 +16,8 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
    let smoke=fs.readFileSync(path.join(repo,'tests/network-native-smoke.js'),'utf8').replaceAll('window.__TAURI__.core.invoke','window.__browserTestInvoke');
    await page.evaluate(smoke);
    await page.waitForFunction(()=>window.__smokeDone!==null,{},{timeout:120000});
-   const result=await page.evaluate(()=>window.__smokeDone);assert.equal(result.error,null,JSON.stringify(result));assert.equal(errors.length,0,errors.join('; '));
+   const result=await page.evaluate(()=>window.__smokeDone);assert.equal(result.error,null,JSON.stringify(result));assert.equal(errors.length,0,errors.join('; '));assert.deepEqual(external,[],'The application attempted an external resource request');
+   result.offline={externalRequests:external,externalNetworkBlocked:true};
    fs.writeFileSync(path.join(out,legacy?'legacy-browser.json':'edge-browser.json'),JSON.stringify(result,null,2));
    await page.click('#loadJsonBtn');await page.locator('[data-open-project-id]').first().click();
    await page.locator('#treeBody [data-act="copy"]').first().click();assert.equal(await page.locator('#stageModalTitle').innerText(),'Копирование этапа');assert.equal(await page.inputValue('#stageStatus'),'new');await page.click('#saveStageBtn');

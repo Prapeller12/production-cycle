@@ -8,7 +8,7 @@ async function startServer(options={}){
  const config={...JSON.parse(fs.readFileSync(path.join(repo,'config/server.json'))),listen:'127.0.0.1:'+port,publicUrl:(options.tls===false?'http':'https')+'://127.0.0.1:'+port,tls:options.tls!==false};
  fs.writeFileSync(path.join(root,'config/server.json'),JSON.stringify(config,null,2));
  const binary=process.env.SERVER_EXE||path.join(repo,'server/target/debug/production-cycle-server'+(process.platform==='win32'?'.exe':''));
- const child=spawn(binary,['--root',root],{stdio:['ignore','pipe','pipe'],windowsHide:true});let log='',exited=false;
+ const child=spawn(binary,['--serve','--root',root],{stdio:['ignore','pipe','pipe'],windowsHide:true});let log='',exited=false;
  child.stdout.on('data',b=>log=(log+b).slice(-50000));child.stderr.on('data',b=>log=(log+b).slice(-50000));child.on('exit',()=>exited=true);
  child.on('error',e=>log+=String(e));
  const url=config.publicUrl;

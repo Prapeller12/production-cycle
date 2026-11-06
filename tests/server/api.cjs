@@ -36,7 +36,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   const backup=await admin.invoke('backup_create',{adminUserId:owner.id,adminPin:'739201'});assert.equal(backup.valid,true);
   await admin.invoke('backup_restore',{fileName:backup.fileName,adminUserId:owner.id,adminPin:'739201'});assert.equal((await admin.invoke('production_list_projects')).length,1);assert.equal((await m.invoke('network_status')).active,false);
   checks.push('signed persistence, revision conflict, repeated autosave, signature verification, backup/restore and invalidation of other sessions');
-  const collision=spawnSync(server.binary,['--root',server.root],{encoding:'utf8',timeout:10000});assert.notEqual(collision.status,0);assert.match(collision.stderr,/другим процессом сервера/);
+  const collision=spawnSync(server.binary,['--serve','--root',server.root],{encoding:'utf8',timeout:10000});assert.notEqual(collision.status,0);assert.match(collision.stderr,/другим процессом сервера/);
   await server.stop();
   const source=path.join(server.root,'server-data/production-cycle.db'),digest=require('node:crypto').createHash('sha256').update(fs.readFileSync(source)).digest('hex');
   const importedRoot=path.join(server.root,'imported');fs.mkdirSync(path.join(importedRoot,'config'),{recursive:true});fs.copyFileSync(path.join(server.root,'config/server.json'),path.join(importedRoot,'config/server.json'));

@@ -157,9 +157,19 @@ fn same_origin(request:&Request,config:&Config)->bool{
 }
 
 #[derive(Deserialize)] struct Invocation {command:String, #[serde(default)] args:Value}
-fn handle(mut request:Request,root:&Path,config:&Config,app:&Mutex<App>){
+fn handle(mut request:Request,root:&Path,config:&Config,app:&Mutex<App>,runtime:&crate::launcher::Runtime,stop:&AtomicBool){
     if !allowed_host(&request,config){error(request,400,"Адрес запроса не соответствует настройке publicUrl сервера.");return;}
     let path=request.url().split('?').next().unwrap_or("/").to_string();
+    if path=="/__local/stop" {
+        if request.method()!=&Method::Post || !same_origin(&request,config)
+            || !request.remote_addr().map(|a|a.ip().is_loopback()).unwrap_or(false)
+            || header(&request,"X-Production-Control").as_deref()!=Some(runtime.token.as_str()) {
+            error(request,403,"Локальное управление недоступно этому запросу.");return;
+        }
+        if runtime.mode=="service" { error(request,409,"Программа работает как служба. Для остановки используйте Службы Windows или Remove-Service.ps1.");return; }
+        stop.store(true,Ordering::SeqCst);
+        let _=request.respond(response(b"{\"stopping\":true}".to_vec(),200,"application/json"));return;
+    }
     if path.starts_with("/api/"){
         if request.method()!=&Method::Post || !same_origin(&request,config){error(request,403,"Запрос отклонён: требуется обращение с самого приложения.");return;}
         let logout=path=="/api/logout";
@@ -190,7 +200,7 @@ fn handle(mut request:Request,root:&Path,config:&Config,app:&Mutex<App>){
         return;
     }
     if request.method()!=&Method::Get && request.method()!=&Method::Head{error(request,405,"Метод не поддерживается.");return;}
-    if path=="/health"{let _=request.respond(response(b"{\"ready\":true}".to_vec(),200,"application/json"));return;}
+    if path=="/health"{let _=request.respond(response(serde_json::to_vec(&runtime.health()).unwrap_or_default(),200,"application/json"));return;}
     if path=="/server-config.js"{let _=request.respond(response(b"window.__PRODUCTION_SERVER__={enabled:true};".to_vec(),200,"text/javascript; charset=utf-8"));return;}
     let mut relative=path.trim_start_matches('/').to_string();
     if relative.is_empty()||relative=="index.html"{
@@ -209,17 +219,25 @@ fn handle(mut request:Request,root:&Path,config:&Config,app:&Mutex<App>){
 }
 
 pub fn run(root:&Path,config:Config,stop:Arc<AtomicBool>)->Result<(),String>{
+    run_with_ready(root,config,stop,"console",None)
+}
+pub fn run_with_ready(root:&Path,config:Config,stop:Arc<AtomicBool>,mode:&str,ready:Option<std::sync::mpsc::Sender<()>>)->Result<(),String>{
     let root=root.canonicalize().map_err(|e|e.to_string())?;config.validate()?;config.prepare_tls(&root)?;
     let (state,_data_lock)=App::open(&root,&config)?;
     if !root.join("frontend/legacy/app.js").is_file(){return Err("В поставке отсутствует frontend/legacy/app.js для IE11. Распакуйте готовый серверный ZIP целиком.".into());}
     let server=if config.tls{Server::https(&config.listen,SslConfig{certificate:fs::read(config::inside(&root,&config.certificate)?).map_err(|e|e.to_string())?,private_key:fs::read(config::inside(&root,&config.private_key)?).map_err(|e|e.to_string())?})}else{Server::http(&config.listen)}.map_err(|e|format!("Не удалось открыть {}: {e}. Проверьте, не занят ли порт.",config.listen))?;
-    let state=Arc::new(Mutex::new(state));let workers=Arc::new(AtomicUsize::new(0));
+    let runtime=Arc::new(crate::launcher::Runtime::create(&root,&config,mode)?);
+    if let Some(ready)=ready { let _=ready.send(()); }
+    let state=Arc::new(Mutex::new(state));let workers=Arc::new(AtomicUsize::new(0));let mut handles=Vec::new();
     while !stop.load(Ordering::SeqCst){
         if let Some(request)=server.recv_timeout(Duration::from_millis(200)).map_err(|e|e.to_string())?{
             if workers.load(Ordering::SeqCst)>=16{error(request,503,"Сервер занят. Повторите запрос.");continue;}
-            workers.fetch_add(1,Ordering::SeqCst);let workers=workers.clone();let state=state.clone();let root=root.clone();let config=config.clone();
-            std::thread::spawn(move||{handle(request,&root,&config,&state);workers.fetch_sub(1,Ordering::SeqCst);});
+            workers.fetch_add(1,Ordering::SeqCst);let workers=workers.clone();let state=state.clone();let root=root.clone();let config=config.clone();let runtime=runtime.clone();let stop=stop.clone();
+            handles.retain(|handle: &std::thread::JoinHandle<()>|!handle.is_finished());
+            handles.push(std::thread::spawn(move||{handle(request,&root,&config,&state,&runtime,&stop);workers.fetch_sub(1,Ordering::SeqCst);}));
         }
     }
+    // Finish in-flight saves before releasing the exclusive database ownership.
+    for handle in handles { let _=handle.join(); }
     Ok(())
 }

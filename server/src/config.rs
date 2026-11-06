@@ -84,7 +84,13 @@ impl Config {
         let cert = inside(root, &self.certificate)?;
         let key = inside(root, &self.private_key)?;
         if cert.try_exists().map_err(|e| io_error("Не удалось проверить сертификат", &cert, e))?
-            && key.try_exists().map_err(|e| io_error("Не удалось проверить ключ TLS", &key, e))? { return Ok(()); }
+            && key.try_exists().map_err(|e| io_error("Не удалось проверить ключ TLS", &key, e))? {
+            let bytes = fs::read(&cert).map_err(|e| io_error("Не удалось прочитать сертификат", &cert, e))?;
+            let certificates = rustls_pemfile::certs(&mut std::io::BufReader::new(bytes.as_slice())).map_err(|e| e.to_string())?;
+            let public = certificates.first().ok_or("Файл certificate не содержит сертификат PEM")?;
+            fs::write(root.join("server.cer"), public).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
         if cert.exists() || key.exists() { return Err("Найден только один из файлов сертификата/ключа TLS. Исправьте комплект; существующий ключ автоматически не заменяется.".into()); }
         let host = url::Url::parse(&self.public_url).map_err(|e| e.to_string())?.host_str().ok_or("Нет адреса сервера")?.to_string();
         let mut hosts = vec![host, "localhost".into(), "127.0.0.1".into()]; hosts.sort(); hosts.dedup();

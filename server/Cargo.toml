@@ -25,6 +25,8 @@ tiny_http = { version = "0.12", features = ["ssl-rustls"] }
 rcgen = "0.13"
 time = "0.3"
 url = "2"
+rustls = "0.20.9"
+rustls-pemfile = "0.2.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8"

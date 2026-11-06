@@ -732,6 +732,8 @@ dependencies = [
  "rand_core",
  "rcgen",
  "rusqlite",
+ "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "sha2",

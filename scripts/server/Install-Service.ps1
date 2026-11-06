@@ -1,11 +1,11 @@
 $ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'Common.ps1')
 $identity=[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if(-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Запустите PowerShell от администратора на сервере'}
 $root=Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
-$exe=Join-Path $root 'production-cycle-server.exe'
+$exe=Get-ProductionExe -Root $root
 if(Get-Service ProductionCycleServer -ErrorAction SilentlyContinue){throw 'Служба уже существует. Для обновления остановите её, замените файлы приложения и запустите снова. Данные и TLS сохраняются.'}
-& $exe --init
-if($LASTEXITCODE -ne 0){throw 'Сначала исправьте конфигурацию сервера'}
+if((Invoke-ProductionExe -Arguments @('--init')) -ne 0){throw 'Сначала исправьте конфигурацию сервера'}
 $config=Get-Content (Join-Path $root 'config/server.json') -Raw | ConvertFrom-Json
 foreach($relative in @($config.dataDirectory,(Split-Path $config.privateKey -Parent))){
  $directory=Join-Path $root $relative;New-Item -ItemType Directory -Path $directory -Force | Out-Null
