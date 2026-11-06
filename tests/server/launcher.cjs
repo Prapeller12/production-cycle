@@ -4,7 +4,8 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
 setTimeout(()=>{console.error('Launcher acceptance exceeded 90 seconds');process.exit(1)},90000).unref();
 async function freePort(){return new Promise((resolve,reject)=>{const s=net.createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const port=s.address().port;s.close(()=>resolve(port))})})}
 function child(args){const process=spawn(binary,args,{stdio:['ignore','pipe','pipe'],windowsHide:true});let output='';process.stdout.on('data',b=>output+=b);process.stderr.on('data',b=>output+=b);const done=new Promise((resolve,reject)=>{process.on('error',reject);process.on('exit',(code,signal)=>resolve({code,signal,output}))});return{process,done,output:()=>output}}
-async function run(args){const c=child(args);const timer=setTimeout(()=>c.process.kill(),15000);try{return await c.done}finally{clearTimeout(timer)}}
+function releaseCapture(child){child.stdout?.destroy();child.stderr?.destroy();child.unref()}
+async function run(args){const c=child(args);const timer=setTimeout(()=>c.process.kill(),15000);try{return await c.done}finally{clearTimeout(timer);releaseCapture(c.process)}}
 function request(url,root,resource,method='GET',headers={}){return new Promise((resolve,reject)=>{const secure=url.startsWith('https:'),ca=secure?fs.readFileSync(path.join(root,'tls/server.pem')):undefined;const req=(secure?https:http).request(url+resource,{method,ca,agent:false,headers},response=>{let text='';response.on('data',b=>text+=b);response.on('end',()=>{let json;try{json=JSON.parse(text)}catch{}resolve({status:response.statusCode,text,json})})});req.on('error',reject);req.setTimeout(2000,()=>req.destroy(Error('timeout')));req.end()})}
 async function ready(url,root){const deadline=Date.now()+20000;while(Date.now()<deadline){try{const r=await request(url,root,'/health');if(r.status===200)return r.json}catch{}await pause(100)}throw Error('Launcher did not become ready')}
 (async()=>{
@@ -29,7 +30,7 @@ async function ready(url,root){const deadline=Date.now()+20000;while(Date.now()<
     const second=await run(['--root',root]);assert.equal(second.code,0,second.output);assert.equal(JSON.parse(fs.readFileSync(runtimeFile)).pid,first.process.pid,'Repeated clicks must reuse the running server');
     if(!tls){
      const powershell=spawn('powershell.exe',['-NoProfile','-Command',"Get-CimInstance Win32_Process -Filter \"name='msedge.exe'\" | Select-Object -ExpandProperty CommandLine"],{stdio:['ignore','pipe','pipe']});
-     const timer=setTimeout(()=>powershell.kill(),20000);let commands='';try{for await(const chunk of powershell.stdout)commands+=chunk}finally{clearTimeout(timer)}
+     const timer=setTimeout(()=>powershell.kill(),20000);let commands='';try{for await(const chunk of powershell.stdout)commands+=chunk}finally{clearTimeout(timer);releaseCapture(powershell)}
      assert.ok(commands.includes('--new-window')&&commands.includes(':'+port),'Installed Edge was not launched with the program address');
     }
    }
@@ -37,7 +38,7 @@ async function ready(url,root){const deadline=Date.now()+20000;while(Date.now()<
    const stopped=await run(['--stop','--root',root]);assert.equal(stopped.code,0,stopped.output);
    const finished=await Promise.race([first.done,pause(10000).then(()=>{throw Error('Server process did not exit after local stop: '+first.output())})]);assert.equal(finished.code,0,finished.output);assert.ok(!fs.existsSync(runtimeFile),'Transient control file must be removed after graceful shutdown');assert.equal(fs.statSync(db).size,before);
    checks.push((tls?'HTTPS':'HTTP')+': readiness, native health client, authenticated local shutdown, preserved database'+(process.platform==='win32'?', real Edge launch and duplicate-click reuse':''));
-  }finally{first.process.kill()}
+  }finally{first.process.kill();releaseCapture(first.process)}
  }
  const out=process.env.SERVER_QA_DIR||path.join(repo,'dist/server-qa');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'launcher.json'),JSON.stringify({checks},null,2));console.log(checks.join('\n'));
 })().catch(e=>{console.error(e);process.exitCode=1});

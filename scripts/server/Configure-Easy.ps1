@@ -7,7 +7,7 @@ try {
  $identity=[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
  if(-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){
   if($Elevated){throw 'Для настройки сервера нужны права администратора Windows.'}
-  Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$PSCommandPath+'"'),'-Elevated') -Wait
+  Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$PSCommandPath+'"'),'-Elevated')
   exit
  }
  $root=$script:ProductionRoot;$exe=Get-ProductionExe
@@ -24,8 +24,18 @@ try {
  $remotes=([string]$RemoteAddresses).Trim()
  if(-not $remotes){$remotes='LocalSubnet'}
  $existing=Get-CimInstance Win32_Service -Filter "Name='ProductionCycleServer'"
- if($existing -and -not $existing.PathName.StartsWith(('"'+$exe+'"'),[StringComparison]::OrdinalIgnoreCase)){throw 'Служба ProductionCycleServer уже относится к другой папке. Обновляйте существующую папку по инструкции.'}
- if($existing){Stop-Service ProductionCycleServer;(Get-Service ProductionCycleServer).WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))}
+ if($existing){
+  $serviceCommandMatch=[regex]::Match($existing.PathName,'^"([^"]+)"\s+--service\s*$')
+  if(-not $serviceCommandMatch.Success){throw 'Служба ProductionCycleServer имеет неизвестную команду запуска. Передайте настройку ИТ.'}
+  $previousExe=$serviceCommandMatch.Groups[1].Value
+  $previousRoot=[IO.Path]::GetFullPath((Split-Path $previousExe -Parent))
+  if(-not $previousRoot.Equals([IO.Path]::GetFullPath($root),[StringComparison]::OrdinalIgnoreCase) -or (Split-Path $previousExe -Leaf) -notin @('Производственный_цикл.exe','production-cycle-server.exe')){throw 'Служба ProductionCycleServer уже относится к другой папке. Обновляйте существующую папку по инструкции.'}
+  Stop-Service ProductionCycleServer;(Get-Service ProductionCycleServer).WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))
+  if(-not $previousExe.Equals($exe,[StringComparison]::OrdinalIgnoreCase)){
+   $change=Invoke-CimMethod -InputObject $existing -MethodName Change -Arguments @{PathName=('"'+$exe+'" --service')}
+   if($change.ReturnValue -ne 0){throw ('Не удалось обновить путь службы к новому EXE. Код: '+$change.ReturnValue)}
+  }
+ }
  elseif((Invoke-ProductionExe -Arguments @('--check')) -eq 0){if((Invoke-ProductionExe -Arguments @('--stop')) -ne 0){throw 'Не удалось остановить ручной запуск. Завершите его перед настройкой.'}}
  $renew=$false;$publicCertificate=Join-Path $root 'server.cer'
  if(Test-Path -LiteralPath $publicCertificate){$oldCertificate=New-Object Security.Cryptography.X509Certificates.X509Certificate2($publicCertificate);$renew=$oldCertificate.NotAfter -lt (Get-Date).AddDays(30)}

@@ -22,14 +22,16 @@ try{
  $deadline=[DateTime]::UtcNow.AddSeconds(30);$ready=$false
  do{if((Invoke-ProductionExe -Arguments @('--check') -Root $root) -eq 0){$ready=$true;break};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $deadline)
  if(-not $ready){throw 'Packaged double-click launch did not become ready'}
- $reopen=Start-Process -FilePath $exe -Wait -PassThru
+ $reopen=Start-Process -FilePath $exe -PassThru
+ if(-not $reopen.WaitForExit(15000)){throw 'Repeated package launch did not exit after opening the browser'}
  if($reopen.ExitCode -ne 0){throw 'Packaged repeated click failed'}
  $runtime=Get-Content (Join-Path $root 'server-data/running.json') -Raw | ConvertFrom-Json
  if($runtime.pid -ne $manual.Id){throw 'Repeated package launch did not reuse the original server'}
  if((Invoke-ProductionExe -Arguments @('--stop') -Root $root) -ne 0){throw 'Packaged local stop failed'}
  if(-not $manual.WaitForExit(30000)){throw 'Packaged local process did not stop gracefully'}
  $manual=$null
- & (Join-Path $root 'scripts/server/Configure-Easy.ps1') -Address $address -Port $port -RemoteAddresses '127.0.0.1' -Accept -NoBrowser
+ & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts/server/Configure-Easy.ps1') -Address $address -Port $port -RemoteAddresses '127.0.0.1' -Accept -NoBrowser
+ if($LASTEXITCODE -ne 0){throw 'Windows PowerShell 5.1 guided setup failed'}
  $config=Get-Content $file -Raw | ConvertFrom-Json
  $deadline=[DateTime]::UtcNow.AddSeconds(30);$ready=$false
  do{try{$r=Invoke-WebRequest "$($config.publicUrl)/health" -SkipCertificateCheck;if($r.StatusCode -eq 200){$ready=$true;break}}catch{};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $deadline)
@@ -52,8 +54,14 @@ try{
  node (Join-Path $PSScriptRoot '../tests/server/trusted-browser.cjs')
  if($LASTEXITCODE -ne 0){throw 'Trusted client Edge acceptance failed'}
  Stop-Service ProductionCycleServer;(Get-Service ProductionCycleServer).WaitForStatus('Stopped',[TimeSpan]::FromSeconds(30))
+ $legacyExe=Join-Path $root 'production-cycle-server.exe';Copy-Item -LiteralPath $exe -Destination $legacyExe
+ $change=Invoke-CimMethod -InputObject (Get-CimInstance Win32_Service -Filter "Name='ProductionCycleServer'") -MethodName Change -Arguments @{PathName=('"'+$legacyExe+'" --service')}
+ if($change.ReturnValue -ne 0){throw 'Could not simulate the prior release service path'}
  Start-Service ProductionCycleServer
- & (Join-Path $root 'scripts/server/Configure-Easy.ps1') -Address $address -Port $port -RemoteAddresses '127.0.0.1' -Accept -NoBrowser
+ & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'scripts/server/Configure-Easy.ps1') -Address $address -Port $port -RemoteAddresses '127.0.0.1' -Accept -NoBrowser
+ if($LASTEXITCODE -ne 0){throw 'Windows PowerShell 5.1 reconfiguration failed'}
+ $updated=Get-CimInstance Win32_Service -Filter "Name='ProductionCycleServer'"
+ if(-not $updated.PathName.StartsWith(('"'+$exe+'"'),[StringComparison]::OrdinalIgnoreCase)){throw 'Reconfiguration did not update the prior EXE name'}
  if(-not(Test-Path (Join-Path $root 'server-data/production-cycle.db'))){throw 'Reconfiguration lost the database'}
  Write-Host 'PASS: packaged EXE runs as LocalService, creates local data, serves HTTPS and restarts'
 }finally{
