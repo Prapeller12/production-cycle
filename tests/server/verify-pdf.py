@@ -12,6 +12,9 @@ for path in sorted(root.rglob('*.pdf')):
     assert all(texts), (path, 'Blank printed page', [i + 1 for i, text in enumerate(texts) if not text])
     expected = 'Структура подчинённости' if 'structure' in path.stem else 'Диаграмма Ганта'
     assert expected in texts[0], (path, 'Report is absent from the first page', texts[0][:200])
+    if path.stem.startswith('multi-'):
+        assert len(doc) > 1, (path, 'The long report was clipped to one page')
+        assert 'PRINT-070' in '\n'.join(texts), (path, 'The last stage is absent from the printed report')
     width, height = doc[0].rect.width, doc[0].rect.height
     assert width > height, (path, 'Portrait instead of landscape')
     expected_width = (420 if 'a3' in path.stem else 297) * 72 / 25.4

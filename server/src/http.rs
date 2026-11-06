@@ -37,7 +37,14 @@ impl App {
     }
     fn invoke(&mut self, command: &str, args: Value, token: &str, local: bool) -> Result<Reply, String> {
         match command {
-            "network_status" => return value(self.sessions.status(token)),
+            "network_status" => {
+                if let Ok(current)=self.sessions.user(token){
+                    let users=self.db.list_audit_users()?;
+                    let valid=match current{Some(current)=>users.iter().any(|u|u.id==current.id&&u.active&&u.key_fingerprint==current.key_fingerprint),None=>users.is_empty()};
+                    if !valid{self.sessions.logout(token);}
+                }
+                return value(self.sessions.status(token));
+            }
             "audit_list_users" => return value(self.db.list_audit_users()?),
             "network_login" => {
                 let id: Option<i64> = arg(&args,"userId")?;
