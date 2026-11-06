@@ -159,8 +159,18 @@ try{
  if($shareCreated){Remove-SmbShare -Name $shareName -Force}
  if(Get-Service ProductionCycleServer -ErrorAction SilentlyContinue){& (Join-Path $root 'scripts/server/Remove-Service.ps1')}
  if($certificate -and (Test-Path -LiteralPath ('Cert:\CurrentUser\Root\'+$certificate.Thumbprint))){
-  & certutil.exe -user -delstore Root $certificate.Thumbprint | Out-Null
-  if($LASTEXITCODE -ne 0){Write-Warning 'The temporary test root could not be removed from this disposable CI runner'}
+  # Cleanup must never wait on a second unattended Windows trust dialog.
+  $cleanupInfo=New-Object Diagnostics.ProcessStartInfo
+  $cleanupInfo.FileName=Join-Path $env:SystemRoot 'System32/certutil.exe'
+  $cleanupInfo.Arguments='-f -silent -user -delstore Root '+$certificate.Thumbprint
+  $cleanupInfo.UseShellExecute=$false;$cleanupInfo.CreateNoWindow=$true
+  $cleanupInfo.RedirectStandardOutput=$true;$cleanupInfo.RedirectStandardError=$true
+  $cleanup=[Diagnostics.Process]::Start($cleanupInfo)
+  try{
+   $cleanupOut=$cleanup.StandardOutput.ReadToEndAsync();$cleanupError=$cleanup.StandardError.ReadToEndAsync()
+   if(-not $cleanup.WaitForExit(10000)){Stop-Process -Id $cleanup.Id;Write-Warning 'Temporary root cleanup timed out on the disposable CI runner'}
+   elseif($cleanup.ExitCode -ne 0){Write-Warning ('Temporary root cleanup: '+$cleanupError.Result)}
+  }finally{$cleanup.Dispose()}
  }
  if(Get-NetFirewallRule -Name ProductionCycleServer-HTTPS -ErrorAction SilentlyContinue){Remove-NetFirewallRule -Name ProductionCycleServer-HTTPS}
 }

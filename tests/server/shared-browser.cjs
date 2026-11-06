@@ -10,10 +10,12 @@ const {chromium}=require('playwright');
    const context=await browser.newContext({ignoreHTTPSErrors:false,viewport:{width:1440,height:1000}});
    await context.addInitScript(()=>localStorage.setItem('production-cycle-onboarding-v1','done'));
    await context.route('**/*',r=>{if(new URL(r.request().url()).origin===origin)return r.continue();external.push(r.request().url());return r.abort('blockedbyclient')});
-   return {context,page:await context.newPage()};
+   const page=await context.newPage();page.setDefaultTimeout(20000);page.setDefaultNavigationTimeout(20000);
+   return {context,page};
   }
   // Initial administrator creation is intentionally allowed only from the server itself.
   const local='https://localhost:'+new URL(url).port;
+  console.log('ACCEPTANCE: create the first administrator through localhost');
   const setup=await session(local);
   await setup.page.goto(local+'/');
   await setup.page.waitForSelector('#newAuditUserName',{state:'visible'});
@@ -24,6 +26,7 @@ const {chromium}=require('playwright');
   await setup.page.click('#networkLogoutBtn');await setup.page.waitForSelector('#networkLoginModal.open');
   await setup.context.close();
   for(const suffix of ['/','/?legacy=1']){
+   console.log('ACCEPTANCE: sign in through the network URL '+suffix);
    const {context,page}=await session(url);
    await page.goto(url+suffix);
    await page.waitForFunction(()=>window.ProductionServer&&window.Production?.backend);
