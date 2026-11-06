@@ -17,7 +17,7 @@ try {
  $shell=New-Object -ComObject WScript.Shell
  $shortcut=$shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'Производственный цикл.lnk'))
  $shortcut.TargetPath=$browser.Path
- $shortcut.Arguments=$(if($browser.Edge){'--new-window '+$config.url}else{$config.url})
+ $shortcut.Arguments=$(if($browser.Edge){'--no-first-run --new-window '+$config.url}else{$config.url})
  $shortcut.Description='Открыть программу на сервере организации';$shortcut.Save()
  Open-ProductionBrowser -Url $config.url
 }catch{[Windows.Forms.MessageBox]::Show($_.Exception.Message,'Не удалось подключить программу','OK','Error') | Out-Null;exit 1}

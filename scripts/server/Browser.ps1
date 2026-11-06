@@ -10,5 +10,5 @@ function Open-ProductionBrowser {
  $uri=[Uri]$Url
  if($uri.Scheme -notin @('http','https') -or $uri.UserInfo -or $uri.Query -or $uri.Fragment -or $uri.AbsolutePath -ne '/'){throw 'Некорректный адрес программы'}
  $browser=Get-ProductionBrowser
- if($browser.Edge){Start-Process -FilePath $browser.Path -ArgumentList @('--new-window',$Url)}else{Start-Process -FilePath $browser.Path -ArgumentList $Url}
+ if($browser.Edge){Start-Process -FilePath $browser.Path -ArgumentList @('--no-first-run','--new-window',$Url)}else{Start-Process -FilePath $browser.Path -ArgumentList $Url}
 }

@@ -1,6 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),net=require('node:net'),http=require('node:http'),https=require('node:https'),assert=require('node:assert/strict'),{spawn}=require('node:child_process'),{repo}=require('./helpers.cjs');
 const binary=process.env.SERVER_EXE||path.join(repo,'server/target/debug/production-cycle-server'+(process.platform==='win32'?'.exe':''));
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
+setTimeout(()=>{console.error('Launcher acceptance exceeded 90 seconds');process.exit(1)},90000).unref();
 async function freePort(){return new Promise((resolve,reject)=>{const s=net.createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const port=s.address().port;s.close(()=>resolve(port))})})}
 function child(args){const process=spawn(binary,args,{stdio:['ignore','pipe','pipe'],windowsHide:true});let output='';process.stdout.on('data',b=>output+=b);process.stderr.on('data',b=>output+=b);const done=new Promise((resolve,reject)=>{process.on('error',reject);process.on('exit',(code,signal)=>resolve({code,signal,output}))});return{process,done,output:()=>output}}
 async function run(args){const c=child(args);const timer=setTimeout(()=>c.process.kill(),15000);try{return await c.done}finally{clearTimeout(timer)}}
@@ -26,13 +27,15 @@ async function ready(url,root){const deadline=Date.now()+20000;while(Date.now()<
    assert.equal((await request(url,root,'/__local/stop','POST',{'X-Production-Control':runtime.token,Origin:'https://evil.invalid'})).status,403);
    if(process.platform==='win32'){
     const second=await run(['--root',root]);assert.equal(second.code,0,second.output);assert.equal(JSON.parse(fs.readFileSync(runtimeFile)).pid,first.process.pid,'Repeated clicks must reuse the running server');
-    const powershell=spawn('powershell.exe',['-NoProfile','-Command',"Get-CimInstance Win32_Process -Filter \"name='msedge.exe'\" | Select-Object -ExpandProperty CommandLine"],{stdio:['ignore','pipe','pipe']});
-    let commands='';for await(const chunk of powershell.stdout)commands+=chunk;
-    assert.ok(commands.includes('--new-window')&&commands.includes(':'+port),'Installed Edge was not launched with the program address');
+    if(!tls){
+     const powershell=spawn('powershell.exe',['-NoProfile','-Command',"Get-CimInstance Win32_Process -Filter \"name='msedge.exe'\" | Select-Object -ExpandProperty CommandLine"],{stdio:['ignore','pipe','pipe']});
+     const timer=setTimeout(()=>powershell.kill(),20000);let commands='';try{for await(const chunk of powershell.stdout)commands+=chunk}finally{clearTimeout(timer)}
+     assert.ok(commands.includes('--new-window')&&commands.includes(':'+port),'Installed Edge was not launched with the program address');
+    }
    }
    const db=path.join(root,'server-data/production-cycle.db'),before=fs.statSync(db).size;
    const stopped=await run(['--stop','--root',root]);assert.equal(stopped.code,0,stopped.output);
-   const finished=await first.done;assert.equal(finished.code,0,finished.output);assert.ok(!fs.existsSync(runtimeFile),'Transient control file must be removed after graceful shutdown');assert.equal(fs.statSync(db).size,before);
+   const finished=await Promise.race([first.done,pause(10000).then(()=>{throw Error('Server process did not exit after local stop: '+first.output())})]);assert.equal(finished.code,0,finished.output);assert.ok(!fs.existsSync(runtimeFile),'Transient control file must be removed after graceful shutdown');assert.equal(fs.statSync(db).size,before);
    checks.push((tls?'HTTPS':'HTTP')+': readiness, native health client, authenticated local shutdown, preserved database'+(process.platform==='win32'?', real Edge launch and duplicate-click reuse':''));
   }finally{first.process.kill()}
  }

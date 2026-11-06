@@ -3,7 +3,7 @@ use crate::config::{self, Config};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, io::{BufRead, BufReader, Read, Write}, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream}, path::{Path, PathBuf}, process::Command, sync::Arc, time::{Duration, Instant}};
+use std::{fs, io::{BufRead, BufReader, Read, Write}, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream}, path::{Path, PathBuf}, process::{Command, Stdio}, sync::Arc, time::{Duration, Instant}};
 
 #[derive(Serialize, Deserialize)]
 pub struct Runtime {
@@ -136,16 +136,16 @@ pub fn open_browser(config: &Config) -> Result<(), String> {
         for variable in ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"] {
             if let Some(base) = std::env::var_os(variable) {
                 let exe = PathBuf::from(base).join("Microsoft/Edge/Application/msedge.exe");
-                if exe.is_file() { Command::new(exe).args(["--new-window", &target]).creation_flags(0x08000000).spawn().map_err(|e| e.to_string())?; return Ok(()); }
+                if exe.is_file() { Command::new(exe).args(["--no-first-run", "--new-window", &target]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).creation_flags(0x08000000).spawn().map_err(|e| e.to_string())?; return Ok(()); }
             }
         }
         if let Some(base) = std::env::var_os("ProgramFiles") {
             let exe = PathBuf::from(base).join("Internet Explorer/iexplore.exe");
-            if exe.is_file() { Command::new(exe).arg(&target).creation_flags(0x08000000).spawn().map_err(|e| e.to_string())?; return Ok(()); }
+            if exe.is_file() { Command::new(exe).arg(&target).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).creation_flags(0x08000000).spawn().map_err(|e| e.to_string())?; return Ok(()); }
         }
         return Err(format!("Не найден установленный Edge или Internet Explorer 11. Откройте адрес вручную в установленном браузере: {target}"));
     }
-    #[cfg(not(windows))] { Command::new("xdg-open").arg(target).spawn().map_err(|e| e.to_string())?; Ok(()) }
+    #[cfg(not(windows))] { Command::new("xdg-open").arg(target).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|e| e.to_string())?; Ok(()) }
 }
 
 #[cfg(windows)]

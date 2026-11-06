@@ -42,6 +42,7 @@ jobs:
           SERVER_EXE: ${{ github.workspace }}/server/target/release/production-cycle-server.exe
         run: node tests/server/api.cjs
       - name: Double click launcher, real installed Edge and local stop
+        timeout-minutes: 3
         env:
           SERVER_EXE: ${{ github.workspace }}/server/target/release/production-cycle-server.exe
         run: node tests/server/launcher.cjs
