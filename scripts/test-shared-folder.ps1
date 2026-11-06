@@ -26,6 +26,8 @@ public static class SharedDialog {
  [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+ [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+ [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr hwnd);
  delegate bool EnumProc(IntPtr hwnd,IntPtr state);
  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent,EnumProc callback,IntPtr state);
  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback,IntPtr state);
@@ -72,15 +74,15 @@ function Invoke-SharedButton {
    if($confirm -ne [IntPtr]::Zero -and $Dialog -ne 'confirm'){throw 'Unexpected trust confirmation on repeat launch'}
    if($errorDialog -ne [IntPtr]::Zero -and $Dialog -ne 'error'){throw ('Unexpected launch error: '+[SharedDialog]::Text($errorDialog))}
    $handle=if($Dialog -eq 'confirm'){$confirm}elseif($Dialog -eq 'error'){$errorDialog}else{[IntPtr]::Zero}
-   if(-not $seen -and $handle -ne [IntPtr]::Zero){
+   if($handle -ne [IntPtr]::Zero){
     $text=[SharedDialog]::Text($handle)
     $control=[SharedDialog]::GetDlgItem($handle,$Button)
     if($control -eq [IntPtr]::Zero -and $Button -eq 1){$control=[SharedDialog]::NamedButton($handle,'OK')}
     # The native dialog can exist before all of its child controls are initialized.
-    if($control -ne [IntPtr]::Zero -and (-not $ExpectedText -or $text.Contains($ExpectedText))){
-     Write-Host ("ACCEPTANCE: dialog observed, selecting button "+$Button)
+    if($control -ne [IntPtr]::Zero -and [SharedDialog]::IsWindowVisible($handle) -and [SharedDialog]::IsWindowEnabled($control) -and (-not $ExpectedText -or $text.Contains($ExpectedText))){
+     if(-not $seen){Write-Host ("ACCEPTANCE: dialog observed, selecting button "+$Button)}
      $null=[SharedDialog]::SetForegroundWindow($handle)
-     $null=[SharedDialog]::SendMessage($handle,0x0111,[IntPtr]([SharedDialog]::GetDlgCtrlID($control)),$control)
+     $null=[SharedDialog]::SendMessage($control,0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)
      $seen=$true
     }
    }
@@ -93,6 +95,12 @@ function Invoke-SharedButton {
   if($Dialog -and -not $seen){throw 'Expected dialog did not appear'}
   if($process.ExitCode -ne $ExpectedExit){throw "Unexpected launcher exit $($process.ExitCode), expected $ExpectedExit"}
  }finally{if(-not $process.HasExited){& taskkill.exe /PID $process.Id /T /F | Out-Null};$process.Dispose()}
+}
+function Get-SharedReadHash {
+ param([Parameter(Mandatory=$true)][string]$Path)
+ $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
+ $sha=[Security.Cryptography.SHA256]::Create()
+ try{return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-','')}finally{$sha.Dispose();$stream.Dispose()}
 }
 try{
  $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start();$port=$listener.LocalEndpoint.Port;$listener.Stop()
@@ -147,10 +155,10 @@ try{
  $deadline=[DateTime]::UtcNow.AddSeconds(20)
  do{if((Invoke-ProductionExe -Arguments @('--check') -Root $root -Quiet) -eq 0){break};Start-Sleep -Milliseconds 150}while([DateTime]::UtcNow -lt $deadline)
  Write-Host 'ACCEPTANCE: refresh the same public folder without modifying database or private keys'
- $dataHash=(Get-FileHash -LiteralPath (Join-Path $root 'server-data/production-cycle.db') -Algorithm SHA256).Hash
+ $dataHash=Get-SharedReadHash -Path (Join-Path $root 'server-data/production-cycle.db')
  $keyHash=(Get-FileHash -LiteralPath (Join-Path $root 'tls/server-key.pem') -Algorithm SHA256).Hash
  Invoke-WindowsPowerShell -File (Join-Path $root 'scripts/server/Export-SharedFolder.ps1') -Arguments ('-Destination "'+$destination+'" -NoOpen')
- if((Get-FileHash -LiteralPath (Join-Path $root 'server-data/production-cycle.db') -Algorithm SHA256).Hash -cne $dataHash){throw 'Export modified the database'}
+ if((Get-SharedReadHash -Path (Join-Path $root 'server-data/production-cycle.db')) -cne $dataHash){throw 'Export modified the database'}
  if((Get-FileHash -LiteralPath (Join-Path $root 'tls/server-key.pem') -Algorithm SHA256).Hash -cne $keyHash){throw 'Export modified the TLS private key'}
  Invoke-SharedButton
  $evidence.events+='folder-refreshed-without-data-change'
