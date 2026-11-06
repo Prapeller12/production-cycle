@@ -88,7 +88,11 @@ impl Config {
             let bytes = fs::read(&cert).map_err(|e| io_error("Не удалось прочитать сертификат", &cert, e))?;
             let certificates = rustls_pemfile::certs(&mut std::io::BufReader::new(bytes.as_slice())).map_err(|e| e.to_string())?;
             let public = certificates.first().ok_or("Файл certificate не содержит сертификат PEM")?;
-            fs::write(root.join("server.cer"), public).map_err(|e| e.to_string())?;
+            let exported = root.join("server.cer");
+            // Service has read-only access to application files; --init exports before installation.
+            if fs::read(&exported).ok().as_deref() != Some(public.as_slice()) {
+                fs::write(exported, public).map_err(|e| e.to_string())?;
+            }
             return Ok(());
         }
         if cert.exists() || key.exists() { return Err("Найден только один из файлов сертификата/ключа TLS. Исправьте комплект; существующий ключ автоматически не заменяется.".into()); }

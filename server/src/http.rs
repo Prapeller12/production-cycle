@@ -224,7 +224,8 @@ pub fn run(root:&Path,config:Config,stop:Arc<AtomicBool>)->Result<(),String>{
 pub fn run_with_ready(root:&Path,config:Config,stop:Arc<AtomicBool>,mode:&str,ready:Option<std::sync::mpsc::Sender<()>>)->Result<(),String>{
     let root=root.canonicalize().map_err(|e|e.to_string())?;config.validate()?;config.prepare_tls(&root)?;
     let (state,_data_lock)=App::open(&root,&config)?;
-    if !root.join("frontend/legacy/app.js").is_file(){return Err("В поставке отсутствует frontend/legacy/app.js для IE11. Распакуйте готовый серверный ZIP целиком.".into());}
+    let legacy=root.join("frontend").join("legacy").join("app.js");
+    if !legacy.is_file(){return Err(format!("В поставке отсутствует файл интерфейса IE11: {}. Распакуйте готовый серверный ZIP целиком.",legacy.display()));}
     let server=if config.tls{Server::https(&config.listen,SslConfig{certificate:fs::read(config::inside(&root,&config.certificate)?).map_err(|e|e.to_string())?,private_key:fs::read(config::inside(&root,&config.private_key)?).map_err(|e|e.to_string())?})}else{Server::http(&config.listen)}.map_err(|e|format!("Не удалось открыть {}: {e}. Проверьте, не занят ли порт.",config.listen))?;
     let runtime=Arc::new(crate::launcher::Runtime::create(&root,&config,mode)?);
     if let Some(ready)=ready { let _=ready.send(()); }
