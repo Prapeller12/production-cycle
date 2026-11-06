@@ -34,7 +34,7 @@ try{
  # Run the exact renamed EXE from the complete ZIP, including Cyrillic paths and spaces.
  $manual=Start-Process -FilePath $exe -PassThru
  $deadline=[DateTime]::UtcNow.AddSeconds(30);$ready=$false
- do{if((Invoke-ProductionExe -Arguments @('--check') -Root $root) -eq 0){$ready=$true;break};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $deadline)
+ do{if((Invoke-ProductionExe -Arguments @('--check') -Root $root -Quiet) -eq 0){$ready=$true;break};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $deadline)
  if(-not $ready){throw 'Packaged double-click launch did not become ready'}
  $reopen=Start-Process -FilePath $exe -PassThru
  if(-not $reopen.WaitForExit(15000)){throw 'Repeated package launch did not exit after opening the browser'}

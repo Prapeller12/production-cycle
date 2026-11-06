@@ -2,7 +2,7 @@ $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Windows.Forms
 try {
  . (Join-Path $PSScriptRoot 'Common.ps1')
- if((Invoke-ProductionExe -Arguments @('--check')) -eq 0){throw 'Сначала остановите эту копию программы. Службу остановите через Службы Windows.'}
+ if((Invoke-ProductionExe -Arguments @('--check') -Quiet) -eq 0){throw 'Сначала остановите эту копию программы. Службу остановите через Службы Windows.'}
  $config=Get-Content -LiteralPath (Join-Path $script:ProductionRoot 'config/server.json') -Raw | ConvertFrom-Json
  if(Test-Path -LiteralPath (Join-Path $script:ProductionRoot ($config.dataDirectory+'/production-cycle.db'))){throw 'В этой папке уже есть база. Чтобы не перезаписать данные, перенос выполняется только в новую распакованную папку программы до её первого запуска.'}
  $dialog=New-Object Windows.Forms.OpenFileDialog

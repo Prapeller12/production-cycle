@@ -7,11 +7,19 @@ function Get-ProductionExe {
  throw 'Не найден файл запуска. Распакуйте ZIP целиком.'
 }
 function Invoke-ProductionExe {
- param([string[]]$Arguments,[string]$Root=$script:ProductionRoot)
+ param([string[]]$Arguments,[string]$Root=$script:ProductionRoot,[switch]$Quiet)
  $exe=Get-ProductionExe -Root $Root
- $process=Start-Process -FilePath $exe -ArgumentList $Arguments -PassThru -NoNewWindow
- $process.WaitForExit()
- return $process.ExitCode
+ # Windows PowerShell 5.1 Start-Process may return an uncached/null ExitCode.
+ # Start through ProcessStartInfo so the process handle and its exit status stay owned here.
+ $info=New-Object Diagnostics.ProcessStartInfo
+ $info.FileName=$exe;$info.Arguments=$Arguments -join ' ';$info.UseShellExecute=$false;$info.CreateNoWindow=$true
+ $info.RedirectStandardOutput=[bool]$Quiet;$info.RedirectStandardError=[bool]$Quiet
+ $process=[Diagnostics.Process]::Start($info)
+ try{
+  if($Quiet){$null=$process.StandardOutput.ReadToEnd();$null=$process.StandardError.ReadToEnd()}
+  $process.WaitForExit()
+  return $process.ExitCode
+ }finally{$process.Dispose()}
 }
 function Get-ProductionCertificateHash {
  param([string]$Path)
