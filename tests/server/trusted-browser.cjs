@@ -8,7 +8,8 @@ const {chromium}=require('playwright');
   const context=await browser.newContext({ignoreHTTPSErrors:false}),page=await context.newPage(),external=[];
   await context.route('**/*',r=>{if(new URL(r.request().url()).origin===url)return r.continue();external.push(r.request().url());return r.abort('blockedbyclient')});
   for(const suffix of ['/','/?legacy=1']){
-   await page.goto(url+suffix);await page.waitForSelector('#networkLoginModal.open');
+   await page.goto(url+suffix);await page.waitForFunction(()=>window.ProductionServer&&window.Production?.backend);
+   await page.waitForSelector('#newAuditUserName',{state:'visible'});
    const health=await page.evaluate(()=>new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open('GET','/health');x.onload=()=>resolve(JSON.parse(x.responseText));x.onerror=reject;x.send()}));
    assert.equal(health.application,'production-cycle');assert.equal(health.mode,'service');
   }

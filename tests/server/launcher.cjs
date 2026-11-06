@@ -14,10 +14,9 @@ async function ready(url,root){const deadline=Date.now()+20000;while(Date.now()<
   const config={...JSON.parse(fs.readFileSync(path.join(repo,'config/server.json'))),listen:'127.0.0.1:'+port,publicUrl:(tls?'https':'http')+'://127.0.0.1:'+port,tls};
   fs.writeFileSync(path.join(root,'config/server.json'),JSON.stringify(config));
   const url=config.publicUrl;
-  // GUI browser opening is checked on Windows; Linux exercises the same server/control paths.
-  const first=child([...(process.platform==='win32'?[]:['--serve']),'--root',root]);
+  const first=child(['--root',root]);
   try{
-   const status=await ready(url,root);assert.equal(status.application,'production-cycle');assert.equal(status.mode,process.platform==='win32'?'manual':'console');
+   let status;try{status=await ready(url,root)}catch(error){throw Error(error.message+'; exit='+first.process.exitCode+'; '+first.output())}assert.equal(status.application,'production-cycle');assert.equal(status.mode,'manual');
    const runtimeFile=path.join(root,'server-data/running.json'),runtime=JSON.parse(fs.readFileSync(runtimeFile));assert.equal(runtime.pid,first.process.pid);
    const checked=await run(['--check','--root',root]);assert.equal(checked.code,0,checked.output);
    assert.equal((await request(url,root,'/__local/stop','POST')).status,403);

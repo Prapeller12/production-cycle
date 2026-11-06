@@ -21,7 +21,7 @@ if($OpenFirewall){
  if(-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Для настройки брандмауэра запустите PowerShell от администратора'}
  $name='ProductionCycleServer-HTTPS'
  if(Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue){Remove-NetFirewallRule -Name $name}
- New-NetFirewallRule -Name $name -DisplayName 'Производственный цикл — HTTPS' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program $exe -RemoteAddress ($RemoteAddresses -split ',') -Profile Domain,Private | Out-Null
+ New-NetFirewallRule -Name $name -DisplayName 'Производственный цикл — HTTPS' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $Port -Program $exe -RemoteAddress ($RemoteAddresses -split ',' | ForEach-Object {$_.Trim()}) -Profile Domain,Private | Out-Null
 }
 Write-Host "Адрес сотрудников: $newUrl"
 Write-Host "Первого администратора создайте на самом сервере по адресу https://localhost:$Port"
