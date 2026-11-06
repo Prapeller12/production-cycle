@@ -23,6 +23,7 @@ const {chromium}=require('playwright');
   await setup.page.fill('#newAuditUserPin','739201');await setup.page.fill('#newAuditUserPinConfirm','739201');
   await setup.page.click('#createAuditUserBtn');
   await setup.page.waitForFunction(()=>Production.backend.networkStatus().then(s=>s.active&&s.userId));
+  await setup.page.waitForFunction(()=>!document.querySelector('#createAuditUserBtn').disabled&&document.querySelector('#auditUserError .ok'));
   await setup.page.click('#networkLogoutBtn');await setup.page.waitForSelector('#networkLoginModal.open');
   await setup.context.close();
   for(const suffix of ['/','/?legacy=1']){
@@ -33,7 +34,8 @@ const {chromium}=require('playwright');
    await page.waitForSelector('#networkLoginModal.open');
    await page.fill('#networkLoginPin','739201');await page.click('#networkLoginBtn');
    await page.waitForFunction(()=>Production.backend.networkStatus().then(s=>s.active&&s.userId));
-   assert.equal(await page.locator('#networkLoginModal.open').count(),0);
+   await page.waitForSelector('#networkLoginModal.open',{state:'hidden'});
+   await page.waitForFunction(()=>!document.querySelector('#networkLoginBtn').disabled);
    assert.equal(await page.evaluate(()=>fetch('/health').then(r=>r.json()).then(x=>x.mode)),'service');
    await page.click('#networkLogoutBtn');await page.waitForSelector('#networkLoginModal.open');
    await context.close();

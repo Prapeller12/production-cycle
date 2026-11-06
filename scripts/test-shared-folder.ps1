@@ -23,13 +23,14 @@ public static class SharedDialog {
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr hwnd,uint message,IntPtr wparam,IntPtr lparam);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd,StringBuilder text,int length);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd,StringBuilder text,int length);
- [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr hwnd);
+ [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr hwnd);
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
  delegate bool EnumProc(IntPtr hwnd,IntPtr state);
  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent,EnumProc callback,IntPtr state);
  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback,IntPtr state);
  public static string Text(IntPtr parent){var result=new StringBuilder();EnumChildWindows(parent,(h,s)=>{var t=new StringBuilder(4096);GetWindowText(h,t,t.Capacity);result.AppendLine(GetDlgCtrlID(h)+": "+t.ToString());return true;},IntPtr.Zero);return result.ToString();}
+ public static IntPtr NamedButton(IntPtr parent,string name){IntPtr result=IntPtr.Zero;EnumChildWindows(parent,(h,s)=>{var t=new StringBuilder(256);var c=new StringBuilder(256);GetWindowText(h,t,t.Capacity);GetClassName(h,c,c.Capacity);if(c.ToString().IndexOf("BUTTON",StringComparison.OrdinalIgnoreCase)>=0&&t.ToString().Replace("&","")==name)result=h;return true;},IntPtr.Zero);return result;}
  public static string Windows(){var result=new StringBuilder();EnumWindows((h,s)=>{var t=new StringBuilder(512);var c=new StringBuilder(256);GetWindowText(h,t,t.Capacity);GetClassName(h,c,c.Capacity);uint pid;GetWindowThreadProcessId(h,out pid);if(t.Length>0)result.AppendLine(pid+" | "+c+" | "+t+" | "+Text(h));return true;},IntPtr.Zero);return result.ToString();}
 }
 '@
@@ -74,11 +75,12 @@ function Invoke-SharedButton {
    if(-not $seen -and $handle -ne [IntPtr]::Zero){
     $text=[SharedDialog]::Text($handle)
     $control=[SharedDialog]::GetDlgItem($handle,$Button)
+    if($control -eq [IntPtr]::Zero -and $Button -eq 1){$control=[SharedDialog]::NamedButton($handle,'OK')}
     # The native dialog can exist before all of its child controls are initialized.
     if($control -ne [IntPtr]::Zero -and (-not $ExpectedText -or $text.Contains($ExpectedText))){
      Write-Host ("ACCEPTANCE: dialog observed, selecting button "+$Button)
      $null=[SharedDialog]::SetForegroundWindow($handle)
-     $null=[SharedDialog]::SendMessage($handle,0x0111,[IntPtr]$Button,$control)
+     $null=[SharedDialog]::SendMessage($handle,0x0111,[IntPtr]([SharedDialog]::GetDlgCtrlID($control)),$control)
      $seen=$true
     }
    }
