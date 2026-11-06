@@ -1,0 +1,22 @@
+const fs=require('node:fs'),path=require('node:path');
+const babel=require('@babel/core'),postcss=require('postcss'),properties=require('postcss-custom-properties'),prefixer=require('autoprefixer'),acorn=require('acorn');
+const root=path.resolve(__dirname,'..'),frontend=path.join(root,'frontend'),out=path.join(frontend,'legacy');
+(async()=>{
+ fs.mkdirSync(out,{recursive:true});
+ const html=fs.readFileSync(path.join(frontend,'index.html'),'utf8');
+ const scripts=[...html.matchAll(/<script defer src="([^"]+)"><\/script>/g)].map(m=>m[1]);
+ const transformed=scripts.map(name=>babel.transformSync(fs.readFileSync(path.join(frontend,name),'utf8'),{filename:name,sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]],comments:false,compact:false}).code).join('\n;\n');
+ const polyfills=fs.readFileSync(require.resolve('core-js-bundle/minified.js'),'utf8')+'\n'+fs.readFileSync(require.resolve('regenerator-runtime/runtime.js'),'utf8')+'\n'+fs.readFileSync(path.join(frontend,'compat/ie11.js'),'utf8');
+ const code=polyfills+'\n'+transformed;acorn.parse(code,{ecmaVersion:5,sourceType:'script'});
+ fs.writeFileSync(path.join(out,'app.js'),code);
+ const css=['styles/app.css','styles/reference-theme.css','compat/ie11.css'].map(name=>fs.readFileSync(path.join(frontend,name),'utf8')).join('\n');
+ const result=await postcss([properties({preserve:false}),prefixer({overrideBrowserslist:['ie 11'],grid:false})]).process(css,{from:undefined,map:false});
+ fs.writeFileSync(path.join(out,'app.css'),result.css);
+ const legacy=html.replace(/<link rel="stylesheet" href="styles\/[^\"]+">/g,'').replace(/<script defer src="[^\"]+"><\/script>/g,'').replace('</head>','<link rel="stylesheet" href="/legacy/app.css">\n</head>').replace('</body>','<script defer src="/legacy/app.js"></script>\n</body>');
+ fs.writeFileSync(path.join(out,'index.html'),legacy);
+ const smoke=fs.readFileSync(path.join(root,'tests/network-native-smoke.js'),'utf8').replaceAll('window.__TAURI__.core.invoke','window.__browserTestInvoke');
+ const hook="window.__browserTestInvoke=function(command,args){if(command==='finish_smoke'){args.documentMode=document.documentMode;window.external.Report(JSON.stringify(args));return Promise.resolve(false);}if(command==='save_file')return Promise.resolve(args.name);throw Error('Unexpected test hook '+command);};\n";
+ const test=babel.transformSync(hook+smoke,{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
+ acorn.parse(test,{ecmaVersion:5});fs.mkdirSync(path.join(root,'dist'),{recursive:true});fs.writeFileSync(path.join(root,'dist/ie-test.js'),test);
+ console.log('IE11: shared scripts transpiled and parsed as ES5; local polyfills and CSS fallback included.');
+})().catch(error=>{console.error(error);process.exitCode=1});

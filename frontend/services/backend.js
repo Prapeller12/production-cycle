@@ -1,8 +1,8 @@
 'use strict';
 (() => {
   const D=Production.domain,X=Production.exchange;
-  const native=()=>Boolean(window.__TAURI__&&window.__TAURI__.core&&typeof window.__TAURI__.core.invoke==='function');
-  const invoke=(command,args={})=>window.__TAURI__.core.invoke(command,args);
+  const native=()=>Boolean(window.ProductionServer||(window.__TAURI__&&window.__TAURI__.core&&typeof window.__TAURI__.core.invoke==='function'));
+  const invoke=(command,args={})=>window.ProductionServer?window.ProductionServer.invoke(command,args):window.__TAURI__.core.invoke(command,args);
   function toSnapshot(state){
     return {
       databaseId:Number.isSafeInteger(state.databaseId)?state.databaseId:null,

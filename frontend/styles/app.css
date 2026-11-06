@@ -47,20 +47,21 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}
 .structure-print-header{display:flex;justify-content:space-between;align-items:flex-end;gap:12mm;border-bottom:2px solid #17202a;padding-bottom:3mm;margin-bottom:3mm}.structure-print-header h1{font-size:20pt;margin:0 0 1mm}.structure-print-header>div:last-child{text-align:right;font-size:11pt;color:#66717c}.structure-print-tree{display:grid;gap:1.5mm}.structure-print-row{display:grid;grid-template-columns:calc(var(--depth) * 10mm) 7mm minmax(0,1fr);break-inside:avoid;page-break-inside:avoid}.structure-print-row.root{grid-template-columns:minmax(0,1fr)}.structure-print-connector{grid-column:2;font-size:18pt;color:#607d8b;text-align:center;padding-top:1.2mm}.structure-print-node{grid-column:3;border:1px solid #b9c4cc;border-radius:2mm;padding:1.2mm 2mm;display:grid;grid-template-columns:auto minmax(42mm,2fr) minmax(35mm,1fr) minmax(28mm,.8fr) minmax(27mm,.8fr);gap:2mm;align-items:center;font-size:14pt;line-height:1.15}.structure-print-row.root .structure-print-node{grid-column:1;background:#eef2f4;border-color:#687782}.structure-print-id{font-family:Consolas,monospace;font-size:12pt;font-weight:700;white-space:nowrap}.structure-print-node small{grid-column:2/-1;color:#66717c;font-size:11pt}
 @media print{
   @page{size:A4 landscape;margin:8mm}
-  @page gantt-a4{size:A4 landscape;margin:8mm}
-  @page gantt-a3{size:A3 landscape;margin:10mm}
-  @page structure-a4{size:A4 landscape;margin:10mm}
+  /* The active format is applied to the whole document by preparePrintPage.
+     A named page on a later body child can insert an empty initial page. */
   html,body{background:#fff!important;margin:0!important;padding:0!important;font-family:Segoe UI,Arial,sans-serif!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  html,body{min-height:0!important;height:auto!important}
+  body>:not(#pdfReport):not(#ganttPrint):not(#structurePrint){display:none!important}
   .appbar,.tabs,.shell,.modal-backdrop{display:none!important}
   .pdf-report{display:block!important;color:#17202a!important;font-size:14pt!important}
   .report-stage-table thead{display:table-header-group}
   .report-stage-table tr{break-inside:avoid;page-break-inside:avoid}
   body.print-gantt .pdf-report,body.print-structure .pdf-report{display:none!important}
-  body.print-structure .structure-print{display:block!important;page:structure-a4;color:#17202a!important;font-family:"Segoe UI",Arial,sans-serif!important}
+  body.print-structure .structure-print{display:block!important;color:#17202a!important;font-family:"Segoe UI",Arial,sans-serif!important}
   body.print-gantt .structure-print{display:none!important}
   body.print-gantt .gantt-print{display:block!important;color:#17202a!important;font-family:"Segoe UI",Arial,sans-serif!important;box-sizing:border-box;overflow:hidden}
-  body.print-gantt-a4 .gantt-print{page:gantt-a4;width:281mm}
-  body.print-gantt-a3 .gantt-print{page:gantt-a3;width:400mm}
+  body.print-gantt-a4 .gantt-print{width:281mm}
+  body.print-gantt-a3 .gantt-print{width:400mm}
   body.print-gantt .gantt-print .gantt-print-header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #17202a;padding-bottom:4mm;margin-bottom:4mm}
   body.print-gantt .gantt-print h1{font-size:18pt;margin:0}.gantt-print-meta{font-size:8pt;color:#66717c;text-align:right}
   body.print-gantt .gantt-chart{padding:0;overflow:hidden;width:100%}

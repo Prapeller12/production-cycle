@@ -1,0 +1,115 @@
+name: Production cycle browser server
+on:
+  push:
+    branches: [feat/browser-server]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: browser-server-${{ matrix.os }}-${{ hashFiles('server/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: browser-server-${{ matrix.os }}-${{ hashFiles('server/Cargo.lock') }}-
+      - name: Build local IE11 assets and test domain contracts
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build:legacy
+          node --test tests/domain.test.cjs
+      - name: Test shared Rust domain, signatures, migrations, backups and server sessions
+        run: cargo test --locked --release --manifest-path server/Cargo.toml
+      - name: Build independent Windows server EXE
+        run: cargo build --locked --release --manifest-path server/Cargo.toml
+      - name: HTTPS API and migration acceptance
+        env:
+          SERVER_EXE: ${{ github.workspace }}/server/target/release/production-cycle-server.exe
+        run: node tests/server/api.cjs
+      - name: Edge real server UI, ES5 bundle and print PDFs
+        shell: pwsh
+        env:
+          SERVER_EXE: ${{ github.workspace }}/server/target/release/production-cycle-server.exe
+          SERVER_QA_DIR: ${{ github.workspace }}/dist/server-qa
+          PRINT_QA_DIR: ${{ github.workspace }}/dist/print-qa
+        run: |
+          $edge=@('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe','C:/Program Files/Microsoft/Edge/Application/msedge.exe') | Where-Object {Test-Path $_} | Select-Object -First 1
+          if(-not $edge){throw 'Microsoft Edge is unavailable'}
+          $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$edge
+          node tests/browser.cjs
+          if($LASTEXITCODE -ne 0){throw 'Existing browser scenarios failed'}
+          node tests/print.cjs
+          if($LASTEXITCODE -ne 0){throw 'Print scenarios failed'}
+          node tests/server/browser.cjs
+          if($LASTEXITCODE -ne 0){throw 'Server browser scenarios failed'}
+      - name: Real MSHTML IE11 browser engine
+        shell: pwsh
+        env:
+          SERVER_EXE: ${{ github.workspace }}/server/target/release/production-cycle-server.exe
+          SERVER_QA_DIR: ${{ github.workspace }}/dist/server-qa
+        run: |
+          $env:IE_HARNESS=Join-Path $env:RUNNER_TEMP 'production-cycle-ie11.exe'
+          $source=Join-Path $env:GITHUB_WORKSPACE 'tests/server/ie-harness.cs'
+          & powershell.exe -NoProfile -Command "Add-Type -Path '$source' -ReferencedAssemblies System.Windows.Forms,System.Drawing -OutputAssembly '$env:IE_HARNESS' -OutputType WindowsApplication"
+          if($LASTEXITCODE -ne 0){throw 'IE11 harness build failed'}
+          node tests/server/ie.cjs
+          if($LASTEXITCODE -ne 0){throw 'MSHTML IE11 test failed'}
+      - name: Verify first printed page and paper dimensions
+        shell: pwsh
+        run: |
+          python -m pip install PyMuPDF==1.26.7
+          python tests/server/verify-pdf.py dist/print-qa
+          if($LASTEXITCODE -ne 0){throw 'Standalone print regression'}
+          python tests/server/verify-pdf.py dist/server-qa
+          if($LASTEXITCODE -ne 0){throw 'Server print regression'}
+      - name: Package self-contained server ZIP
+        shell: pwsh
+        run: ./scripts/package-server-windows.ps1 -Version $env:GITHUB_SHA.Substring(0,7)
+      - name: Packaged server Windows service under LocalService
+        shell: pwsh
+        run: |
+          $zip=Get-ChildItem ./dist/server/*.zip | Select-Object -First 1
+          ./scripts/test-server-service.ps1 -Zip $zip.FullName
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: server-evidence-${{ matrix.os }}
+          path: |
+            dist/server-qa/
+            dist/print-qa/
+            server/Cargo.lock
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ProductionCycleServer-${{ matrix.os }}
+          path: dist/server/*.zip*
+          if-no-files-found: error
+  release:
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@v4
+        with:
+          name: ProductionCycleServer-windows-2022
+          path: release
+      - name: Publish verified browser server prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="browser-server-${GITHUB_SHA:0:7}"
+          gh release create "$tag" release/*.zip release/*.sha256 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Производственный цикл — сервер и браузер" --notes-file docs/server-browser-guide.md

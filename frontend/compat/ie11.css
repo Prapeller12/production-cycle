@@ -1,0 +1,30 @@
+/* Layout fallback only. Content, actions, roles and domain rules are shared. */
+.legacy-ie .project-grid,.legacy-ie .form-grid{display:flex;flex-wrap:wrap}
+.legacy-ie .project-grid>.field{flex:1 1 28%;min-width:180px;margin:0 10px 10px 0}
+.legacy-ie .form-grid>div{flex:1 1 44%;min-width:200px;margin:0 10px 12px 0}
+.legacy-ie .form-grid>.wide{flex-basis:100%}
+.legacy-ie .toolbar>.btn,.legacy-ie .row-actions>.btn,.legacy-ie .meta-line>*{margin-right:7px}
+.legacy-ie .more-actions-menu{display:block}
+.legacy-ie .more-actions-menu .btn{display:block;width:100%;margin-bottom:6px}
+.legacy-ie details:not([open])>:not(summary){display:none}
+.legacy-ie summary{display:block;cursor:pointer}
+.legacy-ie .project-extra,.legacy-ie .structure-print-tree{display:block}
+.legacy-ie .gantt-grid{display:block;width:auto;min-width:1200px}
+.legacy-ie .gantt-grid:after{content:'';display:block;clear:both}
+.legacy-ie .gantt-label{float:left;clear:left;width:340px;height:56px;position:static}
+.legacy-ie .gantt-axis,.legacy-ie .gantt-track{margin-left:340px;height:56px;min-width:600px}
+.legacy-ie .modal-backdrop.open{display:flex}
+.legacy-ie .modal{max-height:90vh;display:flex;flex-direction:column}
+.legacy-ie .modal-body{flex:1 1 auto;min-height:0;overflow:auto}
+.legacy-ie [data-inert]{opacity:.65}
+.legacy-ie input::-ms-clear{display:none}
+@media print{
+  .legacy-ie .gantt-grid{display:block;min-width:0!important}
+  .legacy-ie .gantt-label{float:left;clear:left;width:58mm;height:10mm!important}
+  .legacy-ie .gantt-axis,.legacy-ie .gantt-track{margin-left:58mm;min-width:0;height:10mm!important}
+  .legacy-ie .structure-print-row{display:block;page-break-inside:avoid;margin-bottom:2mm}
+  .legacy-ie .structure-print-connector{display:inline-block;width:7mm}
+  .legacy-ie .structure-print-node{display:block}
+  .legacy-ie .structure-print-node>span,.legacy-ie .structure-print-node>strong{display:inline-block;margin-right:5mm}
+  .legacy-ie .structure-print-node>small{display:block}
+}

@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Производственный цикл</title>
 <link rel="stylesheet" href="styles/app.css">
@@ -233,6 +234,7 @@
 
 <div class="modal-backdrop" id="onboardingModal" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle"><div class="modal modal-wide onboarding-modal"><div class="modal-head"><div><span class="onboarding-step" id="onboardingStepLabel">Шаг 1 из 4</span><h2 id="onboardingTitle">Начало работы</h2></div><span class="spacer"></span><button class="btn icon" data-close="onboardingModal" aria-label="Закрыть обучение"><span class="ui-icon ui-icon-close" aria-hidden="true"></span></button></div><div class="modal-body"><div id="onboardingContent" class="onboarding-content"></div></div><div class="modal-foot"><button class="btn" id="onboardingBackBtn"><span class="ui-icon ui-icon-back" aria-hidden="true"></span>Назад</button><span class="spacer"></span><button class="btn primary" id="onboardingNextBtn">Далее<span class="ui-icon ui-icon-chevron-right" aria-hidden="true"></span></button></div></div></div>
 
+<script defer src="services/browser-transport.js"></script>
 <script defer src="config/contracts.js"></script>
 <script defer src="domain/cycle.js"></script>
 <script defer src="services/exchange.js"></script>

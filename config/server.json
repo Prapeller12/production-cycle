@@ -1,0 +1,11 @@
+{
+  "listen": "0.0.0.0:8443",
+  "publicUrl": "https://localhost:8443",
+  "tls": true,
+  "certificate": "tls/server.pem",
+  "privateKey": "tls/server-key.pem",
+  "dataDirectory": "server-data",
+  "maxClients": 3,
+  "sessionTimeoutSeconds": 120,
+  "allowInsecureLan": false
+}
