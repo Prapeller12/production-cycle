@@ -26,7 +26,7 @@ function Test-ProductionSharedTrust {
 function Confirm-ProductionSharedTrust {
  param([Parameter(Mandatory=$true)]$Connection)
  if(Test-ProductionSharedTrust -Connection $Connection){return $true}
- $message="Адрес программы:`r`n$($Connection.Url)`r`n`r`nSHA256 сертификата:`r`n$($Connection.Hash)`r`n`r`nСверьте отпечаток с администратором лично или по телефону. Разрешить подключение только после сверки?`r`n`r`nСертификат добавится в доверенные только для вашего пользователя Windows. Права администратора не требуются."
+ $message="Адрес программы:`r`n$($Connection.Url)`r`n`r`nSHA256 сертификата:`r`n$($Connection.Hash)`r`n`r`nСверьте отпечаток с администратором лично или по телефону. Разрешить подключение только после сверки?`r`n`r`nWindows может дополнительно спросить об установке сертификата ProductionCycle Server. Его отпечаток SHA1:`r`n$($Connection.Certificate.Thumbprint)`r`n`r`nСертификат добавится в доверенные только для вашего пользователя Windows. Права администратора не требуются."
  if([Windows.Forms.MessageBox]::Show($message,'Первое подключение к производственному циклу','YesNo','Question',[Windows.Forms.MessageBoxDefaultButton]::Button2) -ne 'Yes'){return $false}
  $store=New-Object Security.Cryptography.X509Certificates.X509Store('Root','CurrentUser')
  try{

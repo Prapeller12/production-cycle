@@ -48,7 +48,7 @@ function Invoke-WindowsPowerShell {
  }finally{$process.Dispose()}
 }
 function Invoke-SharedButton {
- param([string]$Dialog,[int]$Button,[int]$ExpectedExit=0,[string]$ExpectedText)
+ param([string]$Dialog,[int]$Button,[int]$ExpectedExit=0,[string]$ExpectedText,[string]$NativeThumbprint)
  $info=New-Object Diagnostics.ProcessStartInfo
  $info.FileName=$exe;$info.UseShellExecute=$false
  $info.EnvironmentVariables['PSModulePath']=@((Join-Path $env:ProgramFiles 'WindowsPowerShell/Modules'),(Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/Modules')) -join ';'
@@ -58,6 +58,15 @@ function Invoke-SharedButton {
   while(-not $process.WaitForExit(100)){
    $confirm=[SharedDialog]::FindWindow('#32770','Первое подключение к производственному циклу')
    $errorDialog=[SharedDialog]::FindWindow('#32770','Не удалось открыть производственный цикл')
+   $nativeDialog=[SharedDialog]::FindWindow('#32770','Security Warning')
+   if($nativeDialog -ne [IntPtr]::Zero){
+    $nativeText=[SharedDialog]::Text($nativeDialog)
+    if(-not $NativeThumbprint -or -not $seen -or -not $nativeText.Replace(' ','').Contains($NativeThumbprint)){throw ('Unexpected Windows certificate dialog: '+$nativeText)}
+    Write-Host 'ACCEPTANCE: confirming the Windows certificate prompt after matching the generated SHA1'
+    $nativeButton=[SharedDialog]::GetDlgItem($nativeDialog,6)
+    $null=[SharedDialog]::SetForegroundWindow($nativeDialog)
+    $null=[SharedDialog]::SendMessage($nativeDialog,0x0111,[IntPtr]6,$nativeButton)
+   }
    if($confirm -ne [IntPtr]::Zero -and $Dialog -ne 'confirm'){throw 'Unexpected trust confirmation on repeat launch'}
    if($errorDialog -ne [IntPtr]::Zero -and $Dialog -ne 'error'){throw ('Unexpected launch error: '+[SharedDialog]::Text($errorDialog))}
    $handle=if($Dialog -eq 'confirm'){$confirm}elseif($Dialog -eq 'error'){$errorDialog}else{[IntPtr]::Zero}
@@ -107,7 +116,7 @@ try{
  Invoke-SharedButton -Dialog confirm -Button 7 -ExpectedExit 2 -ExpectedText $metadata.certificateSha256
  if(Test-Path -LiteralPath ('Cert:\CurrentUser\Root\'+$certificate.Thumbprint)){throw 'Rejecting the prompt must not install certificate trust'}
  $evidence.events+='first-click-refused-without-trust'
- Invoke-SharedButton -Dialog confirm -Button 6 -ExpectedText $metadata.certificateSha256
+ Invoke-SharedButton -Dialog confirm -Button 6 -ExpectedText $metadata.certificateSha256 -NativeThumbprint $certificate.Thumbprint
  if(-not(Test-Path -LiteralPath ('Cert:\CurrentUser\Root\'+$certificate.Thumbprint))){throw 'Accepting the prompt did not install CurrentUser trust'}
  $evidence.currentUserTrust=$true;$evidence.events+='first-click-accepted'
  $deadline=[DateTime]::UtcNow.AddSeconds(15)
