@@ -22,9 +22,14 @@ public static class SharedDialog {
  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr parent,int id);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr hwnd,uint message,IntPtr wparam,IntPtr lparam);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd,StringBuilder text,int length);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd,StringBuilder text,int length);
+ [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
+ [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
  delegate bool EnumProc(IntPtr hwnd,IntPtr state);
  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent,EnumProc callback,IntPtr state);
+ [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback,IntPtr state);
  public static string Text(IntPtr parent){var result=new StringBuilder();EnumChildWindows(parent,(h,s)=>{var t=new StringBuilder(4096);GetWindowText(h,t,t.Capacity);result.AppendLine(t.ToString());return true;},IntPtr.Zero);return result.ToString();}
+ public static string Windows(){var result=new StringBuilder();EnumWindows((h,s)=>{var t=new StringBuilder(512);var c=new StringBuilder(256);GetWindowText(h,t,t.Capacity);GetClassName(h,c,c.Capacity);uint pid;GetWindowThreadProcessId(h,out pid);if(t.Length>0)result.AppendLine(pid+" | "+c+" | "+t+" | "+Text(h));return true;},IntPtr.Zero);return result.ToString();}
 }
 '@
 function Invoke-WindowsPowerShell {
@@ -61,10 +66,16 @@ function Invoke-SharedButton {
     if($ExpectedText -and -not $text.Contains($ExpectedText)){throw ('Dialog omitted the expected information: '+$text)}
     $control=[SharedDialog]::GetDlgItem($handle,$Button)
     if($control -eq [IntPtr]::Zero){throw 'Expected message box button missing'}
-    $null=[SharedDialog]::SendMessage($control,0x00F5,[IntPtr]::Zero,[IntPtr]::Zero)
+    Write-Host ("ACCEPTANCE: dialog observed, selecting button "+$Button)
+    $null=[SharedDialog]::SetForegroundWindow($handle)
+    $null=[SharedDialog]::SendMessage($handle,0x0111,[IntPtr]$Button,$control)
     $seen=$true
    }
-   if([DateTime]::UtcNow -gt $deadline){throw 'Shared folder button did not finish in 35 seconds'}
+   if([DateTime]::UtcNow -gt $deadline){
+    Write-Host ([SharedDialog]::Windows())
+    Get-CimInstance Win32_Process | Where-Object {$_.Name -in @('powershell.exe','Открыть_производственный_цикл.exe')} | Select-Object Name,ProcessId,ParentProcessId,SessionId,CommandLine | Format-List | Out-String | Write-Host
+    throw 'Shared folder button did not finish in 35 seconds'
+   }
   }
   if($Dialog -and -not $seen){throw 'Expected dialog did not appear'}
   if($process.ExitCode -ne $ExpectedExit){throw "Unexpected launcher exit $($process.ExitCode), expected $ExpectedExit"}
