@@ -23,12 +23,13 @@ public static class SharedDialog {
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr hwnd,uint message,IntPtr wparam,IntPtr lparam);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd,StringBuilder text,int length);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd,StringBuilder text,int length);
+ [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr hwnd);
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd,out uint pid);
  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
  delegate bool EnumProc(IntPtr hwnd,IntPtr state);
  [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent,EnumProc callback,IntPtr state);
  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc callback,IntPtr state);
- public static string Text(IntPtr parent){var result=new StringBuilder();EnumChildWindows(parent,(h,s)=>{var t=new StringBuilder(4096);GetWindowText(h,t,t.Capacity);result.AppendLine(t.ToString());return true;},IntPtr.Zero);return result.ToString();}
+ public static string Text(IntPtr parent){var result=new StringBuilder();EnumChildWindows(parent,(h,s)=>{var t=new StringBuilder(4096);GetWindowText(h,t,t.Capacity);result.AppendLine(GetDlgCtrlID(h)+": "+t.ToString());return true;},IntPtr.Zero);return result.ToString();}
  public static string Windows(){var result=new StringBuilder();EnumWindows((h,s)=>{var t=new StringBuilder(512);var c=new StringBuilder(256);GetWindowText(h,t,t.Capacity);GetClassName(h,c,c.Capacity);uint pid;GetWindowThreadProcessId(h,out pid);if(t.Length>0)result.AppendLine(pid+" | "+c+" | "+t+" | "+Text(h));return true;},IntPtr.Zero);return result.ToString();}
 }
 '@
@@ -72,13 +73,14 @@ function Invoke-SharedButton {
    $handle=if($Dialog -eq 'confirm'){$confirm}elseif($Dialog -eq 'error'){$errorDialog}else{[IntPtr]::Zero}
    if(-not $seen -and $handle -ne [IntPtr]::Zero){
     $text=[SharedDialog]::Text($handle)
-    if($ExpectedText -and -not $text.Contains($ExpectedText)){throw ('Dialog omitted the expected information: '+$text)}
     $control=[SharedDialog]::GetDlgItem($handle,$Button)
-    if($control -eq [IntPtr]::Zero){throw 'Expected message box button missing'}
-    Write-Host ("ACCEPTANCE: dialog observed, selecting button "+$Button)
-    $null=[SharedDialog]::SetForegroundWindow($handle)
-    $null=[SharedDialog]::SendMessage($handle,0x0111,[IntPtr]$Button,$control)
-    $seen=$true
+    # The native dialog can exist before all of its child controls are initialized.
+    if($control -ne [IntPtr]::Zero -and (-not $ExpectedText -or $text.Contains($ExpectedText))){
+     Write-Host ("ACCEPTANCE: dialog observed, selecting button "+$Button)
+     $null=[SharedDialog]::SetForegroundWindow($handle)
+     $null=[SharedDialog]::SendMessage($handle,0x0111,[IntPtr]$Button,$control)
+     $seen=$true
+    }
    }
    if([DateTime]::UtcNow -gt $deadline){
     Write-Host ([SharedDialog]::Windows())
