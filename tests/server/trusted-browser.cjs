@@ -14,7 +14,7 @@ const {chromium}=require('playwright');
    assert.equal(health.application,'production-cycle');assert.equal(health.mode,'service');
   }
   assert.deepEqual(external,[]);await context.close();
-  const out=process.env.SERVER_QA_DIR||path.join(__dirname,'../../dist/server-qa');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'trusted-edge.json'),JSON.stringify({httpsCertificateValidation:true,trustScope:'CurrentUser',currentAndLegacy:true,externalRequests:external},null,2));
+  const out=process.env.SERVER_QA_DIR||path.join(__dirname,'../../dist/server-qa');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'trusted-edge.json'),JSON.stringify({httpsCertificateValidation:true,trustScope:'LocalMachine test certificate',currentAndLegacy:true,externalRequests:external},null,2));
   console.log('PASS: installed Edge accepts the locally trusted certificate with normal HTTPS validation; current and legacy login pages load without external resources');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});

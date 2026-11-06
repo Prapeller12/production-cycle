@@ -9,7 +9,8 @@ function Get-ProductionExe {
 function Invoke-ProductionExe {
  param([string[]]$Arguments,[string]$Root=$script:ProductionRoot)
  $exe=Get-ProductionExe -Root $Root
- $process=Start-Process -FilePath $exe -ArgumentList $Arguments -Wait -PassThru -NoNewWindow
+ $process=Start-Process -FilePath $exe -ArgumentList $Arguments -PassThru -NoNewWindow
+ $process.WaitForExit()
  return $process.ExitCode
 }
 function Get-ProductionCertificateHash {

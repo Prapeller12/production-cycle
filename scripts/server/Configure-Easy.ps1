@@ -45,7 +45,8 @@ try {
  do{if((Invoke-ProductionExe -Arguments @('--check')) -eq 0){$ready=$true;break};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $deadline)
  if(-not $ready){throw 'Служба создана, но сервер не подтвердил готовность. Проверьте службу ProductionCycleServer и доступ к папке данных.'}
  & (Join-Path $PSScriptRoot 'Export-Client.ps1')
- Import-Certificate -FilePath (Join-Path $root 'server.cer') -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null
+ # A noninteractive service deployment has no browser user to provision.
+ if(-not $NoBrowser){Import-Certificate -FilePath (Join-Path $root 'server.cer') -CertStoreLocation 'Cert:\CurrentUser\Root' | Out-Null}
  $config=Get-Content -LiteralPath (Join-Path $root 'config/server.json') -Raw | ConvertFrom-Json
  Write-Host "ГОТОВО. Адрес сотрудников: $($config.publicUrl)"
  Write-Host 'Передайте сотрудникам только Подключение_сотрудника.zip.'

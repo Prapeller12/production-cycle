@@ -92,6 +92,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Setup manual build failed'}
           ./scripts/package-server-windows.ps1 -Version $env:GITHUB_SHA.Substring(0,7)
       - name: Packaged server Windows service under LocalService
+        timeout-minutes: 4
         shell: pwsh
         run: |
           $zip=Get-ChildItem ./dist/server/*.zip | Select-Object -First 1
