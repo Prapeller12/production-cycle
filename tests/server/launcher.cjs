@@ -9,7 +9,8 @@ async function ready(url,root){const deadline=Date.now()+20000;while(Date.now()<
 (async()=>{
  const checks=[];
  for(const tls of [false,true]){
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'Производственный цикл запуск ')),port=await freePort();
+  // The actual Cyrillic package path is exercised after Expand-Archive in test-server-service.ps1.
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'production-cycle-launcher-')),port=await freePort();
   fs.mkdirSync(path.join(root,'config'));fs.cpSync(path.join(repo,'frontend'),path.join(root,'frontend'),{recursive:true});
   assert.ok(fs.existsSync(path.join(root,'frontend/legacy/app.js')),'Incomplete launcher fixture: '+root);
   const config={...JSON.parse(fs.readFileSync(path.join(repo,'config/server.json'))),listen:'127.0.0.1:'+port,publicUrl:(tls?'https':'http')+'://127.0.0.1:'+port,tls};

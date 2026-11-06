@@ -6,10 +6,29 @@ Expand-Archive -LiteralPath $Zip -DestinationPath $testRoot -Force
 $root=Join-Path $testRoot 'ProductionCycleServer'
 $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start();$port=$listener.LocalEndpoint.Port;$listener.Stop()
 $file=Join-Path $root 'config/server.json'
+. (Join-Path $root 'scripts/server/Common.ps1')
+$exe=Get-ProductionExe -Root $root
+$config=Get-Content $file -Raw | ConvertFrom-Json
+$listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start();$localPort=$listener.LocalEndpoint.Port;$listener.Stop()
+$config.listen="127.0.0.1:$localPort";$config.publicUrl="http://127.0.0.1:$localPort";$config.tls=$false
+[IO.File]::WriteAllText($file,($config|ConvertTo-Json),(New-Object Text.UTF8Encoding($false)))
 $address=Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*'} | Select-Object -First 1 -ExpandProperty IPAddress
 if(-not $address){throw 'No network IPv4 available to exercise server setup'}
 $certificate=$null
+$manual=$null
 try{
+ # Run the exact renamed EXE from the complete ZIP, including Cyrillic paths and spaces.
+ $manual=Start-Process -FilePath $exe -PassThru
+ $deadline=[DateTime]::UtcNow.AddSeconds(30);$ready=$false
+ do{if((Invoke-ProductionExe -Arguments @('--check') -Root $root) -eq 0){$ready=$true;break};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $deadline)
+ if(-not $ready){throw 'Packaged double-click launch did not become ready'}
+ $reopen=Start-Process -FilePath $exe -Wait -PassThru
+ if($reopen.ExitCode -ne 0){throw 'Packaged repeated click failed'}
+ $runtime=Get-Content (Join-Path $root 'server-data/running.json') -Raw | ConvertFrom-Json
+ if($runtime.pid -ne $manual.Id){throw 'Repeated package launch did not reuse the original server'}
+ if((Invoke-ProductionExe -Arguments @('--stop') -Root $root) -ne 0){throw 'Packaged local stop failed'}
+ if(-not $manual.WaitForExit(30000)){throw 'Packaged local process did not stop gracefully'}
+ $manual=$null
  & (Join-Path $root 'scripts/server/Configure-Easy.ps1') -Address $address -Port $port -RemoteAddresses '127.0.0.1' -Accept -NoBrowser
  $config=Get-Content $file -Raw | ConvertFrom-Json
  $deadline=[DateTime]::UtcNow.AddSeconds(30);$ready=$false
@@ -38,6 +57,7 @@ try{
  if(-not(Test-Path (Join-Path $root 'server-data/production-cycle.db'))){throw 'Reconfiguration lost the database'}
  Write-Host 'PASS: packaged EXE runs as LocalService, creates local data, serves HTTPS and restarts'
 }finally{
+ if($manual -and -not $manual.HasExited){Stop-Process -Id $manual.Id}
  if(Get-Service ProductionCycleServer -ErrorAction SilentlyContinue){& (Join-Path $root 'scripts/server/Remove-Service.ps1')}
  if($certificate){Remove-Item -LiteralPath ('Cert:\CurrentUser\Root\'+$certificate.Thumbprint)}
  if(Get-NetFirewallRule -Name ProductionCycleServer-HTTPS -ErrorAction SilentlyContinue){Remove-NetFirewallRule -Name ProductionCycleServer-HTTPS}
