@@ -158,6 +158,9 @@ try{
  $evidence | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $out 'shared-folder.json') -Encoding UTF8
  if($shareCreated){Remove-SmbShare -Name $shareName -Force}
  if(Get-Service ProductionCycleServer -ErrorAction SilentlyContinue){& (Join-Path $root 'scripts/server/Remove-Service.ps1')}
- if($certificate -and (Test-Path -LiteralPath ('Cert:\CurrentUser\Root\'+$certificate.Thumbprint))){Remove-Item -LiteralPath ('Cert:\CurrentUser\Root\'+$certificate.Thumbprint)}
+ if($certificate -and (Test-Path -LiteralPath ('Cert:\CurrentUser\Root\'+$certificate.Thumbprint))){
+  & certutil.exe -user -delstore Root $certificate.Thumbprint | Out-Null
+  if($LASTEXITCODE -ne 0){Write-Warning 'The temporary test root could not be removed from this disposable CI runner'}
+ }
  if(Get-NetFirewallRule -Name ProductionCycleServer-HTTPS -ErrorAction SilentlyContinue){Remove-NetFirewallRule -Name ProductionCycleServer-HTTPS}
 }
