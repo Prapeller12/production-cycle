@@ -14,7 +14,7 @@ function clean(v){return String(v??'').trim()}
 function safeOrderToken(v){return D.orderToken(v)}
 function rootId(){return safeOrderToken(state.project.orderNo)}
 function stageId(s){return D.stageId(state,s)}
-function uid(){return 'u'+crypto.randomUUID()}
+function uid(){if(crypto.randomUUID)return 'u'+crypto.randomUUID();const bytes=new Uint8Array(16);crypto.getRandomValues(bytes);return 'u'+Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('')}
 function byUid(id){return state.stages.find(s=>s.uid===id)||null}
 function childrenOf(parentUid){return D.children(state,parentUid)}
 function hasChildren(id){return childrenOf(id).length>0}

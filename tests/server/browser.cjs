@@ -8,7 +8,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
   for(const legacy of [false,true]){
    const context=await browser.newContext({ignoreHTTPSErrors:true,viewport:{width:1440,height:1000}}),page=await context.newPage(),errors=[];
    page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
-   await page.addInitScript(()=>localStorage.setItem('production-cycle-onboarding-v1','done'));
+   await page.addInitScript(()=>{localStorage.setItem('production-cycle-onboarding-v1','done');Object.defineProperty(window.crypto,'randomUUID',{value:undefined,configurable:true});});
    await page.goto(server.url+(legacy?'/?legacy=1':'/'));
    await page.waitForFunction(()=>window.ProductionServer&&window.Production?.backend);
    await page.evaluate(()=>{window.__smokeDone=null;window.__browserExports=[];window.__browserTestInvoke=async(command,args)=>{if(command==='finish_smoke'){window.__smokeDone=args;return false}if(command==='save_file'){window.__browserExports.push(args);return args.name}throw Error('Unsupported test hook '+command)}});
@@ -19,6 +19,13 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
    fs.writeFileSync(path.join(out,legacy?'legacy-browser.json':'edge-browser.json'),JSON.stringify(result,null,2));
    await page.click('#loadJsonBtn');await page.locator('[data-open-project-id]').first().click();
    await page.locator('#treeBody [data-act="copy"]').first().click();assert.equal(await page.locator('#stageModalTitle').innerText(),'Копирование этапа');assert.equal(await page.inputValue('#stageStatus'),'new');await page.click('#saveStageBtn');
+   const count=await page.locator('#treeBody tr[data-stage-uid]').count();
+   await page.click('#saveJsonBtn');await page.waitForSelector('#saveConfirmationModal.open');
+   const identity=await page.evaluate(()=>Production.backend.networkStatus());assert.equal(await page.inputValue('#saveSigner'),String(identity.userId));
+   await page.fill('#saveSignerPin','739201');await page.fill('#saveChangeComment','Проверка копирования через сервер');await page.click('#confirmSignedSaveBtn');
+   await page.waitForFunction(()=>!document.querySelector('#saveConfirmationModal').classList.contains('open'));
+   const saved=await page.evaluate(async()=>{const projects=await Production.backend.listProjects();return Production.backend.loadById(projects[0].projectId)});
+   assert.equal(saved.stages.length,count);
    await page.screenshot({path:path.join(out,legacy?'legacy-interface.png':'edge-interface.png'),fullPage:true});
    await page.evaluate(()=>{window.print=()=>{window.__printed=true}});
    for(const mode of ['structure','gantt-a4','gantt-a3']){
