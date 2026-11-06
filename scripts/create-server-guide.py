@@ -12,9 +12,13 @@ from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
 parser = argparse.ArgumentParser()
 parser.add_argument('--version', default='development')
 parser.add_argument('--out', type=Path, default=Path('dist/server-manual'))
+parser.add_argument('--source', type=Path, default=Path('docs/server-setup-guide.json'))
+parser.add_argument('--basename', default='ProductionCycle_Setup_Guide')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[1]
-data = json.loads((root / 'docs/server-setup-guide.json').read_text(encoding='utf-8'))
+data = json.loads((root / args.source).read_text(encoding='utf-8'))
+if not args.basename or Path(args.basename).name != args.basename:
+    parser.error('--basename must be a filename without a directory')
 args.out.mkdir(parents=True, exist_ok=True)
 doc = Document()
 section = doc.sections[0]
@@ -127,6 +131,6 @@ for index, page in enumerate(data['sections']):
         parts.append('</tbody></table>')
     for text in page.get('after', []): paragraph(text);parts.append('<p>' + html.escape(text) + '</p>')
 parts.append('</html>')
-doc.save(args.out / 'ProductionCycle_Setup_Guide.docx')
-(args.out / 'ProductionCycle_Setup_Guide.html').write_text('\n'.join(parts), encoding='utf-8')
-print(json.dumps({'docx':str(args.out / 'ProductionCycle_Setup_Guide.docx'),'html':str(args.out / 'ProductionCycle_Setup_Guide.html'),'chapters':len(data['sections'])}))
+doc.save(args.out / (args.basename + '.docx'))
+(args.out / (args.basename + '.html')).write_text('\n'.join(parts), encoding='utf-8')
+print(json.dumps({'docx':str(args.out / (args.basename + '.docx')),'html':str(args.out / (args.basename + '.html')),'chapters':len(data['sections'])}))
