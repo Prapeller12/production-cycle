@@ -71,7 +71,7 @@ function printStructure(){
  try{
  buildStructurePrint();preparePrintPage('A4',10);const oldTitle=document.title;document.body.classList.add('print-structure');document.title=`Структура Заказ ${fileSafe(state.project.orderNo)}`;
  let restored=false;const restore=()=>{if(restored)return;restored=true;document.body.classList.remove('print-structure');$('structurePrint').innerHTML='';document.title=oldTitle;clearPrintPage();window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);
- message('ok','Структура подчинённости подготовлена к печати в A4, альбомная ориентация.');
+ message('ok','Структура подчинённости подготовлена к печати в A4, альбомная ориентация. Если окно печати не появилось, нажмите Ctrl+P.');
  void $('structurePrint').offsetWidth;schedulePrint(restore)
  }catch(error){printFailure(error)}
 }
@@ -162,7 +162,7 @@ function buildPdfReport(model){
  <div class="report-section-title">Этапы и контроль сроков</div><table class="report-stage-table"><thead><tr><th>№</th><th>ID</th><th>Этап / структура</th><th>Исполнитель</th><th>Статус</th><th>Начало</th><th>Срок</th><th>Осталось</th></tr></thead><tbody>${rows||'<tr><td colspan="8">Этапы не созданы.</td></tr>'}</tbody></table>
  <div class="report-footer"><span>Отчёт отражает состояние проекта на момент формирования и рассчитывается по системной дате устройства.</span><span>Заказ № ${escapeHtml(p.orderNo||'—')}</span></div>`;
 }
-async function printPdfReport(){const v=await showValidation();if(v.errors.length)return;try{buildPdfReport(await B.report(state));const oldTitle=document.title;document.title=`Отчёт Заказ ${fileSafe(state.project.orderNo)}`;const restore=()=>{document.title=oldTitle;window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);setTimeout(()=>invokePrintDialog(restore),60)}catch(e){message('err','Не удалось сформировать отчёт: '+e)}}
+async function printPdfReport(){const v=await showValidation();if(v.errors.length)return;try{buildPdfReport(await B.report(state));const oldTitle=document.title;document.title=`Отчёт Заказ ${fileSafe(state.project.orderNo)}`;const restore=()=>{document.title=oldTitle;window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);message('ok','Отчёт подготовлен к печати. Если окно не появилось, нажмите Ctrl+P.');setTimeout(()=>invokePrintDialog(restore),60)}catch(e){message('err','Не удалось сформировать отчёт: '+e)}}
 
 async function exportData(){return B.exportPair(state)}
 function previewText(tsv){return tsv.replace(/\t/g,' ⇥ ').replace(/\r\n/g,'\n')}
@@ -338,7 +338,7 @@ function printGantt(size){
  $('ganttPrint').innerHTML=`<div class="gantt-print-header"><div><h1>Диаграмма Ганта</h1><div>Заказ № ${escapeHtml(state.project.orderNo||'—')} · ${escapeHtml(state.project.name||'Без названия')}</div></div><div class="gantt-print-meta">Формат ${size}, альбомная ориентация · масштаб ${scaleText}<br>${escapeHtml($('ganttPeriod').textContent)}</div></div><div class="gantt-chart">${compactGanttForPrint(size)}</div>`;
  preparePrintPage(size,size==='A3'?10:8);document.body.classList.add('print-gantt',size==='A3'?'print-gantt-a3':'print-gantt-a4');document.title=`Диаграмма Ганта Заказ ${fileSafe(state.project.orderNo)} ${size}`;
  let restored=false;const restore=()=>{if(restored)return;restored=true;document.body.classList.remove('print-gantt','print-gantt-a3','print-gantt-a4');$('ganttPrint').innerHTML='';document.title=oldTitle;clearPrintPage();window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);
- message('ok',`Подготовлен ${size}, альбомная ориентация. Если драйвер принтера не применил её автоматически, выберите «Альбомная» в системном окне.`);
+ message('ok',`Подготовлен ${size}, альбомная ориентация. Если окно печати не появилось, нажмите Ctrl+P. Проверьте формат бумаги и ориентацию в системном окне.`);
  void $('ganttPrint').offsetWidth;schedulePrint(restore)
  }catch(error){printFailure(error)}
 }

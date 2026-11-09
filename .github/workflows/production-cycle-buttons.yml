@@ -77,8 +77,12 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Printed report regression'}
       - name: Package frontend only
         shell: pwsh
+        env:
+          QA_WINDOWS_IMAGE: ${{ matrix.os }}
         run: |
-          python scripts/package-frontend-update.py --version $env:GITHUB_SHA.Substring(0,7)
+          python scripts/report-button-audit.py --version $env:GITHUB_SHA.Substring(0,7)
+          if($LASTEXITCODE -ne 0){throw 'Button audit report failed'}
+          python scripts/package-frontend-update.py --version $env:GITHUB_SHA.Substring(0,7) --kind buttons --qa-report dist/button-audit-report.txt
           if($LASTEXITCODE -ne 0){throw 'Frontend packaging failed'}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

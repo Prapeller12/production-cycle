@@ -36,10 +36,14 @@ public class CaptureBrowser : WebBrowser {
 public class IETest {
     private delegate bool EnumWindowProc(IntPtr window,IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowProc callback,IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent,EnumWindowProc callback,IntPtr parameter);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr window,StringBuilder text,int count);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr window,StringBuilder text,int count);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
     [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window,uint message,IntPtr wparam,IntPtr lparam);
+    [StructLayout(LayoutKind.Sequential)] private struct WindowRect {public int Left,Top,Right,Bottom;}
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window,out WindowRect rect);
+    [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr window,IntPtr dc,uint flags);
     [STAThread]
     public static int Main(string[] args) {
         if (args.Length != 3) return 2;
@@ -61,7 +65,18 @@ public class IETest {
                 if(process!=(uint)System.Diagnostics.Process.GetCurrentProcess().Id)return true;
                 var title=new StringBuilder(256);var klass=new StringBuilder(256);GetWindowText(window,title,256);GetClassName(window,klass,256);
                 if(klass.ToString()=="#32770"&&title.ToString().Equals("Print",StringComparison.OrdinalIgnoreCase)){
-                    current.Add(window);if(seenDialogs.Add(window)){printDialogs++;printDetails+=title.ToString()+" | "+klass.ToString()+"\n";}
+                    current.Add(window);if(seenDialogs.Add(window)){
+                        printDialogs++;printDetails+=title.ToString()+" | "+klass.ToString();
+                        EnumChildWindows(window,delegate(IntPtr child,IntPtr ignored){var text=new StringBuilder(256);GetWindowText(child,text,256);if(text.Length>0)printDetails+=" | "+text.ToString();return true;},IntPtr.Zero);printDetails+="\n";
+                        if(printDialogs==1){
+                            WindowRect bounds;if(GetWindowRect(window,out bounds)&&bounds.Right>bounds.Left&&bounds.Bottom>bounds.Top){
+                                using(var bitmap=new Bitmap(bounds.Right-bounds.Left,bounds.Bottom-bounds.Top)){
+                                    using(var graphics=Graphics.FromImage(bitmap)){IntPtr dc=graphics.GetHdc();try{PrintWindow(window,dc,0);}finally{graphics.ReleaseHdc(dc);}}
+                                    bitmap.Save(Path.Combine(Path.GetDirectoryName(args[2]),Path.GetFileNameWithoutExtension(args[2])+"-dialog.png"),ImageFormat.Png);
+                                }
+                            }
+                        }
+                    }
                     PostMessage(window,0x111,new IntPtr(2),IntPtr.Zero);
                 }
                 return true;
