@@ -30,13 +30,12 @@ public class CaptureBrowser : WebBrowser {
     }
 }
 public class IETest {
-    [DllImport("user32.dll",SetLastError=true)] private static extern bool SetWindowPos(IntPtr window,IntPtr after,int x,int y,int width,int height,uint flags);
     [STAThread]
     public static int Main(string[] args) {
         if (args.Length != 3) return 2;
         Application.EnableVisualStyles();
         Form form = new Form(); form.AutoScaleMode=AutoScaleMode.None;form.ClientSize = new Size(1440,1000);
-        CaptureBrowser browser = new CaptureBrowser(); browser.Dock = DockStyle.Fill;
+        CaptureBrowser browser = new CaptureBrowser(); browser.Dock = DockStyle.None;browser.Size = new Size(1440,1000);
         browser.ScriptErrorsSuppressed = true; form.Controls.Add(browser);
         DateTime deadline = DateTime.UtcNow.AddSeconds(180);
         bool injected = false, finished = false; int code = 1;
@@ -46,9 +45,9 @@ public class IETest {
             browser.SavePng(Path.Combine(Path.GetDirectoryName(args[2]),Path.GetFileNameWithoutExtension(args[2])+"-"+name+".png"));
         };
         report.ResizeViewport=delegate(int width,int height){
-            // Form.ClientSize clamps large windows to the runner's desktop size.
-            // Native bounds allow the MSHTML control to render the requested viewport.
-            if(!SetWindowPos(form.Handle,IntPtr.Zero,0,0,width+form.Width-form.ClientSize.Width,height+form.Height-form.ClientSize.Height,0x14))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            // Size the child directly: the runner desktop can be smaller than
+            // the requested render surface. OleDraw captures the whole control.
+            form.ClientSize=new Size(width,height);browser.Size=new Size(width,height);
             browser.Update();
         };
         report.Receive = delegate(string json) {
