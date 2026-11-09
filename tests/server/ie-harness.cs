@@ -30,6 +30,7 @@ public class CaptureBrowser : WebBrowser {
     }
 }
 public class IETest {
+    [DllImport("user32.dll",SetLastError=true)] private static extern bool SetWindowPos(IntPtr window,IntPtr after,int x,int y,int width,int height,uint flags);
     [STAThread]
     public static int Main(string[] args) {
         if (args.Length != 3) return 2;
@@ -44,7 +45,12 @@ public class IETest {
             if(!System.Text.RegularExpressions.Regex.IsMatch(name,"^[a-z0-9-]+$"))throw new ArgumentException("Invalid capture name");
             browser.SavePng(Path.Combine(Path.GetDirectoryName(args[2]),Path.GetFileNameWithoutExtension(args[2])+"-"+name+".png"));
         };
-        report.ResizeViewport=delegate(int width,int height){form.ClientSize=new Size(width,height);browser.Update();};
+        report.ResizeViewport=delegate(int width,int height){
+            // Form.ClientSize clamps large windows to the runner's desktop size.
+            // Native bounds allow the MSHTML control to render the requested viewport.
+            if(!SetWindowPos(form.Handle,IntPtr.Zero,0,0,width+form.Width-form.ClientSize.Width,height+form.Height-form.ClientSize.Height,0x14))throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+            browser.Update();
+        };
         report.Receive = delegate(string json) {
             if (finished) return; finished = true;
             File.WriteAllText(args[2], json, new UTF8Encoding(false));

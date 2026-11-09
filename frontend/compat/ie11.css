@@ -110,7 +110,7 @@
   .legacy-ie .network-login-modal{width:680px}
   .legacy-ie .modal-head{flex:0 0 auto}
   .legacy-ie .modal-head h2{flex:0 1 auto;min-width:0}
-  .legacy-ie .modal-body{flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto}
+  .legacy-ie .modal-body{flex:1 1 auto;min-height:0;max-height:calc(100vh - 220px);overflow-x:hidden;overflow-y:auto}
   .legacy-ie .modal-foot{flex:0 0 auto;flex-wrap:wrap}
   .legacy-ie .modal-foot>.btn,.legacy-ie .stage-secondary-actions>.btn,
   .legacy-ie .stage-primary-actions>.btn{margin:3px 0 3px 8px}

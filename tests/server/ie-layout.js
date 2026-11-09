@@ -1,6 +1,6 @@
 /* Execute inside real MSHTML. Geometry checks complement the existing domain smoke. */
 (async function(){
- var result={error:null,documentMode:document.documentMode,userAgent:navigator.userAgent,checks:[],viewports:[]};
+ var result={error:null,documentMode:document.documentMode,userAgent:navigator.userAgent,checks:[],viewports:[],dialogs:[]};
  function assert(ok,message){if(!ok)throw new Error(message);}
  function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms);});}
  async function wait(test,label){var end=Date.now()+20000;while(Date.now()<end){if(await test())return;await pause(80);}throw new Error('Timeout '+label);}
@@ -18,6 +18,7 @@
    var name=el('newAuditUserName'),nameLabel=name.parentNode.querySelector('span'),pin=el('newAuditUserPin'),repeat=el('newAuditUserPinConfirm');
    var item={width:document.documentElement.clientWidth,roles:cards,form:rect(el('createUserDetails')),name:rect(name),nameLabel:rect(nameLabel),pin:rect(pin),repeat:rect(repeat)};
    result.viewports.push(item);capture('bootstrap-'+width);
+   assert(item.width>=width-20&&item.width<=width,'Harness did not set the requested viewport');
    assert(cards.length===3,'Role cards missing');
    if(width>850){assert(Math.abs(cards[0].top-cards[1].top)<3&&Math.abs(cards[1].top-cards[2].top)<3,'Role cards must share a row');assert(Math.abs(item.pin.top-item.repeat.top)<3&&item.repeat.left>=item.pin.right+3,'PIN fields overlap or do not share a row');}
    else{assert(cards[1].top>=cards[0].bottom+4&&item.repeat.top>=item.pin.bottom+4,'Narrow form must wrap into one column');}
@@ -39,6 +40,7 @@
   for(var j=0;j<3;j++){
    var w=[1440,1024,800][j];window.external.Viewport(w,[1000,768,768][j]);await pause(250);
    var modal=document.querySelector('#stageModal .modal'),bounds=rect(modal),foot=rect(document.querySelector('#stageModal .modal-foot')),body=document.querySelector('#stageModal .modal-body');
+   result.dialogs.push({width:document.documentElement.clientWidth,height:document.documentElement.clientHeight,modal:bounds,footer:foot,body:rect(body)});
    capture('stage-'+w);
    assert(bounds.left>=-2&&bounds.right<=document.documentElement.clientWidth+2,'Stage dialog exceeds screen width');
    assert(bounds.top>=-2&&bounds.bottom<=document.documentElement.clientHeight+2,'Stage dialog exceeds screen height');
