@@ -65,13 +65,14 @@ function preparePrintPage(size='A4',margin=8){
 function clearPrintPage(){const style=$('activePrintPage');if(style)style.parentNode.removeChild(style)}
 function printFailure(error,restore=null){if(restore)restore();message('err','Не удалось открыть печать: '+String(error&&error.message||error)+'. Повторите попытку или откройте этот адрес в другом установленном браузере.')}
 function invokePrintDialog(restore){try{if(window.__TAURI__)window.__TAURI__.core.invoke('print_report').catch(error=>printFailure(error,restore));else window.print()}catch(error){printFailure(error,restore)}}
+function schedulePrint(restore){let called=false;const run=()=>{if(called)return;called=true;clearTimeout(fallback);invokePrintDialog(restore)};const fallback=setTimeout(run,180);requestAnimationFrame(()=>requestAnimationFrame(run))}
 function printStructure(){
  if(!state.project.name&&!state.project.orderNo&&!state.stages.length){message('err','Заполните проект для печати структуры подчинённости.');return}
  try{
  buildStructurePrint();preparePrintPage('A4',10);const oldTitle=document.title;document.body.classList.add('print-structure');document.title=`Структура Заказ ${fileSafe(state.project.orderNo)}`;
  let restored=false;const restore=()=>{if(restored)return;restored=true;document.body.classList.remove('print-structure');$('structurePrint').innerHTML='';document.title=oldTitle;clearPrintPage();window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);
  message('ok','Структура подчинённости подготовлена к печати в A4, альбомная ориентация.');
- requestAnimationFrame(()=>requestAnimationFrame(()=>{void $('structurePrint').offsetWidth;invokePrintDialog(restore)}))
+ void $('structurePrint').offsetWidth;schedulePrint(restore)
  }catch(error){printFailure(error)}
 }
 
@@ -338,7 +339,7 @@ function printGantt(size){
  preparePrintPage(size,size==='A3'?10:8);document.body.classList.add('print-gantt',size==='A3'?'print-gantt-a3':'print-gantt-a4');document.title=`Диаграмма Ганта Заказ ${fileSafe(state.project.orderNo)} ${size}`;
  let restored=false;const restore=()=>{if(restored)return;restored=true;document.body.classList.remove('print-gantt','print-gantt-a3','print-gantt-a4');$('ganttPrint').innerHTML='';document.title=oldTitle;clearPrintPage();window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);
  message('ok',`Подготовлен ${size}, альбомная ориентация. Если драйвер принтера не применил её автоматически, выберите «Альбомная» в системном окне.`);
- requestAnimationFrame(()=>requestAnimationFrame(()=>{void $('ganttPrint').offsetWidth;invokePrintDialog(restore)}))
+ void $('ganttPrint').offsetWidth;schedulePrint(restore)
  }catch(error){printFailure(error)}
 }
 

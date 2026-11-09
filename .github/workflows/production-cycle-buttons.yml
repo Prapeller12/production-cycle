@@ -57,6 +57,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Real IE functional regression'}
           node tests/server/ie-print.cjs
           if($LASTEXITCODE -ne 0){throw 'Real IE native print regression'}
+          node tests/server/ie-buttons.cjs
+          if($LASTEXITCODE -ne 0){throw 'Real IE all-button regression'}
       - name: Edge, offline resource check and report print regression
         shell: pwsh
         env:
@@ -67,6 +69,8 @@ jobs:
           $env:PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$edge
           node tests/server/browser.cjs
           if($LASTEXITCODE -ne 0){throw 'Browser regression'}
+          node tests/server/buttons.cjs
+          if($LASTEXITCODE -ne 0){throw 'Edge all-button regression'}
           python -m pip install PyMuPDF==1.26.7
           if($LASTEXITCODE -ne 0){throw 'PDF verifier preparation failed'}
           python tests/server/verify-pdf.py dist/browser-qa
