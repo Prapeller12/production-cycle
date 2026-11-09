@@ -28,5 +28,7 @@ const root=path.resolve(__dirname,'..'),frontend=path.join(root,'frontend'),out=
  acorn.parse(test,{ecmaVersion:5});fs.mkdirSync(path.join(root,'dist'),{recursive:true});fs.writeFileSync(path.join(root,'dist/ie-test.js'),test);
  const layout=babel.transformSync(fs.readFileSync(path.join(root,'tests/server/ie-layout.js'),'utf8'),{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
  acorn.parse(layout,{ecmaVersion:5});fs.writeFileSync(path.join(root,'dist/ie-layout-test.js'),layout);
+ const printTest=babel.transformSync(fs.readFileSync(path.join(root,'tests/server/ie-print.js'),'utf8'),{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
+ acorn.parse(printTest,{ecmaVersion:5});fs.writeFileSync(path.join(root,'dist/ie-print-test.js'),printTest);
  console.log('IE11: shared scripts transpiled and parsed as ES5; local polyfills and CSS fallback included.');
 })().catch(error=>{console.error(error);process.exitCode=1});

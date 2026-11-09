@@ -63,12 +63,16 @@ function preparePrintPage(size='A4',margin=8){
  const rules=`@media print{@page{size:${size} landscape;margin:${margin}mm}}`;if(style.styleSheet)style.styleSheet.cssText=rules;else style.textContent=rules;
 }
 function clearPrintPage(){const style=$('activePrintPage');if(style)style.parentNode.removeChild(style)}
+function printFailure(error,restore=null){if(restore)restore();message('err','Не удалось открыть печать: '+String(error&&error.message||error)+'. Повторите попытку или откройте этот адрес в другом установленном браузере.')}
+function invokePrintDialog(restore){try{if(window.__TAURI__)window.__TAURI__.core.invoke('print_report').catch(error=>printFailure(error,restore));else window.print()}catch(error){printFailure(error,restore)}}
 function printStructure(){
  if(!state.project.name&&!state.project.orderNo&&!state.stages.length){message('err','Заполните проект для печати структуры подчинённости.');return}
+ try{
  buildStructurePrint();preparePrintPage('A4',10);const oldTitle=document.title;document.body.classList.add('print-structure');document.title=`Структура Заказ ${fileSafe(state.project.orderNo)}`;
  let restored=false;const restore=()=>{if(restored)return;restored=true;document.body.classList.remove('print-structure');$('structurePrint').innerHTML='';document.title=oldTitle;clearPrintPage();window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);
  message('ok','Структура подчинённости подготовлена к печати в A4, альбомная ориентация.');
- requestAnimationFrame(()=>requestAnimationFrame(()=>{void $('structurePrint').offsetWidth;if(window.__TAURI__)window.__TAURI__.core.invoke('print_report').catch(e=>{restore();message('err','Не удалось открыть печать: '+e)});else window.print()}))
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{void $('structurePrint').offsetWidth;invokePrintDialog(restore)}))
+ }catch(error){printFailure(error)}
 }
 
 function render(showMessage=false){
@@ -157,7 +161,7 @@ function buildPdfReport(model){
  <div class="report-section-title">Этапы и контроль сроков</div><table class="report-stage-table"><thead><tr><th>№</th><th>ID</th><th>Этап / структура</th><th>Исполнитель</th><th>Статус</th><th>Начало</th><th>Срок</th><th>Осталось</th></tr></thead><tbody>${rows||'<tr><td colspan="8">Этапы не созданы.</td></tr>'}</tbody></table>
  <div class="report-footer"><span>Отчёт отражает состояние проекта на момент формирования и рассчитывается по системной дате устройства.</span><span>Заказ № ${escapeHtml(p.orderNo||'—')}</span></div>`;
 }
-async function printPdfReport(){const v=await showValidation();if(v.errors.length)return;try{buildPdfReport(await B.report(state));const oldTitle=document.title;document.title=`Отчёт Заказ ${fileSafe(state.project.orderNo)}`;const restore=()=>{document.title=oldTitle;window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);setTimeout(()=>{if(window.__TAURI__)window.__TAURI__.core.invoke('print_report').catch(e=>message('err','Не удалось открыть печать: '+e));else window.print()},60)}catch(e){message('err','Не удалось сформировать отчёт: '+e)}}
+async function printPdfReport(){const v=await showValidation();if(v.errors.length)return;try{buildPdfReport(await B.report(state));const oldTitle=document.title;document.title=`Отчёт Заказ ${fileSafe(state.project.orderNo)}`;const restore=()=>{document.title=oldTitle;window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);setTimeout(()=>invokePrintDialog(restore),60)}catch(e){message('err','Не удалось сформировать отчёт: '+e)}}
 
 async function exportData(){return B.exportPair(state)}
 function previewText(tsv){return tsv.replace(/\t/g,' ⇥ ').replace(/\r\n/g,'\n')}
@@ -270,7 +274,7 @@ async function saveProject(){const epoch=networkEpoch;try{const snapshot=J.finge
 function loadJsonFile(f){const epoch=networkEpoch,r=new FileReader();r.onerror=()=>message('err','Не удалось прочитать файл.');r.onload=()=>{if(epoch!==networkEpoch)return;try{const candidate=J.parse(String(r.result));if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из файла?'))return;state=candidate;savedSnapshot=J.fingerprint(state);rememberPersistedStatuses();syncForm();render();refreshAutocomplete();message('ok','Проект загружен.')}catch(e){message('err','Не удалось открыть проект: '+e.message)}};r.readAsText(f,'utf-8')}
 async function openProject(){const epoch=networkEpoch;if(!B.native()){$('jsonFile').click();return}const orderNo=clean(prompt('Введите номер ранее сохранённого заказа:',state.project.orderNo||''));if(!orderNo)return;try{const candidate=await B.load(orderNo);if(epoch!==networkEpoch)return;if(!candidate){message('err','Проект с таким номером заказа не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;savedSnapshot=J.fingerprint(state);rememberPersistedStatuses();syncForm();render();await refreshAutocomplete();message('ok','Проект загружен из локальной базы данных.')}catch(e){message('err','Не удалось открыть проект: '+e)}}
 
-async function loadProjectById(projectId,stageUid=null){const epoch=networkEpoch;try{const candidate=await B.loadById(projectId);if(epoch!==networkEpoch)return;if(!candidate){message('err','Проект не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;if(stageUid){state.collapsed.__root=false;let current=byUid(stageUid);while(current&&current.parentUid){state.collapsed[current.parentUid]=false;current=byUid(current.parentUid)}completionFilter='active';$('completionFilter').value='active';$('ganttCompletionFilter').value='active'}savedSnapshot=J.fingerprint(state);rememberPersistedStatuses();syncForm();closeModal('projectsModal');setWorkspace('registry');render();await refreshAutocomplete();if(stageUid){requestAnimationFrame(()=>{const row=document.querySelector(`[data-stage-uid="${CSS.escape(stageUid)}"]`);if(row){row.classList.add('deadline-focus');row.scrollIntoView({block:'center',behavior:'smooth'})}})}message('ok',`Открыт проект «${state.project.name}», заказ № ${state.project.orderNo}.`)}catch(e){message('err','Не удалось открыть проект: '+e)}}
+async function loadProjectById(projectId,stageUid=null){const epoch=networkEpoch;try{const candidate=await B.loadById(projectId);if(epoch!==networkEpoch)return;if(!candidate){message('err','Проект не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;if(stageUid){state.collapsed.__root=false;let current=byUid(stageUid);while(current&&current.parentUid){state.collapsed[current.parentUid]=false;current=byUid(current.parentUid)}completionFilter='active';$('completionFilter').value='active';$('ganttCompletionFilter').value='active'}savedSnapshot=J.fingerprint(state);rememberPersistedStatuses();syncForm();closeModal('projectsModal');setWorkspace('registry');render();await refreshAutocomplete();if(stageUid){requestAnimationFrame(()=>{const row=Array.from(document.querySelectorAll('[data-stage-uid]')).find(element=>element.getAttribute('data-stage-uid')===String(stageUid));if(row){row.classList.add('deadline-focus');if(document.documentMode)row.scrollIntoView(true);else row.scrollIntoView({block:'center',behavior:'smooth'})}})}message('ok',`Открыт проект «${state.project.name}», заказ № ${state.project.orderNo}.`)}catch(e){message('err','Не удалось открыть проект: '+e)}}
 function renderProjectList(){
  const query=clean($('projectsSearch').value).toLocaleLowerCase('ru'),items=projectListItems.filter(p=>[p.orderNo,p.name,p.enterprise].some(v=>String(v||'').toLocaleLowerCase('ru').includes(query)));
  if(!items.length){$('projectsList').innerHTML=`<div class="projects-empty">${projectListItems.length?'Проекты по запросу не найдены.':'Сохранённых проектов пока нет.'}</div>`;return}
@@ -324,16 +328,18 @@ function renderGantt(){
 }
 function compactGanttForPrint(size){
  const clone=$('ganttChart').cloneNode(true),grid=clone.querySelector('.gantt-grid');if(!grid)return clone.innerHTML;
- grid.style.setProperty('--timeline-width','100%');const ticks=[...grid.querySelectorAll('.gantt-axis .gantt-tick')],limits=size==='A3'?{day:24,week:18,month:16,quarter:12}:{day:16,week:12,month:10,quarter:8},limit=limits[ganttScale],stride=Math.max(1,Math.ceil(ticks.length/limit));
+ grid.style.width='100%';if(!document.documentMode)grid.style.setProperty('--timeline-width','100%');const ticks=[...grid.querySelectorAll('.gantt-axis .gantt-tick')],limits=size==='A3'?{day:24,week:18,month:16,quarter:12}:{day:16,week:12,month:10,quarter:8},limit=limits[ganttScale],stride=Math.max(1,Math.ceil(ticks.length/limit));
  ticks.forEach((tick,i)=>{if(i%stride&&i!==ticks.length-1)tick.remove()});let visibleTicks=[...grid.querySelectorAll('.gantt-axis .gantt-tick')];if(visibleTicks.length>1){const last=visibleTicks.at(-1),previous=visibleTicks.at(-2),gap=parseFloat(last.style.left)-parseFloat(previous.style.left),safeGap=size==='A3'?9:12;if(gap<safeGap)previous.remove();visibleTicks=[...grid.querySelectorAll('.gantt-axis .gantt-tick')]}if(visibleTicks.length)visibleTicks.at(-1).classList.add('gantt-tick-last');return clone.innerHTML
 }
 function printGantt(size){
+ try{
  if(!state.stages.length){message('err','Добавьте этапы для печати диаграммы Ганта.');return}renderGantt();const scaleText={day:'по дням',week:'по неделям',month:'по месяцам',quarter:'по кварталам'}[ganttScale],oldTitle=document.title;
  $('ganttPrint').innerHTML=`<div class="gantt-print-header"><div><h1>Диаграмма Ганта</h1><div>Заказ № ${escapeHtml(state.project.orderNo||'—')} · ${escapeHtml(state.project.name||'Без названия')}</div></div><div class="gantt-print-meta">Формат ${size}, альбомная ориентация · масштаб ${scaleText}<br>${escapeHtml($('ganttPeriod').textContent)}</div></div><div class="gantt-chart">${compactGanttForPrint(size)}</div>`;
  preparePrintPage(size,size==='A3'?10:8);document.body.classList.add('print-gantt',size==='A3'?'print-gantt-a3':'print-gantt-a4');document.title=`Диаграмма Ганта Заказ ${fileSafe(state.project.orderNo)} ${size}`;
  let restored=false;const restore=()=>{if(restored)return;restored=true;document.body.classList.remove('print-gantt','print-gantt-a3','print-gantt-a4');$('ganttPrint').innerHTML='';document.title=oldTitle;clearPrintPage();window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);
  message('ok',`Подготовлен ${size}, альбомная ориентация. Если драйвер принтера не применил её автоматически, выберите «Альбомная» в системном окне.`);
- requestAnimationFrame(()=>requestAnimationFrame(()=>{void $('ganttPrint').offsetWidth;if(window.__TAURI__)window.__TAURI__.core.invoke('print_report').catch(e=>{restore();message('err','Не удалось открыть печать: '+e)});else window.print()}))
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{void $('ganttPrint').offsetWidth;invokePrintDialog(restore)}))
+ }catch(error){printFailure(error)}
 }
 
 function updateNetworkState(status,text=''){

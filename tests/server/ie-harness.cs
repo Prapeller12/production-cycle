@@ -11,9 +11,13 @@ public class BrowserReport {
     public Action<string> Receive;
     public Action<string> SaveCapture;
     public Action<int,int> ResizeViewport;
+    public Func<int> CountPrintDialogs;
+    public Func<string> DescribePrintDialogs;
     public void Report(string json) { Receive(json); }
     public void Capture(string name) { SaveCapture(name); }
     public void Viewport(int width, int height) { ResizeViewport(width,height); }
+    public int NativePrintCount() { return CountPrintDialogs(); }
+    public string NativePrintDetails() { return DescribePrintDialogs(); }
 }
 public class CaptureBrowser : WebBrowser {
     [StructLayout(LayoutKind.Sequential)] private struct Rect {public int Left,Top,Right,Bottom;}
@@ -30,6 +34,12 @@ public class CaptureBrowser : WebBrowser {
     }
 }
 public class IETest {
+    private delegate bool EnumWindowProc(IntPtr window,IntPtr parameter);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowProc callback,IntPtr parameter);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr window,StringBuilder text,int count);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr window,StringBuilder text,int count);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window,out uint process);
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window,uint message,IntPtr wparam,IntPtr lparam);
     [STAThread]
     public static int Main(string[] args) {
         if (args.Length != 3) return 2;
@@ -40,6 +50,24 @@ public class IETest {
         DateTime deadline = DateTime.UtcNow.AddSeconds(180);
         bool injected = false, finished = false; int code = 1;
         BrowserReport report = new BrowserReport();
+        int printDialogs=0;string printDetails="";var seenDialogs=new System.Collections.Generic.HashSet<IntPtr>();
+        report.CountPrintDialogs=delegate{return printDialogs;};report.DescribePrintDialogs=delegate{return printDetails;};
+        Timer nativeTimer=new Timer();nativeTimer.Interval=100;
+        nativeTimer.Tick+=delegate {
+            if(Environment.GetEnvironmentVariable("IE_PRINT_DIALOGS")!="1")return;
+            var current=new System.Collections.Generic.HashSet<IntPtr>();
+            EnumWindows(delegate(IntPtr window,IntPtr parameter){
+                uint process;GetWindowThreadProcessId(window,out process);
+                if(process!=(uint)System.Diagnostics.Process.GetCurrentProcess().Id)return true;
+                var title=new StringBuilder(256);var klass=new StringBuilder(256);GetWindowText(window,title,256);GetClassName(window,klass,256);
+                if(klass.ToString()=="#32770"&&title.ToString().Equals("Print",StringComparison.OrdinalIgnoreCase)){
+                    current.Add(window);if(seenDialogs.Add(window)){printDialogs++;printDetails+=title.ToString()+" | "+klass.ToString()+"\n";}
+                    PostMessage(window,0x111,new IntPtr(2),IntPtr.Zero);
+                }
+                return true;
+            },IntPtr.Zero);
+            seenDialogs.IntersectWith(current);
+        };nativeTimer.Start();
         report.SaveCapture=delegate(string name){
             if(!System.Text.RegularExpressions.Regex.IsMatch(name,"^[a-z0-9-]+$"))throw new ArgumentException("Invalid capture name");
             browser.SavePng(Path.Combine(Path.GetDirectoryName(args[2]),Path.GetFileNameWithoutExtension(args[2])+"-"+name+".png"));
@@ -77,6 +105,6 @@ public class IETest {
                 } catch { }
             }
         };
-        browser.Navigate(args[0]); timer.Start(); Application.Run(form); timer.Stop(); return code;
+        browser.Navigate(args[0]); timer.Start(); Application.Run(form); timer.Stop();nativeTimer.Stop(); return code;
     }
 }
