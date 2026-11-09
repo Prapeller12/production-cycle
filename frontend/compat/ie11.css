@@ -28,7 +28,7 @@
   .legacy-ie .appbar>.spacer{margin:0;flex:1 1 10px}
   .legacy-ie .appbar strong{flex:0 0 auto}
   .legacy-ie .project-context{max-width:260px}
-  .legacy-ie .network-state{display:inline-block;max-width:290px;vertical-align:middle}
+  .legacy-ie .network-state{display:inline-block;max-width:310px;vertical-align:middle}
   .legacy-ie .network-state:before{display:inline-block;vertical-align:middle;margin-right:6px}
   .legacy-ie .tabs{flex-wrap:wrap}
   .legacy-ie .tabs>.tab{margin:2px 4px 2px 0;flex:0 0 auto;display:block}
@@ -42,6 +42,8 @@
   .legacy-ie .toolbar-group>.btn,.legacy-ie .toolbar>.btn{margin:3px 8px 3px 0}
   .legacy-ie .toolbar h1{margin-right:16px}
   .legacy-ie .panel-head>*{margin-right:8px;margin-bottom:4px}
+  .legacy-ie .admin-page-head{flex-wrap:wrap}
+  .legacy-ie .admin-page-head>.admin-session{margin:4px 12px 4px 0}
   .legacy-ie .summary-chip,.legacy-ie .status-badge{display:inline-block;vertical-align:middle;line-height:24px}
   .legacy-ie .summary-chip b{margin-left:5px}
   .legacy-ie .structure-content{display:block}

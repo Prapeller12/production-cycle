@@ -25,6 +25,9 @@
    assert(item.form.width<=922,'Profile panel ignored its maximum width');
    assert(item.nameLabel.bottom<=item.name.top-2,'Field label overlaps its input');
    assert(document.documentElement.scrollWidth<=document.documentElement.clientWidth+3,'Page overflows horizontally');
+   var session=rect(el('adminSessionLabel')),back=rect(el('closeAdminBtn'));
+   assert(back.left>=session.right+8||back.top>=session.bottom,'Administrator header text touches its button');
+   fit(el('closeAdminBtn'),'Return to project button');
    fit(el('createAuditUserBtn'),'Create administrator button');
    window.scrollTo(0,Math.max(0,item.form.top-30));await pause(100);capture('profile-'+width);
    result.checks.push('bootstrap-layout-'+width);
