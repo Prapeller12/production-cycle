@@ -18,6 +18,140 @@
 .legacy-ie .modal-body{flex:1 1 auto;min-height:0;overflow:auto}
 .legacy-ie [data-inert]{opacity:.65}
 .legacy-ie input::-ms-clear{display:none}
+/* IE11 has no modern Grid, flex gap, CSS min() or inset. Keep these
+   replacements scoped to the actual Trident engine; Edge keeps its layout. */
+@media screen{
+  .legacy-ie main,.legacy-ie details,.legacy-ie summary{display:block}
+  .legacy-ie body{font-family:"Segoe UI",Arial,sans-serif}
+  .legacy-ie .appbar{height:auto;min-height:64px;align-items:center}
+  .legacy-ie .appbar>*{margin:4px 10px 4px 0;min-width:0}
+  .legacy-ie .appbar>.spacer{margin:0;flex:1 1 10px}
+  .legacy-ie .appbar strong{flex:0 0 auto}
+  .legacy-ie .project-context{max-width:260px}
+  .legacy-ie .network-state{display:inline-block;max-width:290px;vertical-align:middle}
+  .legacy-ie .network-state:before{display:inline-block;vertical-align:middle;margin-right:6px}
+  .legacy-ie .tabs{flex-wrap:wrap}
+  .legacy-ie .tabs>.tab{margin:2px 4px 2px 0;flex:0 0 auto;display:block}
+  .legacy-ie .btn,.legacy-ie .top-action,.legacy-ie .preview-tab{
+    display:inline-block;vertical-align:middle;line-height:20px;padding-top:8px;padding-bottom:8px;max-width:100%;white-space:normal
+  }
+  .legacy-ie .btn.small{padding-top:5px;padding-bottom:5px}
+  .legacy-ie .btn.icon{padding:0;line-height:30px;white-space:nowrap}
+  .legacy-ie .ui-icon{vertical-align:middle;margin-right:7px}
+  .legacy-ie .btn.icon .ui-icon,.legacy-ie .expander .ui-icon{margin-right:0}
+  .legacy-ie .toolbar-group>.btn,.legacy-ie .toolbar>.btn{margin:3px 8px 3px 0}
+  .legacy-ie .toolbar h1{margin-right:16px}
+  .legacy-ie .panel-head>*{margin-right:8px;margin-bottom:4px}
+  .legacy-ie .summary-chip,.legacy-ie .status-badge{display:inline-block;vertical-align:middle;line-height:24px}
+  .legacy-ie .summary-chip b{margin-left:5px}
+  .legacy-ie .structure-content{display:block}
+  .legacy-ie .structure-content.collapsed{display:none}
+  .legacy-ie .structure-head>div>*{margin-right:10px}
+  .legacy-ie .structure-node>*{margin-right:7px}
+  .legacy-ie .structure-node .tree-name{min-width:0}
+
+  .legacy-ie .project-grid,.legacy-ie .form-grid,.legacy-ie .audit-user-form,
+  .legacy-ie .role-cards,.legacy-ie .bottom-grid,.legacy-ie .import-files,.legacy-ie .dictionary-toolbar{
+    display:flex;flex-wrap:wrap;align-items:stretch;max-width:100%
+  }
+  .legacy-ie .project-grid>.field{
+    flex:0 0 auto;width:calc(33.333% - 12px);min-width:0;margin:0 12px 12px 0
+  }
+  .legacy-ie .form-grid>div,.legacy-ie .audit-user-form>.audit-field,
+  .legacy-ie .bottom-grid>.info-card,.legacy-ie .import-files>.import-file,
+  .legacy-ie .dictionary-toolbar>label{
+    flex:0 0 auto;width:calc(50% - 8px);min-width:0;margin:0 8px 16px 0
+  }
+  .legacy-ie .form-grid>.wide,.legacy-ie .audit-user-form>.profile-name,
+  .legacy-ie .audit-user-form>.audit-create-action{width:calc(100% - 8px);flex:0 0 auto}
+  .legacy-ie .audit-layout,.legacy-ie .audit-field,.legacy-ie .dictionary-toolbar>label,
+  .legacy-ie .audit-user>div,.legacy-ie .backup-row>div,.legacy-ie .onboarding-example{display:block}
+  .legacy-ie .audit-field>span{display:block;margin-bottom:6px;line-height:18px}
+  .legacy-ie .audit-layout>.audit-section{margin-bottom:14px}
+  .legacy-ie .role-cards>article{width:calc(33.333% - 8px);flex:0 0 auto;margin-right:8px;min-width:0}
+  .legacy-ie .role-cards .role-number{display:block;text-align:center;line-height:26px;margin-right:10px}
+  .legacy-ie .role-cards article>div{flex:1 1 0%;min-width:0;max-width:calc(100% - 36px)}
+  .legacy-ie .role-cards p{word-wrap:break-word}
+  .legacy-ie .profile-create{display:block;width:100%;max-width:920px}
+  .legacy-ie .profile-create>summary{display:block;min-height:48px;line-height:22px}
+  .legacy-ie .profile-create>summary small{float:right;margin-left:12px}
+  .legacy-ie .profile-create .profile-chevron{margin-right:9px}
+  .legacy-ie .audit-create-action{display:flex;flex-wrap:wrap;align-items:center}
+  .legacy-ie .audit-create-action>.btn{margin-right:12px}
+  .legacy-ie .audit-create-action>span{display:block;line-height:20px}
+  .legacy-ie .audit-section-head,.legacy-ie .audit-verify-row{flex-wrap:wrap}
+  .legacy-ie .audit-section-head>*{margin-right:12px}
+  .legacy-ie .audit-verify-row>*{margin:4px 10px 4px 0;min-height:40px}
+  .legacy-ie .audit-verify-row select,.legacy-ie .audit-verify-row input{width:180px;min-width:140px}
+  .legacy-ie .audit-user>div>*{display:block;margin-bottom:3px}
+  .legacy-ie .backup-row>div>*{display:block;margin-bottom:3px}
+  .legacy-ie .audit-change{display:flex;flex-wrap:wrap}
+  .legacy-ie .audit-change>*{flex:1 1 0%;min-width:0;margin-right:10px;word-wrap:break-word}
+  .legacy-ie .audit-change>.change-arrow{flex:0 0 20px}
+
+  .legacy-ie .projects-list,.legacy-ie .deadline-control-list,.legacy-ie .backup-list{display:block}
+  .legacy-ie .projects-list>.project-list-row,.legacy-ie .backup-list>.backup-row{margin-bottom:8px}
+  .legacy-ie .project-list-head{display:none}
+  .legacy-ie .project-list-row,.legacy-ie .deadline-row{display:flex;flex-wrap:wrap;align-items:center}
+  .legacy-ie .project-list-row>div,.legacy-ie .deadline-row>div{flex:1 1 130px;min-width:0;margin:5px 10px 5px 0;word-wrap:break-word}
+  .legacy-ie .project-list-row>.project-list-title,.legacy-ie .deadline-row>div:first-child{flex:2 1 240px}
+  .legacy-ie .project-list-row>.btn,.legacy-ie .deadline-row>.btn{flex:0 0 auto}
+  .legacy-ie .projects-search{display:block}
+  .legacy-ie .projects-search input{display:block;width:100%;max-width:420px;margin-top:6px}
+  .legacy-ie .deadline-control-list>.deadline-group{margin-bottom:12px}
+  .legacy-ie .dictionary-head,.legacy-ie .dictionary-row{display:flex;align-items:center}
+  .legacy-ie .dictionary-head>span:first-child,.legacy-ie .dictionary-row>strong{flex:1 1 0%;min-width:0}
+  .legacy-ie .dictionary-head>span:not(:first-child),.legacy-ie .dictionary-row>span{width:90px;flex:0 0 90px;text-align:center}
+  .legacy-ie .dictionary-row>.btn{margin-left:8px}
+
+  .legacy-ie .modal-backdrop{top:0;right:0;bottom:0;left:0;width:100%;height:100%}
+  .legacy-ie .modal{width:720px;max-width:100%;max-height:calc(100vh - 48px);flex:0 1 auto}
+  .legacy-ie .modal-wide{width:1040px}
+  .legacy-ie .network-login-modal{width:680px}
+  .legacy-ie .modal-head{flex:0 0 auto}
+  .legacy-ie .modal-head h2{flex:0 1 auto;min-width:0}
+  .legacy-ie .modal-body{flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto}
+  .legacy-ie .modal-foot{flex:0 0 auto;flex-wrap:wrap}
+  .legacy-ie .modal-foot>.btn,.legacy-ie .stage-secondary-actions>.btn,
+  .legacy-ie .stage-primary-actions>.btn{margin:3px 0 3px 8px}
+  .legacy-ie .modal-foot-explained>span{margin-right:12px}
+  .legacy-ie .message-area{width:560px;max-width:calc(100vw - 36px)}
+  .legacy-ie .stage-primary-btn{min-width:0;width:300px;max-width:100%}
+  .legacy-ie .connection-chip{display:inline-block}
+  .legacy-ie .gantt-legend>span,.legacy-ie .gantt-context>span{margin-right:10px}
+  .legacy-ie .preview-tabs>.preview-tab,.legacy-ie .projects-tabs>.preview-tab,
+  .legacy-ie .admin-tabs>.preview-tab{margin-right:5px}
+  .legacy-ie .onboarding-example>*{display:block;margin-bottom:6px}
+}
+  @media screen and (max-width:1100px){
+    .legacy-ie .project-grid>.field{width:calc(50% - 12px)}
+  }
+  @media screen and (max-width:850px){
+    .legacy-ie .project-grid>.field,.legacy-ie .form-grid>div,
+    .legacy-ie .audit-user-form>.audit-field,.legacy-ie .audit-user-form>.audit-create-action,
+    .legacy-ie .bottom-grid>.info-card,.legacy-ie .import-files>.import-file,
+    .legacy-ie .dictionary-toolbar>label,.legacy-ie .role-cards>article{width:100%;margin-right:0}
+    .legacy-ie .role-cards>article{margin-bottom:10px}
+    .legacy-ie .profile-create>summary small{display:none}
+    .legacy-ie .audit-create-action>.btn{width:100%;margin:0 0 8px}
+    .legacy-ie .project-list-row,.legacy-ie .deadline-row{display:block}
+    .legacy-ie .project-list-row>div,.legacy-ie .deadline-row>div{width:100%}
+    .legacy-ie .dictionary-head{display:none}
+    .legacy-ie .dictionary-row>span{display:none}
+    .legacy-ie .modal-backdrop{padding:6px}
+    .legacy-ie .modal{max-height:calc(100vh - 12px)}
+    .legacy-ie .stage-secondary-actions,.legacy-ie .stage-primary-actions{display:block;width:100%}
+    .legacy-ie .stage-secondary-actions>.btn,.legacy-ie .stage-primary-actions>.btn{width:calc(50% - 8px)}
+    .legacy-ie .audit-change{display:block}
+    .legacy-ie .audit-change>*{display:block;margin-bottom:5px}
+    .legacy-ie .audit-change>.change-arrow{display:none}
+    .legacy-ie .tree-table tbody,.legacy-ie .tree-table tr{display:block}
+    .legacy-ie .tree-table tr{margin-bottom:10px}
+    .legacy-ie .tree-table td{display:flex;align-items:flex-start}
+    .legacy-ie .tree-table td:before{flex:0 0 112px;margin-right:8px}
+    .legacy-ie .tree-table td>.tree-cell,.legacy-ie .tree-table td>.row-actions{flex:1 1 0%;min-width:0}
+    .legacy-ie .tree-table td[data-label="Действия"]{display:block}
+  }
 @media print{
   .legacy-ie .gantt-grid{display:block;min-width:0!important}
   .legacy-ie .gantt-label{float:left;clear:left;width:58mm;height:10mm!important}

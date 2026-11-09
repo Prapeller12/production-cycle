@@ -3,23 +3,48 @@ using System.IO;
 using System.Text;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using System.Drawing;
+using System.Drawing.Imaging;
 
 [ComVisible(true), ClassInterface(ClassInterfaceType.AutoDual)]
 public class BrowserReport {
     public Action<string> Receive;
+    public Action<string> SaveCapture;
+    public Action<int,int> ResizeViewport;
     public void Report(string json) { Receive(json); }
+    public void Capture(string name) { SaveCapture(name); }
+    public void Viewport(int width, int height) { ResizeViewport(width,height); }
+}
+public class CaptureBrowser : WebBrowser {
+    [StructLayout(LayoutKind.Sequential)] private struct Rect {public int Left,Top,Right,Bottom;}
+    [DllImport("ole32.dll")] private static extern int OleDraw([MarshalAs(UnmanagedType.IUnknown)] object view,uint aspect,IntPtr dc,ref Rect bounds);
+    public void Capture(string path) {
+        using(var bitmap=new Bitmap(ClientSize.Width,ClientSize.Height)) {
+            using(var graphics=Graphics.FromImage(bitmap)) {
+                graphics.Clear(Color.White);IntPtr dc=graphics.GetHdc();
+                try {var bounds=new Rect{Left=0,Top=0,Right=bitmap.Width,Bottom=bitmap.Height};Marshal.ThrowExceptionForHR(OleDraw(ActiveXInstance,1,dc,ref bounds));}
+                finally {graphics.ReleaseHdc(dc);}
+            }
+            bitmap.Save(path,ImageFormat.Png);
+        }
+    }
 }
 public class IETest {
     [STAThread]
     public static int Main(string[] args) {
         if (args.Length != 3) return 2;
         Application.EnableVisualStyles();
-        Form form = new Form(); form.Width = 1440; form.Height = 1000;
-        WebBrowser browser = new WebBrowser(); browser.Dock = DockStyle.Fill;
+        Form form = new Form(); form.AutoScaleMode=AutoScaleMode.None;form.ClientSize = new Size(1440,1000);
+        CaptureBrowser browser = new CaptureBrowser(); browser.Dock = DockStyle.Fill;
         browser.ScriptErrorsSuppressed = true; form.Controls.Add(browser);
         DateTime deadline = DateTime.UtcNow.AddSeconds(180);
         bool injected = false, finished = false; int code = 1;
         BrowserReport report = new BrowserReport();
+        report.SaveCapture=delegate(string name){
+            if(!System.Text.RegularExpressions.Regex.IsMatch(name,"^[a-z0-9-]+$"))throw new ArgumentException("Invalid capture name");
+            browser.Capture(Path.Combine(Path.GetDirectoryName(args[2]),Path.GetFileNameWithoutExtension(args[2])+"-"+name+".png"));
+        };
+        report.ResizeViewport=delegate(int width,int height){form.ClientSize=new Size(width,height);browser.Update();};
         report.Receive = delegate(string json) {
             if (finished) return; finished = true;
             File.WriteAllText(args[2], json, new UTF8Encoding(false));

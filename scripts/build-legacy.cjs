@@ -1,4 +1,4 @@
-const fs=require('node:fs'),path=require('node:path');
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const babel=require('@babel/core'),postcss=require('postcss'),properties=require('postcss-custom-properties'),prefixer=require('autoprefixer'),acorn=require('acorn');
 const root=path.resolve(__dirname,'..'),frontend=path.join(root,'frontend'),out=path.join(frontend,'legacy');
 (async()=>{
@@ -18,11 +18,15 @@ const root=path.resolve(__dirname,'..'),frontend=path.join(root,'frontend'),out=
  result.root.walkDecls(decl=>{for(let i=0;i<20&&decl.value.includes('var(');i++){const old=decl.value;decl.value=decl.value.replace(/var\((--[\w-]+)(?:,\s*([^()]*))?\)/g,(match,name,fallback)=>variables.get(name)||fallback||match);if(old===decl.value)break;}});
  const finalCss=result.root.toString();if(finalCss.includes('var('))throw Error('Unresolved legacy CSS custom property');
  fs.writeFileSync(path.join(out,'app.css'),finalCss);
- const legacy=html.replace(/<link rel="stylesheet" href="styles\/[^\"]+">/g,'').replace(/<script defer src="[^\"]+"><\/script>/g,'').replace('</head>','<link rel="stylesheet" href="/legacy/app.css">\n</head>').replace('</body>','<script defer src="/legacy/app.js"></script>\n</body>');
+ const head=fs.readFileSync(path.join(frontend,'compat/ie11-head.js'),'utf8');acorn.parse(head,{ecmaVersion:5});
+ const revision=crypto.createHash('sha256').update(code+finalCss+head).digest('hex').slice(0,12);
+ const legacy=html.replace(/<link rel="stylesheet" href="styles\/[^\"]+">/g,'').replace(/<script defer src="[^\"]+"><\/script>/g,'').replace('</head>','<script src="/compat/ie11-head.js?v='+revision+'"></script>\n<link rel="stylesheet" href="/legacy/app.css?v='+revision+'">\n</head>').replace('</body>','<script defer src="/legacy/app.js?v='+revision+'"></script>\n</body>');
  fs.writeFileSync(path.join(out,'index.html'),legacy);
  const smoke=fs.readFileSync(path.join(root,'tests/network-native-smoke.js'),'utf8').replaceAll('window.__TAURI__.core.invoke','window.__browserTestInvoke');
  const hook="window.__browserTestInvoke=function(command,args){if(command==='finish_smoke'){args.documentMode=document.documentMode;if(args.error){args.fields={};['evidenceType','evidenceReference','evidenceComment'].forEach(function(id){var e=document.getElementById(id);args.fields[id]=e?e.value:null;});}window.external.Report(JSON.stringify(args));return Promise.resolve(false);}if(command==='save_file')return Promise.resolve(args.name);throw Error('Unexpected test hook '+command);};\n";
  const test=babel.transformSync(hook+smoke,{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
  acorn.parse(test,{ecmaVersion:5});fs.mkdirSync(path.join(root,'dist'),{recursive:true});fs.writeFileSync(path.join(root,'dist/ie-test.js'),test);
+ const layout=babel.transformSync(fs.readFileSync(path.join(root,'tests/server/ie-layout.js'),'utf8'),{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
+ acorn.parse(layout,{ecmaVersion:5});fs.writeFileSync(path.join(root,'dist/ie-layout-test.js'),layout);
  console.log('IE11: shared scripts transpiled and parsed as ES5; local polyfills and CSS fallback included.');
 })().catch(error=>{console.error(error);process.exitCode=1});

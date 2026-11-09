@@ -1,7 +1,7 @@
 /* DOM compatibility for the same application in the IE11/MSHTML engine. */
 (function () {
   if (!document.documentMode) return;
-  document.documentElement.className += ' legacy-ie';
+  if (!/(^|\s)legacy-ie(\s|$)/.test(document.documentElement.className)) document.documentElement.className += ' legacy-ie';
   if (!window.crypto) window.crypto = window.msCrypto || {};
   if (!window.crypto.randomUUID) window.crypto.randomUUID = function () {
     var bytes = new Uint8Array(16), i;
