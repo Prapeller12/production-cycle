@@ -18,7 +18,7 @@ public class BrowserReport {
 public class CaptureBrowser : WebBrowser {
     [StructLayout(LayoutKind.Sequential)] private struct Rect {public int Left,Top,Right,Bottom;}
     [DllImport("ole32.dll")] private static extern int OleDraw([MarshalAs(UnmanagedType.IUnknown)] object view,uint aspect,IntPtr dc,ref Rect bounds);
-    public void Capture(string path) {
+    public void SavePng(string path) {
         using(var bitmap=new Bitmap(ClientSize.Width,ClientSize.Height)) {
             using(var graphics=Graphics.FromImage(bitmap)) {
                 graphics.Clear(Color.White);IntPtr dc=graphics.GetHdc();
@@ -42,7 +42,7 @@ public class IETest {
         BrowserReport report = new BrowserReport();
         report.SaveCapture=delegate(string name){
             if(!System.Text.RegularExpressions.Regex.IsMatch(name,"^[a-z0-9-]+$"))throw new ArgumentException("Invalid capture name");
-            browser.Capture(Path.Combine(Path.GetDirectoryName(args[2]),Path.GetFileNameWithoutExtension(args[2])+"-"+name+".png"));
+            browser.SavePng(Path.Combine(Path.GetDirectoryName(args[2]),Path.GetFileNameWithoutExtension(args[2])+"-"+name+".png"));
         };
         report.ResizeViewport=delegate(int width,int height){form.ClientSize=new Size(width,height);browser.Update();};
         report.Receive = delegate(string json) {
