@@ -1,0 +1,33 @@
+(async function(){
+ var C=window.__focusedConfig,B=window.Production.backend,result={error:null,documentMode:document.documentMode,roles:[],searches:[],downloads:[],hitTargets:[]},downloads=[];
+ function el(id){return document.getElementById(id);}
+ function assert(ok,text){if(!ok)throw Error(text);}
+ function pause(ms){return new Promise(function(resolve){setTimeout(resolve,ms);});}
+ async function wait(test,label){var end=Date.now()+15000;while(Date.now()<end){if(await test())return;await pause(60);}throw Error('Timeout '+label+'; '+el('networkLoginStatus').textContent+'; '+el('importValidation').textContent);}
+ function open(id){return el(id).classList.contains('open');}
+ function fill(id,value){el(id).value=String(value);el(id).dispatchEvent(new Event('input',{bubbles:true}));el(id).dispatchEvent(new Event('change',{bubbles:true}));}
+ async function click(selector){var e=document.querySelector(selector);assert(e&&!e.disabled&&e.getClientRects().length,'Unavailable '+selector);e.scrollIntoView(false);await pause(60);var r=e.getBoundingClientRect(),x=(r.left+r.right)/2,y=(Math.max(0,r.top)+Math.min(document.documentElement.clientHeight,r.bottom))/2,hit=document.elementFromPoint(x,y);assert(hit&&(hit===e||e.contains(hit)),'Pointer blocked '+selector+' by '+(hit&&hit.outerHTML.slice(0,180)));result.hitTargets.push(selector);e.click();}
+ async function more(selector){await click('.more-actions > summary');await click(selector);}
+ function bytes(base64){var raw=atob(base64),b=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)b[i]=raw.charCodeAt(i);return b;}
+ function file(base64){var blob=new Blob([bytes(base64)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});Object.defineProperty(blob,'name',{value:C.template.fileName});Object.defineProperty(el('importExcelFile'),'files',{configurable:true,value:[blob]});el('importExcelFile').dispatchEvent(new Event('change',{bubbles:true}));}
+ navigator.msSaveOrOpenBlob=function(blob,name){var reader=new FileReader();reader.onload=function(){var b=new Uint8Array(reader.result),s='';for(var i=0;i<b.length;i++)s+=String.fromCharCode(b[i]);downloads.push({name:name,base64:btoa(s)});};reader.readAsArrayBuffer(blob);return true;};window.confirm=function(){return true;};
+ try{
+  await wait(function(){return open('networkLoginModal')&&el('networkLoginUser').options.length===3;},'login');
+  for(var index=0;index<C.users.length;index++){
+   var user=C.users[index];result.phase=user.role;fill('networkLoginUser',user.id);fill('networkLoginPin','739201');await click('#networkLoginBtn');await wait(function(){return !open('networkLoginModal');},'login');await wait(function(){return open('onboardingModal');},'first rules');await click('[data-close="onboardingModal"]');
+   assert(document.querySelector('label[for="projectsSearch"]').textContent==='поиск проектов','Wrong label');assert(!el('projectsModal').contains(el('projectsSearch')),'Search remained inside dialog');
+   var cases=[['000924-27',[C.projects[0].id,C.projects[1].id]],[' 000924-27 ',[C.projects[0].id,C.projects[1].id]],['мОнТаЖ',[C.projects[0].id]],['зАвОд б',[C.projects[1].id]],['000777-27',[C.projects[2].id]],['нет такого проекта',[]],['%',[]],['',C.projects.map(function(p){return p.id;})]];
+   for(var j=0;j<cases.length;j++){
+    var query=cases[j][0],ids=cases[j][1];fill('projectsSearch',query);await click('#searchProjectsBtn');await wait(function(){return open('projectsModal')&&el('projectsList').textContent.indexOf('Загрузка…')<0;},'search');var actual=Array.prototype.map.call(document.querySelectorAll('[data-open-project-id]'),function(e){return Number(e.getAttribute('data-open-project-id'));}).sort(function(a,b){return a-b;});assert(JSON.stringify(actual)===JSON.stringify(ids.slice().sort(function(a,b){return a-b;})),'Wrong results for '+query);assert(!el('projectsModal').querySelector('input'),'Dialog contains a search field');
+    if(query===''){assert(el('projectsList').scrollHeight>el('projectsList').clientHeight,'No list scroll');await click('[data-open-project-id="'+C.projects[0].id+'"]');await wait(function(){return !open('projectsModal');},'load selected project');assert(el('projectName').value===C.projects[0].name,'Wrong selected duplicate project');}
+    else await click('#projectsModal [data-close="projectsModal"].icon');result.searches.push({role:user.role,query:query,count:ids.length});
+   }
+   fill('projectsSearch','');await click('.more-actions > summary');assert((el('exportBtn').getClientRects().length>0)===(user.role==='admin'),'Wrong export role access');await click('#hintsBtn');assert(open('onboardingModal'),'Hints did not open');await click('[data-close="onboardingModal"]');
+   var n=downloads.length;await more('#downloadImportTemplateBtn');await wait(function(){return downloads.length>n;},'template Blob download');assert(downloads[n].base64===C.template.base64&&downloads[n].name===C.template.fileName,'Incorrect XLSX Blob');result.downloads.push({role:user.role,name:downloads[n].name,bytes:atob(downloads[n].base64).length,exactBytes:true,transport:'IE msSaveOrOpenBlob handler'});
+   var before=el('projectName').value;await more('#importBtn');assert(el('confirmImportBtn').disabled,'Import enabled without file');file(C.template.base64);await wait(function(){return !el('confirmImportBtn').disabled;},'template import');assert(el('importPreview').querySelectorAll('thead th').length===8&&el('importPreview').querySelectorAll('tbody tr').length===5,'Incomplete preview');await click('#confirmImportBtn');await wait(function(){return open('saveConfirmationModal');},'signature');await click('#saveConfirmationModal [data-close="saveConfirmationModal"].icon');assert(el('projectName').value===before,'Cancel replaced current project');assert((await B.listProjects()).length===18,'Preview wrote to database');
+   if(index===0){window.external.Viewport(800,768);await pause(200);fill('projectsSearch','000777-27');await click('#searchProjectsBtn');await wait(function(){return open('projectsModal')&&document.querySelectorAll('[data-open-project-id]').length===1;},'narrow search');window.external.Capture('search-800');await click('#projectsModal [data-close="projectsModal"].icon');window.external.Viewport(1440,1000);await pause(200);}
+   result.roles.push(user.role);await click('#networkLogoutBtn');await wait(function(){return open('networkLoginModal')&&!el('networkLogoutBtn').disabled;},'logout');
+  }
+ }catch(error){result.error=String(error&&error.stack||error);try{window.external.Capture('focused-failure');}catch(ignored){}}
+ window.external.Report(JSON.stringify(result));
+}());
