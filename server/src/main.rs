@@ -5,6 +5,8 @@ mod sessions;
 mod http;
 mod service;
 mod launcher;
+mod excel_import;
+mod ui_preferences;
 #[path = "../../src-tauri/src/production/mod.rs"]
 mod production;
 #[path = "../../src-tauri/src/audit.rs"]

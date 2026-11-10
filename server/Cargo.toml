@@ -27,6 +27,7 @@ time = "0.3"
 url = "2"
 rustls = "0.20.9"
 rustls-pemfile = "0.2.1"
+calamine = { version = "=0.38.0", features = ["chrono"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8"

@@ -144,6 +144,16 @@
     const bundle=await invoke('production_export_txt',{snapshot:toSnapshot(state)});
     return {out:bundle.outgoingText,in:bundle.incomingText,outFileName:bundle.outgoingFileName,inFileName:bundle.incomingFileName};
   }
+  async function excelTemplate(){if(!window.ProductionServer)throw Error('Образец Excel доступен в серверной программе.');return invoke('production_excel_template')}
+  async function claimOnboarding(){return window.ProductionServer?invoke('ui_claim_onboarding'):{show:false}}
+  async function importExcel(file){
+    if(!window.ProductionServer)throw Error('Импорт Excel доступен в серверной программе.');
+    if(!file||!String(file.name||'').toLowerCase().endsWith('.xlsx'))throw Error('Выберите файл .xlsx по образцу программы.');
+    if(!file.size||file.size>5*1024*1024)throw Error('Файл пуст или превышает 5 МиБ.');
+    const base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(Error('Не удалось прочитать Excel.'));reader.onload=()=>{try{const bytes=new Uint8Array(reader.result),parts=[];for(let i=0;i<bytes.length;i+=8192)parts.push(String.fromCharCode.apply(null,bytes.subarray(i,i+8192)));resolve(btoa(parts.join('')))}catch(error){reject(error)}};reader.readAsArrayBuffer(file)});
+    const result=await invoke('production_import_excel',{fileName:file.name,base64});
+    return {state:fromSnapshot(result.snapshot),rows:result.rows,warnings:result.warnings};
+  }
   async function report(state){
     if(!native())return D.report(state);
     const value=await invoke('production_get_management_report',{snapshot:toSnapshot(state)});
@@ -159,5 +169,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report,excelTemplate,importExcel,claimOnboarding});
 })();

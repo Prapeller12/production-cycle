@@ -4,8 +4,8 @@
 const {STATUS}=Production.config;
 const D=Production.domain, J=Production.projectFile, B=Production.backend;
 let state={databaseId:null,project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};
-let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',ganttScale='quarter',structureCollapsed=true,importFiles={out:null,in:null},importCandidate=null,importPreviewKind='out',dictionaryEntries=[],projectListItems=[],deadlineControlItems=[],auditUsers=[],pendingSignatureAction=null,persistedStatuses=new Map(),adminSession=null,onboardingStep=0;
-let networkMode=false,networkSessionActive=false,networkSessionUserId=null,networkTimer=null,networkDraftTimer=null,lastNetworkDraftFingerprint='',networkEvictionStarted=false,networkTransition=false,networkPollPending=null,networkDraftPending=null,networkEpoch=0;
+let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',ganttScale='quarter',structureCollapsed=true,importFile=null,importCandidate=null,importReadVersion=0,dictionaryEntries=[],projectListItems=[],deadlineControlItems=[],auditUsers=[],pendingSignatureAction=null,persistedStatuses=new Map(),adminSession=null,onboardingStep=0;
+let networkMode=false,networkSessionActive=false,networkSessionUserId=null,networkSessionRole=null,networkTimer=null,networkDraftTimer=null,lastNetworkDraftFingerprint='',networkEvictionStarted=false,networkTransition=false,networkPollPending=null,networkDraftPending=null,networkEpoch=0;
 const modalReturnFocus=new Map();
 const $=id=>document.getElementById(id);
 const els={projectName:$('projectName'),orderNo:$('orderNo'),initiator:$('initiator'),executor:$('executor'),projectAddressees:$('projectAddressees'),projectStart:$('projectStart'),projectDeadline:$('projectDeadline')};
@@ -77,7 +77,7 @@ function printStructure(){
 }
 
 function render(showMessage=false){
- updateSavedState();
+ updateSavedState();updateUserActions();
  const context=state.project.name||state.project.orderNo?`${state.project.orderNo?'Заказ № '+state.project.orderNo+' · ':''}${state.project.name||'Без названия'}`:'Новый проект';
  $('projectContext').textContent=context;$('workspaceTitle').textContent=context;$('taskCounter').textContent=`Этапов: ${state.stages.length}`;renderStructure();
  const counts={work:0,done:0,overdue:0,new:0,hold:0};state.stages.forEach(s=>counts[derivedStageVisualStatus(s)]++);
@@ -164,6 +164,16 @@ function buildPdfReport(model){
 }
 async function printPdfReport(){const v=await showValidation();if(v.errors.length)return;try{buildPdfReport(await B.report(state));const oldTitle=document.title;document.title=`Отчёт Заказ ${fileSafe(state.project.orderNo)}`;const restore=()=>{document.title=oldTitle;window.removeEventListener('afterprint',restore)};window.addEventListener('afterprint',restore);message('ok','Отчёт подготовлен к печати. Если окно не появилось, нажмите Ctrl+P.');setTimeout(()=>invokePrintDialog(restore),60)}catch(e){message('err','Не удалось сформировать отчёт: '+e)}}
 
+function canExportForRegistry(){return window.ProductionServer?networkSessionRole==='admin':Boolean(adminSession&&adminSession.role==='admin')}
+function updateUserActions(){const button=$('exportBtn');if(button)button.hidden=!canExportForRegistry()}
+async function downloadImportTemplate(){
+ const button=$('downloadImportTemplateBtn');button.disabled=true;
+ try{const template=await B.excelTemplate(),raw=atob(template.base64),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);const blob=new Blob([bytes],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+ if(navigator.msSaveOrOpenBlob)navigator.msSaveOrOpenBlob(blob,template.fileName);else{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=template.fileName;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
+ message('ok','Образец Excel передан браузеру для сохранения. Заполните листы «Проект» и «Этапы».')
+ }catch(error){message('err','Не удалось скачать образец: '+error)}finally{button.disabled=false}
+}
+
 async function exportData(){return B.exportPair(state)}
 function previewText(tsv){return tsv.replace(/\t/g,' ⇥ ').replace(/\r\n/g,'\n')}
 function fileSafe(v){return clean(v).replace(/[\\/:*?"<>|]+/g,'-').slice(0,80)||'проект'}
@@ -171,7 +181,7 @@ async function downloadText(name,txt,mime='text/plain;charset=utf-8'){
  if(window.__TAURI__){const path=await window.__TAURI__.core.invoke('save_file',{name,text:txt});message('ok','Файл сохранён: '+path);return true}
  const blob=new Blob(['\uFEFF'+txt],{type:mime});if(navigator.msSaveOrOpenBlob){navigator.msSaveOrOpenBlob(blob,name);return false}const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);return false
 }
-async function openExport(){const v=await showValidation();if(v.errors.length)return;try{exportCache=await exportData();previewKind='out';document.querySelectorAll('.preview-tab').forEach(x=>x.classList.toggle('active',x.dataset.preview==='out'));const suffix=fileSafe(state.project.orderNo);$('outFileName').textContent=exportCache.outFileName||`Список исх. Заказ ${suffix}.txt`;$('inFileName').textContent=exportCache.inFileName||`Список вхд. Заказ ${suffix}.txt`;updatePreview();$('exportValidation').innerHTML=v.warnings.length?`<div class="notice warn">${v.warnings.map(escapeHtml).join('<br>')}</div>`:'';openModal('exportModal')}catch(e){message('err','Ошибка формирования TXT: '+e)}}
+async function openExport(){if(!canExportForRegistry()){message('err','Экспорт для Реестра доступен только администратору.');return}const v=await showValidation();if(v.errors.length)return;try{exportCache=await exportData();previewKind='out';document.querySelectorAll('.preview-tab').forEach(x=>x.classList.toggle('active',x.dataset.preview==='out'));const suffix=fileSafe(state.project.orderNo);$('outFileName').textContent=exportCache.outFileName||`Список исх. Заказ ${suffix}.txt`;$('inFileName').textContent=exportCache.inFileName||`Список вхд. Заказ ${suffix}.txt`;updatePreview();$('exportValidation').innerHTML=v.warnings.length?`<div class="notice warn">${v.warnings.map(escapeHtml).join('<br>')}</div>`:'';openModal('exportModal')}catch(e){message('err','Ошибка формирования TXT: '+e)}}
 function updatePreview(){if(exportCache)$('txtPreview').textContent=previewText(exportCache[previewKind])}
 
 function roleLabel(role){return ({admin:'Администратор',reviewer:'Проверяющий',project_manager:'Руководитель проекта',signer:'Проверяющий'})[role]||role}
@@ -233,7 +243,7 @@ async function createAuditUser(){
  if(pin!==pinConfirm){$('auditUserError').innerHTML='<div class="notice err">Введённые PIN не совпадают.</div>';$('newAuditUserPinConfirm').focus();return}
  if(!bootstrap&&(!adminUserId||!adminPin)){$('auditUserError').innerHTML='<div class="notice err">Выберите действующий профиль и введите его PIN.</div>';$('authorizingUserPin').focus();return}
  const input={displayName,pin,role:$('newAuditUserRole').value,isAdmin:false,adminUserId,adminPin};$('createAuditUserBtn').disabled=true;
- try{const user=await B.createAuditUser(input);if(epoch!==networkEpoch)return;if(networkMode&&bootstrap){try{const login=await B.networkLogin(user.id,pin);if(epoch!==networkEpoch)return;if(login.state!=='active')throw Error('Повторите вход в сетевую папку.');activateNetworkSession({active:true,userId:user.id,occupied:login.occupied,maximum:login.maximum,displayName:user.displayName},false)}catch(error){if(epoch!==networkEpoch)return;await initializeNetworkMode();message('err','Профиль создан. Повторите вход: '+error)}}$('newAuditUserName').value='';$('newAuditUserPin').value='';$('newAuditUserPinConfirm').value='';$('authorizingUserPin').value='';$('auditUserError').innerHTML=`<div class="notice ok">Создан профиль «${escapeHtml(user.displayName)}» (${escapeHtml(roleLabel(user.role))}). Отпечаток ключа: ${escapeHtml(user.keyFingerprint)}.</div>`;await refreshAuditUsers();if(!adminSession&&user.role==='admin'){$('adminSessionLabel').textContent=`Администратор: ${user.displayName}`;$('createUserDetails').open=false}}catch(e){$('auditUserError').innerHTML=`<div class="notice err">${escapeHtml(e)}</div>`}finally{$('createAuditUserBtn').disabled=false}
+ try{const user=await B.createAuditUser(input);if(epoch!==networkEpoch)return;if(networkMode&&bootstrap){try{const login=await B.networkLogin(user.id,pin);if(epoch!==networkEpoch)return;if(login.state!=='active')throw Error('Повторите вход в сетевую папку.');activateNetworkSession({active:true,userId:user.id,occupied:login.occupied,maximum:login.maximum,displayName:user.displayName,role:user.role},false)}catch(error){if(epoch!==networkEpoch)return;await initializeNetworkMode();message('err','Профиль создан. Повторите вход: '+error)}}$('newAuditUserName').value='';$('newAuditUserPin').value='';$('newAuditUserPinConfirm').value='';$('authorizingUserPin').value='';$('auditUserError').innerHTML=`<div class="notice ok">Создан профиль «${escapeHtml(user.displayName)}» (${escapeHtml(roleLabel(user.role))}). Отпечаток ключа: ${escapeHtml(user.keyFingerprint)}.</div>`;await refreshAuditUsers();if(!adminSession&&user.role==='admin'){$('adminSessionLabel').textContent=`Администратор: ${user.displayName}`;$('createUserDetails').open=false}}catch(e){$('auditUserError').innerHTML=`<div class="notice err">${escapeHtml(e)}</div>`}finally{$('createAuditUserBtn').disabled=false}
 }
 async function verifyAudit(){const userId=Number($('verifyAdmin').value),pin=$('verifyAdminPin').value;if(!userId||!pin){$('auditVerification').innerHTML='<div class="notice err">Выберите администратора и введите PIN.</div>';return}try{const result=await B.verifyAuditLog(userId,pin,Number.isSafeInteger(state.databaseId)?state.databaseId:null),ok=result.invalidEvents===0;$('auditVerification').innerHTML=`<div class="notice ${ok?'ok':'err'}"><b>${ok?'Проверка пройдена':'Обнаружены нарушения'}.</b> Проверено: ${result.checkedEvents}; действительных: ${result.validEvents}; ошибок: ${result.invalidEvents}.<br>${result.errors.map(escapeHtml).join('<br>')}</div>`;await loadAuditEvents()}catch(e){$('auditVerification').innerHTML=`<div class="notice err">${escapeHtml(e)}</div>`}}
 
@@ -292,22 +302,30 @@ function renderDeadlineControl(){
 }
 async function showProjects(){
  if(!B.native()){$('jsonFile').click();return}
- openModal('projectsModal');$('projectsSearch').value='';$('projectsList').innerHTML='<div class="projects-empty">Загрузка…</div>';
+ openModal('projectsModal');$('projectsList').innerHTML='<div class="projects-empty">Загрузка…</div>';
  try{projectListItems=await B.listProjects();renderProjectList();
  }catch(e){$('projectsList').innerHTML=`<div class="notice err">Не удалось получить список: ${escapeHtml(e)}</div>`}
 }
 async function showDeadlineControl(){if(!B.native()){$('deadlineControlList').innerHTML='<div class="projects-empty">Контроль сроков доступен в Windows-приложении после сохранения проектов.</div>';return}$('deadlineControlList').innerHTML='<div class="projects-empty">Загрузка…</div>';try{deadlineControlItems=await B.listDeadlineControl();renderDeadlineControl()}catch(e){$('deadlineControlList').innerHTML=`<div class="notice err">Не удалось получить контроль сроков: ${escapeHtml(e)}</div>`}}
 
-function readTxtFile(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onerror=()=>reject(Error('Не удалось прочитать файл.'));r.onload=()=>{try{const bytes=new Uint8Array(r.result);if(bytes.length<3||bytes[0]!==0xef||bytes[1]!==0xbb||bytes[2]!==0xbf)throw Error('Файл должен быть UTF-8 с BOM.');resolve('\uFEFF'+new TextDecoder('utf-8',{fatal:true}).decode(bytes.slice(3)))}catch(e){reject(e)}};r.readAsArrayBuffer(file)})}
-async function updateImportPreview(){
- const epoch=networkEpoch,outFile=importFiles.out,inFile=importFiles.in;
- importCandidate=null;$('confirmImportBtn').disabled=true;
- if(!importFiles.out||!importFiles.in){$('importPreview').textContent='Выберите оба файла для проверки.';$('importValidation').innerHTML='';return}
- try{const [outText,inText]=await Promise.all([readTxtFile(outFile),readTxtFile(inFile)]);if(epoch!==networkEpoch||outFile!==importFiles.out||inFile!==importFiles.in)return;const result=Production.exchange.importPair(outText,inText);importCandidate={...result,outText,inText};$('confirmImportBtn').disabled=false;$('importValidation').innerHTML=`<div class="notice ok"><b>Проверка пройдена.</b> Заказ № ${escapeHtml(result.state.project.orderNo)}, этапов: ${result.state.stages.length}.<br>${escapeHtml(result.warnings[0])}</div>`;$('importPreview').textContent=previewText(importPreviewKind==='out'?outText:inText)
- }catch(e){$('importValidation').innerHTML=`<div class="notice err"><b>Импорт невозможен:</b> ${escapeHtml(e.message||e)}</div>`;$('importPreview').textContent='Исправьте файлы и выберите их повторно.'}
+function renderExcelImportPreview(candidate){
+ const p=candidate.state.project,rows=candidate.rows.slice(0,200);
+ $('importPreview').innerHTML=`<div class="import-project-summary"><b>Заказ № ${escapeHtml(p.orderNo)} · ${escapeHtml(p.name)}</b><p>Инициатор: ${escapeHtml(p.initiator)} · Исполнитель: ${escapeHtml(p.executor)} · Предприятие: ${escapeHtml(p.addressees)}</p><p>Начало: ${escapeHtml(fullDate(p.start))} · Срок исполнения: ${escapeHtml(fullDate(p.deadline))}</p></div><table class="import-preview-table"><thead><tr>${['Код','Головной этап','Наименование','Исполнитель','Адресаты','Начало','Срок исполнения','Комментарий'].map(value=>`<th>${value}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${[row.code,row.parentCode||'Основной проект',row.title,row.executor,row.addressees,fullDate(row.start),fullDate(row.deadline),row.comment].map(value=>`<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('')}</tbody></table>${candidate.rows.length>200?`<p>В предпросмотре первые 200 из ${candidate.rows.length} этапов. При импорте будут загружены все этапы.</p>`:''}`;
 }
-function openImport(){importFiles={out:null,in:null};importCandidate=null;$('importOutFile').value='';$('importInFile').value='';$('importOutName').textContent='Выберите TXT (9 колонок)';$('importInName').textContent='Выберите TXT (8 колонок)';$('confirmImportBtn').disabled=true;$('importValidation').innerHTML='';$('importPreview').textContent='Выберите оба файла для проверки.';openModal('importModal')}
-async function confirmImport(){const epoch=networkEpoch;if(!importCandidate)return;const candidate=importCandidate.state;if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект импортированными данными?'))return;try{state=candidate;savedSnapshot=null;persistedStatuses=new Map();syncForm();closeModal('importModal');render();await refreshAutocomplete();if(epoch!==networkEpoch)return;if(B.native())await openSignature({type:'save',defaultComment:'Импорт комплекта входящих и исходящих TXT'});else message('ok',`Импортирован заказ № ${state.project.orderNo}. Статусы этапов установлены «Не начато».`)}catch(e){message('err','Не удалось подготовить импортированный проект: '+e)}}
+async function updateImportPreview(){
+ const epoch=networkEpoch,file=importFile,version=++importReadVersion;importCandidate=null;$('confirmImportBtn').disabled=true;$('importValidation').innerHTML='';
+ if(!file){$('importPreview').textContent='Выберите файл Excel для проверки.';return}
+ $('importPreview').textContent='Проверяем Excel…';
+ try{const candidate=await B.importExcel(file);if(epoch!==networkEpoch||file!==importFile||version!==importReadVersion)return;importCandidate=candidate;$('confirmImportBtn').disabled=false;$('importValidation').innerHTML=`<div class="notice ok"><b>Проверка пройдена.</b> Этапов: ${candidate.rows.length}.<br>${candidate.warnings.map(escapeHtml).join('<br>')}</div>`;renderExcelImportPreview(candidate)
+ }catch(error){if(epoch!==networkEpoch||version!==importReadVersion)return;$('importValidation').innerHTML=`<div class="notice err"><b>Импорт невозможен:</b> ${escapeHtml(error.message||error)}</div>`;$('importPreview').textContent='Исправьте файл и выберите его повторно.'}
+}
+function openImport(){importFile=null;importReadVersion++;importCandidate=null;$('importExcelFile').value='';$('importExcelName').textContent='Выберите файл .xlsx';$('confirmImportBtn').disabled=true;$('importValidation').innerHTML='';$('importPreview').textContent='Выберите файл Excel для проверки.';openModal('importModal')}
+
+async function confirmImport(){
+ if(!importCandidate)return;const candidate=importCandidate.state;
+ if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Открыть импортируемый проект? Несохранённые изменения текущего проекта будут заменены только после подписанного сохранения.'))return;
+ closeModal('importModal');await openSignature({type:'save',state:candidate,defaultComment:'Импорт проекта из Excel'});
+}
 
 function renderGantt(){
  const box=$('ganttChart'),items=D.preorder(state).filter(x=>stageMatchesFilter(x.stage));
@@ -344,6 +362,7 @@ function printGantt(size){
 }
 
 function updateNetworkState(status,text=''){
+ if(status&&typeof status.role==='string'){networkSessionRole=status.role;updateUserActions()}
  const chip=$('networkState');if(!networkMode){chip.hidden=true;return}chip.hidden=false;
  const occupied=status?.occupied??0,maximum=status?.maximum??3;chip.className='network-state '+(status?.active?'connected':'waiting');
  chip.textContent=text||(status?.active?`Сетевые сеансы: ${occupied} из ${maximum} · ${status.displayName||'сеанс активен'}`:`Сетевые сеансы: ${occupied} из ${maximum}`);
@@ -354,7 +373,7 @@ function lockNetworkWorkspace(locked){
  $('networkLogoutBtn').hidden=!networkMode||!networkSessionActive;
 }
 function clearNetworkIdentity(){
- networkSessionUserId=null;adminSession=null;pendingSignatureAction=null;importCandidate=null;importFiles={out:null,in:null};dictionaryEntries=[];
+ networkSessionUserId=null;networkSessionRole=null;adminSession=null;pendingSignatureAction=null;importCandidate=null;importFile=null;importReadVersion++;dictionaryEntries=[];updateUserActions();
  document.querySelectorAll('input[type="password"]').forEach(input=>input.value='');document.querySelectorAll('.modal-backdrop.open').forEach(modal=>modal.classList.remove('open'));
  setAdminPageMode(false);setWorkspace('registry');
 }
@@ -383,8 +402,10 @@ async function pollNetworkSession(){
  finally{if(networkPollPending===pending)networkPollPending=null;networkEvictionStarted=false}
 }
 function activateNetworkSession(status,showOnboarding=true){
- networkEpoch++;networkSessionActive=true;networkSessionUserId=Number.isSafeInteger(status.userId)&&status.userId>0?status.userId:null;lockNetworkWorkspace(false);$('networkLoginModal').classList.remove('open');$('networkLoginPin').value='';updateNetworkState(status);startNetworkPolling();void pollNetworkSession();scheduleNetworkDraft();if(showOnboarding&&!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250);
+ networkEpoch++;networkSessionActive=true;networkSessionUserId=Number.isSafeInteger(status.userId)&&status.userId>0?status.userId:null;networkSessionRole=status.role||null;lockNetworkWorkspace(false);$('networkLoginModal').classList.remove('open');$('networkLoginPin').value='';updateNetworkState(status);startNetworkPolling();void pollNetworkSession();scheduleNetworkDraft();
+ if(window.ProductionServer&&networkSessionUserId!==null)setTimeout(()=>void maybeShowOnboarding(),250);else if(showOnboarding&&!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250);
 }
+
 async function logoutNetworkSession(){
  if(!networkMode||!networkSessionActive||networkTransition)return;
  if($('confirmSignedSaveBtn').disabled||$('createAuditUserBtn').disabled){message('info','Дождитесь завершения сохранения перед выходом.');return}
@@ -399,7 +420,7 @@ async function logoutNetworkSession(){
 }
 async function submitNetworkLogin(){
  const button=$('networkLoginBtn'),statusBox=$('networkLoginStatus'),userId=$('networkLoginUser').value;if(button.disabled||networkTransition)return;button.disabled=true;statusBox.className='network-login-status';statusBox.textContent='Проверяем PIN и свободное место…';
- try{const result=await B.networkLogin(userId?Number(userId):null,$('networkLoginPin').value);if(result.state==='active'||result.state==='standalone'){activateNetworkSession({active:true,userId:userId?Number(userId):null,occupied:result.occupied,maximum:result.maximum,displayName:$('networkLoginUser').selectedOptions[0]?.textContent||''});return}statusBox.className='network-login-status error';statusBox.textContent=result.state==='full'?'Все 3 места заняты. Закройте программу на одном из компьютеров и повторите вход.':'Администратор запросил освобождение места. Подождите несколько секунд и нажмите «Войти» ещё раз.'}
+ try{const result=await B.networkLogin(userId?Number(userId):null,$('networkLoginPin').value);if(result.state==='active'||result.state==='standalone'){activateNetworkSession({active:true,userId:userId?Number(userId):null,occupied:result.occupied,maximum:result.maximum,displayName:$('networkLoginUser').selectedOptions[0]?.textContent||'',role:result.role||null});return}statusBox.className='network-login-status error';statusBox.textContent=result.state==='full'?'Все 3 места заняты. Закройте программу на одном из компьютеров и повторите вход.':'Администратор запросил освобождение места. Подождите несколько секунд и нажмите «Войти» ещё раз.'}
  catch(error){statusBox.className='network-login-status error';statusBox.textContent=String(error)}finally{button.disabled=false}
 }
 async function initializeNetworkMode(){
@@ -420,7 +441,7 @@ function loadDemo(){if((state.project.name||state.stages.length)&&!confirm('За
 {uid:'d8',seq:8,sort:6,parentUid:null,title:'Привода',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-07-15',deadline:'2026-11-30',status:'new'}]};savedSnapshot=null;persistedStatuses=new Map();syncForm();render();refreshAutocomplete();message('ok','Загружен демонстрационный производственный цикл.')}
 function focusable(container){return [...container.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(element=>element.offsetParent!==null)}
 function openModal(id){const backdrop=$(id);modalReturnFocus.set(id,document.activeElement);backdrop.classList.add('open');requestAnimationFrame(()=>{const controls=focusable(backdrop),preferred=controls.find(element=>element.matches('input:not([type="hidden"]),select,textarea'));(preferred||controls[0]||backdrop.querySelector('.modal')).focus()})}
-function closeModal(id,force=false){if(id==='networkLoginModal'&&!networkSessionActive)return;if(id==='saveConfirmationModal'&&!force&&$('confirmSignedSaveBtn').disabled)return;const backdrop=$(id);if(!backdrop?.classList.contains('open'))return;if(id==='onboardingModal')markOnboardingSeen();backdrop.classList.remove('open');if(id==='saveConfirmationModal')pendingSignatureAction=null;const target=modalReturnFocus.get(id);modalReturnFocus.delete(id);if(target?.isConnected)target.focus()}
+function closeModal(id,force=false){if(id==='networkLoginModal'&&!networkSessionActive)return;if(id==='saveConfirmationModal'&&!force&&$('confirmSignedSaveBtn').disabled)return;const backdrop=$(id);if(!backdrop?.classList.contains('open'))return;if(id==='onboardingModal')markOnboardingSeen();if(id==='importModal'){importReadVersion++;importFile=null;}backdrop.classList.remove('open');if(id==='saveConfirmationModal')pendingSignatureAction=null;const target=modalReturnFocus.get(id);modalReturnFocus.delete(id);if(target?.isConnected)target.focus()}
 function topOpenModal(){return [...document.querySelectorAll('.modal-backdrop.open')].at(-1)||null}
 function trapModalFocus(event,modal){const controls=focusable(modal);if(!controls.length)return;const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}
 function enhanceAccessibility(){document.querySelectorAll('.modal-backdrop').forEach((backdrop,index)=>{backdrop.setAttribute('role','dialog');backdrop.setAttribute('aria-modal','true');const heading=backdrop.querySelector('h2');if(heading){if(!heading.id)heading.id=`modalTitle${index+1}`;backdrop.setAttribute('aria-labelledby',heading.id)}const close=backdrop.querySelector('[data-close]');if(close&&!close.getAttribute('aria-label'))close.setAttribute('aria-label','Закрыть окно')});document.querySelectorAll('label:not([for])').forEach((label,index)=>{const control=label.querySelector('input,select,textarea')||label.nextElementSibling;if(control?.matches?.('input,select,textarea')){if(!control.id)control.id=`field${index+1}`;label.htmlFor=control.id}})}
@@ -434,8 +455,14 @@ const onboardingSteps=[
 ];
 function renderOnboarding(){const step=onboardingSteps[onboardingStep];$('onboardingStepLabel').textContent=`Шаг ${onboardingStep+1} из ${onboardingSteps.length}`;$('onboardingTitle').textContent=step.title;$('onboardingContent').innerHTML=step.html;$('onboardingBackBtn').disabled=onboardingStep===0;$('onboardingNextBtn').innerHTML=(onboardingStep===onboardingSteps.length-1?icon('check')+'Начать работу':'Далее'+icon('chevron-right'))}
 function openOnboarding(step=0){onboardingStep=Math.max(0,Math.min(onboardingSteps.length-1,step));renderOnboarding();openModal('onboardingModal')}
-function onboardingSeen(){try{return localStorage.getItem('production-cycle-onboarding-v1')==='done'}catch(_e){return false}}
-function markOnboardingSeen(){try{localStorage.setItem('production-cycle-onboarding-v1','done')}catch(_e){}}
+function onboardingSeen(){try{return localStorage.getItem(networkSessionUserId?'production-cycle-onboarding-user-'+networkSessionUserId:'production-cycle-onboarding-v1')==='done'}catch(_e){return false}}
+function markOnboardingSeen(){try{localStorage.setItem(networkSessionUserId?'production-cycle-onboarding-user-'+networkSessionUserId:'production-cycle-onboarding-v1','done')}catch(_e){}}
+let onboardingClaimEpoch=null;
+async function maybeShowOnboarding(){
+ const epoch=networkEpoch;if(!networkSessionActive||networkSessionUserId===null||onboardingClaimEpoch===epoch)return;onboardingClaimEpoch=epoch;
+ try{const result=await B.claimOnboarding();if(epoch!==networkEpoch)return;if(result.show){markOnboardingSeen();if(!$('onboardingModal').classList.contains('open'))openOnboarding(0)}}catch(_error){if(epoch===networkEpoch)onboardingClaimEpoch=null;}
+}
+
 function nextOnboarding(){if(onboardingStep<onboardingSteps.length-1){onboardingStep++;renderOnboarding();return}closeModal('onboardingModal')}
 function previousOnboarding(){if(onboardingStep>0){onboardingStep--;renderOnboarding()}}
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));document.querySelectorAll('.modal-backdrop').forEach(m=>m.addEventListener('mousedown',e=>{if(e.target===m&&m.id!=='networkLoginModal')closeModal(m.id)}));
@@ -449,8 +476,7 @@ $('dictionaryKind').onchange=loadDictionary;$('dictionarySearch').oninput=render
 $('projectsSearch').oninput=renderProjectList;$('deadlineSearch').oninput=renderDeadlineControl;$('refreshDeadlinesBtn').onclick=showDeadlineControl;
 $('completionFilter').onchange=e=>{completionFilter=e.target.value;$('ganttCompletionFilter').value=completionFilter;render()};$('ganttCompletionFilter').onchange=e=>{completionFilter=e.target.value;$('completionFilter').value=completionFilter;render()};
 $('toggleStructureBtn').onclick=toggleStructure;$('printStructureBtn').onclick=printStructure;$('ganttScale').onchange=e=>{ganttScale=e.target.value;renderGantt()};$('printGanttA4Btn').onclick=()=>printGantt('A4');$('printGanttA3Btn').onclick=()=>printGantt('A3');
-$('importOutFile').onchange=e=>{importFiles.out=e.target.files[0]||null;$('importOutName').textContent=importFiles.out?importFiles.out.name:'Выберите TXT (9 колонок)';updateImportPreview()};$('importInFile').onchange=e=>{importFiles.in=e.target.files[0]||null;$('importInName').textContent=importFiles.in?importFiles.in.name:'Выберите TXT (8 колонок)';updateImportPreview()};$('confirmImportBtn').onclick=confirmImport;
-document.querySelectorAll('[data-import-preview]').forEach(b=>b.onclick=()=>{importPreviewKind=b.dataset.importPreview;document.querySelectorAll('[data-import-preview]').forEach(x=>x.classList.toggle('active',x===b));if(importCandidate)$('importPreview').textContent=previewText(importPreviewKind==='out'?importCandidate.outText:importCandidate.inText)});
+$('importExcelFile').onchange=e=>{importFile=e.target.files[0]||null;$('importExcelName').textContent=importFile?importFile.name:'Выберите файл .xlsx';updateImportPreview()};$('confirmImportBtn').onclick=confirmImport;$('downloadImportTemplateBtn').onclick=downloadImportTemplate;$('hintsBtn').onclick=()=>openOnboarding(0);$('projectSearchForm').onsubmit=event=>{event.preventDefault();showProjects()};
 document.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>{previewKind=b.dataset.preview;document.querySelectorAll('.preview-tab').forEach(x=>x.classList.toggle('active',x===b));updatePreview()});
 $('downloadOutBtn').onclick=async()=>{try{const d=exportCache||await exportData();await downloadText($('outFileName').textContent,d.out)}catch(e){message('err','Ошибка экспорта: '+e)}};$('downloadInBtn').onclick=async()=>{try{const d=exportCache||await exportData();await downloadText($('inFileName').textContent,d.in)}catch(e){message('err','Ошибка экспорта: '+e)}};
 

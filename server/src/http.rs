@@ -53,7 +53,9 @@ impl App {
                     if !local { return Err("Первичная настройка выполняется на самом сервере: откройте https://localhost:8443 и создайте администратора.".into()); }
                     if id.is_some() { return Err("Сначала создайте администратора.".into()); } None
                 } else { Some(self.db.authorize_user(id.ok_or("Выберите профиль")?, &arg::<String>(&args,"pin")?)?) };
-                let (result, cookie) = self.sessions.login(token, user)?;
+                let role=user.as_ref().map(|u|u.role.clone());
+                let (mut result, cookie) = self.sessions.login(token, user)?;
+                result["role"]=json!(role);
                 return Ok(Reply { value: result, cookie });
             }
             "network_logout" | "network_finish_eviction" => {
@@ -77,7 +79,18 @@ impl App {
             "production_list_projects" => value(self.db.list_projects().map_err(|e|e.to_string())?),
             "production_list_deadline_control" => value(self.db.list_deadline_control(chrono::Local::now().date_naive()).map_err(|e|e.to_string())?),
             "production_list_dictionary" => value(self.db.list_dictionary(arg(&args,"kind")?).map_err(|e|e.to_string())?),
-            "production_export_txt" => value(production::build_txt_export(&arg(&args,"snapshot")?).map_err(|e|e.to_string())?),
+            "production_export_txt" => {
+                if current.role!="admin"{return Err("Экспорт для Реестра доступен только администратору.".into())}
+                value(production::build_txt_export(&arg(&args,"snapshot")?).map_err(|e|e.to_string())?)
+            }
+            "production_excel_template" => value(crate::excel_import::template()?),
+            "production_import_excel" => {
+                if !matches!(current.role.as_str(),"admin"|"reviewer"|"project_manager"){return Err("Импорт доступен ответственным сотрудникам.".into())}
+                let encoded=arg::<String>(&args,"base64")?;let name=arg::<String>(&args,"fileName")?;
+                let parsed=std::panic::catch_unwind(||crate::excel_import::parse(&encoded,&name)).map_err(|_|"Не удалось разобрать Excel. Сохраните книгу по образцу программы.".to_string())??;
+                value(parsed)
+            }
+            "ui_claim_onboarding" => value(json!({"show":crate::ui_preferences::claim_onboarding(&self.db,&current.key_fingerprint)?})),
             "production_get_management_report" => {
                 let snapshot: ProductionSnapshot = arg(&args,"snapshot")?;
                 let mut report = production::build_report(&snapshot,chrono::Local::now().date_naive()).map_err(|e|e.to_string())?;
