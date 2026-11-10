@@ -1,0 +1,79 @@
+name: Verify copying and capture current manual illustrations
+on:
+  push:
+    branches: [test/stage-copy-guide]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Prepare test drivers
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if($LASTEXITCODE -ne 0){throw 'Dependency preparation failed'}
+          python tests/server/make-excel-fixtures.py
+          if($LASTEXITCODE -ne 0){throw 'Workbook fixtures failed'}
+          npm run build:legacy
+          if($LASTEXITCODE -ne 0){throw 'IE test driver build failed'}
+          node --test tests/domain.test.cjs
+          if($LASTEXITCODE -ne 0){throw 'Domain regression'}
+          git diff --check
+          if($LASTEXITCODE -ne 0){throw 'Whitespace errors'}
+      - name: Use exact previously delivered package
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Path dist/released -Force | Out-Null
+          gh release download server-excel-14fbf50 --repo $env:GITHUB_REPOSITORY --pattern '*.zip' --output dist/released/server.zip
+          if($LASTEXITCODE -ne 0){throw 'Release download failed'}
+          if((Get-FileHash dist/released/server.zip -Algorithm SHA256).Hash.ToLowerInvariant() -cne '99ecf6e76a71bd6858d584c86a6101b2a08410bc77cf2f2989c04e2aed037c3b'){throw 'Released ZIP hash mismatch'}
+          Expand-Archive dist/released/server.zip dist/released/unpacked
+          $root=Join-Path $env:GITHUB_WORKSPACE 'dist/released/unpacked/ProductionCycleServer'
+          $manifest=Get-Content "$root/package-manifest.json" -Raw | ConvertFrom-Json
+          foreach($entry in $manifest.files){if((Get-FileHash -LiteralPath (Join-Path $root $entry.path) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.sha256){throw "Manifest mismatch $($entry.path)"}}
+          Remove-Item frontend -Recurse -Force
+          Copy-Item "$root/frontend" frontend -Recurse
+          "SERVER_EXE=$root/Производственный_цикл.exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $edge=@('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe','C:/Program Files/Microsoft/Edge/Application/msedge.exe') | Where-Object {Test-Path $_} | Select-Object -First 1
+          if(-not $edge){throw 'Microsoft Edge unavailable'}
+          "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$edge" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Copy stages with real Edge input and all user roles
+        shell: pwsh
+        env:
+          SERVER_QA_DIR: ${{ github.workspace }}/dist/copy-qa
+        run: |
+          node tests/server/copy-stage.cjs
+          if($LASTEXITCODE -ne 0){throw 'Edge copying regression'}
+      - name: Native IE stage copying and signed persistence
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        env:
+          SERVER_QA_DIR: ${{ github.workspace }}/dist/copy-qa
+        run: |
+          $env:IE_HARNESS=Join-Path $env:RUNNER_TEMP 'production-cycle-ie.exe'
+          $source=Join-Path $env:GITHUB_WORKSPACE 'tests/server/ie-harness.cs'
+          & powershell.exe -NoProfile -Command "Add-Type -Path '$source' -ReferencedAssemblies System.Windows.Forms,System.Drawing -OutputAssembly '$env:IE_HARNESS' -OutputType WindowsApplication"
+          if($LASTEXITCODE -ne 0){throw 'MSHTML harness build failed'}
+          node tests/server/copy-stage.cjs --ie
+          if($LASTEXITCODE -ne 0){throw 'IE copying regression'}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: Stage-copy-${{ matrix.os }}
+          path: |
+            dist/copy-qa/*.json
+            dist/copy-qa/*.png
+          if-no-files-found: error
