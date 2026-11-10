@@ -26,7 +26,7 @@
    more('#hintsBtn');assert(open('onboardingModal'),'Hints unavailable');click('[data-close="onboardingModal"]');
    more('#importBtn');file(window.__excelMarkup,template.fileName);await wait(function(){return !el('confirmImportBtn').disabled;},'escaped preview');assert(!el('importPreview').querySelector('img'),'Workbook markup executed in preview');assert(el('importPreview').textContent.indexOf('<img')>=0,'Escaped title missing');
    file(template.base64,template.fileName);await wait(function(){return !el('confirmImportBtn').disabled&&el('importPreview').textContent.indexOf('000924-27')>=0;},'approved preview');
-   if(document.documentMode){window.external.Capture('excel-preview-'+user.role);}
+   if(document.documentMode){window.external.Capture('excel-preview-'+user.role.replace(/_/g,'-'));}
    click('#confirmImportBtn');await wait(function(){return open('saveConfirmationModal');},'signature');fill('saveSigner',user.id);fill('saveSignerPin','739201');fill('saveChangeComment','Импорт Excel: '+user.role);click('#confirmSignedSaveBtn');await wait(function(){return !open('saveConfirmationModal');},'signed import');assert(el('orderNo').value==='000924-27','Signed import did not update workspace');assert(document.querySelectorAll('#treeBody tr[data-stage-uid]').length===5,'Signed import lost stages');
    localStorage.clear();await login(user);await pause(650);assert(!open('onboardingModal'),'Rules repeated after storage cleared');more('#hintsBtn');assert(open('onboardingModal'),'Returning user cannot open hints');click('[data-close="onboardingModal"]');
    result.checks.push(user.role+': first-use rules, exact template download, hidden export, escaped preview, signed import, returning-user rules and manual hints');

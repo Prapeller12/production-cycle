@@ -86,7 +86,7 @@ def reordered(t, _):
         row.set('r', str(n))
         for c in row:
             c.set('r', ''.join(ch for ch in c.get('r') if ch.isalpha())+str(n))
-        data.append(row)
+        data.insert(n-1, row)
 make('reordered', reordered)
 target = ROOT/'dist/excel-fixtures.json'
 target.parent.mkdir(exist_ok=True)
