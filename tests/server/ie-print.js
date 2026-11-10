@@ -12,6 +12,7 @@
   await wait(function(){return el('newAuditUserName').offsetWidth>0;},'bootstrap');
   el('newAuditUserName').value='Администратор проверки печати';el('newAuditUserPin').value='739201';el('newAuditUserPinConfirm').value='739201';el('createAuditUserBtn').click();
   await wait(function(){return !el('createAuditUserBtn').disabled&&el('auditUserError').textContent.indexOf('Создан профиль')>=0;},'administrator');
+  await pause(500);if(el('onboardingModal').classList.contains('open'))document.querySelector('[data-close="onboardingModal"]').click();
   el('closeAdminBtn').click();document.querySelector('.more-actions').open=true;el('demoBtn').click();
   assert(document.querySelector('#treeBody [data-act="edit"]'),'Demo not loaded');el('ganttTab').click();
   if(baseline){

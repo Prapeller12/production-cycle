@@ -1,7 +1,7 @@
 name: Prepare Excel server dependency lock
 on:
   push:
-    branches: [feat/excel-project-import]
+    branches: [archive/excel-bootstrap]
 permissions:
   contents: read
 jobs:

@@ -34,5 +34,10 @@ const root=path.resolve(__dirname,'..'),frontend=path.join(root,'frontend'),out=
  const buttonsHook="window.__smokeDone=null;window.__browserTestInvoke=function(command,args){if(command==='finish_smoke'){window.__smokeDone=args;return Promise.resolve(false);}if(command==='save_file')return Promise.resolve(args.name);throw Error('Unexpected test hook '+command);};window.__buttonAuditFinish=function(result){window.external.Report(JSON.stringify(result));};\n";
  const buttons=babel.transformSync(trace+'\n'+buttonsHook+smoke+'\n'+fs.readFileSync(path.join(root,'tests/server/button-audit.js'),'utf8'),{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
  acorn.parse(buttons,{ecmaVersion:5});fs.writeFileSync(path.join(root,'dist/ie-button-test.js'),buttons);
+ if(fs.existsSync(path.join(root,'dist/excel-fixtures.json'))){
+ const excelFixture=JSON.parse(fs.readFileSync(path.join(root,'dist/excel-fixtures.json'),'utf8')).markup;
+ const excel=babel.transformSync('window.__excelMarkup='+JSON.stringify(excelFixture)+';\n'+fs.readFileSync(path.join(root,'tests/server/excel-ui.js'),'utf8'),{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
+ acorn.parse(excel,{ecmaVersion:5});fs.writeFileSync(path.join(root,'dist/ie-excel-test.js'),excel);
+ }
  console.log('IE11: shared scripts transpiled and parsed as ES5; local polyfills and CSS fallback included.');
 })().catch(error=>{console.error(error);process.exitCode=1});

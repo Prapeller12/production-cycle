@@ -1,0 +1,163 @@
+name: Full offline server with Excel import
+on:
+  push:
+    branches: [feat/excel-project-import]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+      SERVER_EXE: ${{ github.workspace }}/server/target/release/production-cycle-server.exe
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: excel-server-${{ matrix.os }}-${{ hashFiles('server/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            excel-server-${{ matrix.os }}-${{ hashFiles('server/Cargo.lock') }}-
+            excel-bootstrap-
+      - name: Prepare verified launcher and previous layout baseline
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Path dist/base -Force | Out-Null
+          gh release download shared-folder-4c84ac6 --repo $env:GITHUB_REPOSITORY --pattern '*.zip' --output dist/base/server.zip
+          if($LASTEXITCODE -ne 0){throw 'Verified launcher package download failed'}
+          if((Get-FileHash dist/base/server.zip -Algorithm SHA256).Hash.ToLowerInvariant() -cne '1c05e7b1c886de20efaa3acc35e9135de0fb904ed584a1e863b5a9f54892e10a'){throw 'Launcher package digest mismatch'}
+          Expand-Archive dist/base/server.zip dist/base/unpacked
+          "BASELINE_FRONTEND=$env:GITHUB_WORKSPACE/dist/base/unpacked/ProductionCycleServer/frontend" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $edge=@('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe','C:/Program Files/Microsoft/Edge/Application/msedge.exe') | Where-Object {Test-Path $_} | Select-Object -First 1
+          if(-not $edge){throw 'Microsoft Edge unavailable'}
+          "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$edge" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build offline assets and check domain rules
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if($LASTEXITCODE -ne 0){throw 'Dependency preparation failed'}
+          python tests/server/make-excel-fixtures.py
+          if($LASTEXITCODE -ne 0){throw 'Workbook fixtures failed'}
+          npm run build:legacy
+          if($LASTEXITCODE -ne 0){throw 'IE asset build failed'}
+          node --test tests/domain.test.cjs
+          if($LASTEXITCODE -ne 0){throw 'Domain regression'}
+          git diff --check
+          if($LASTEXITCODE -ne 0){throw 'Whitespace errors'}
+      - name: Rust parser, signatures, migrations, backups and server tests
+        run: cargo test --locked --release --manifest-path server/Cargo.toml
+      - name: Build complete Windows EXE with static runtime
+        run: cargo build --locked --release --manifest-path server/Cargo.toml
+      - name: HTTPS API and Excel role/persistence regression
+        shell: pwsh
+        env:
+          SERVER_QA_DIR: ${{ github.workspace }}/dist/excel-qa
+        run: |
+          node tests/server/api.cjs
+          if($LASTEXITCODE -ne 0){throw 'Server API regression'}
+          node tests/server/excel-api.cjs
+          if($LASTEXITCODE -ne 0){throw 'Excel API regression'}
+      - name: Real MSHTML layout, functions, buttons, Excel and native print
+        shell: pwsh
+        env:
+          SERVER_QA_DIR: ${{ github.workspace }}/dist/ie-layout-qa
+        run: |
+          $env:IE_HARNESS=Join-Path $env:RUNNER_TEMP 'production-cycle-ie.exe'
+          $source=Join-Path $env:GITHUB_WORKSPACE 'tests/server/ie-harness.cs'
+          & powershell.exe -NoProfile -Command "Add-Type -Path '$source' -ReferencedAssemblies System.Windows.Forms,System.Drawing -OutputAssembly '$env:IE_HARNESS' -OutputType WindowsApplication"
+          if($LASTEXITCODE -ne 0){throw 'MSHTML harness build failed'}
+          node tests/server/ie-layout.cjs
+          if($LASTEXITCODE -ne 0){throw 'IE layout regression'}
+          node tests/server/ie.cjs
+          if($LASTEXITCODE -ne 0){throw 'IE functional regression'}
+          node tests/server/ie-print.cjs
+          if($LASTEXITCODE -ne 0){throw 'Native IE print regression'}
+          node tests/server/ie-buttons.cjs
+          if($LASTEXITCODE -ne 0){throw 'IE button regression'}
+          node tests/server/excel-ui.cjs --ie
+          if($LASTEXITCODE -ne 0){throw 'IE Excel regression'}
+      - name: Real Edge offline UI, buttons, Excel and PDF regression
+        shell: pwsh
+        env:
+          SERVER_QA_DIR: ${{ github.workspace }}/dist/browser-qa
+        run: |
+          node tests/server/browser.cjs
+          if($LASTEXITCODE -ne 0){throw 'Browser regression'}
+          node tests/server/buttons.cjs
+          if($LASTEXITCODE -ne 0){throw 'Edge button regression'}
+          node tests/server/excel-ui.cjs
+          if($LASTEXITCODE -ne 0){throw 'Edge Excel regression'}
+          python -m pip install PyMuPDF==1.26.7
+          if($LASTEXITCODE -ne 0){throw 'PDF verifier preparation failed'}
+          python tests/server/verify-pdf.py dist/browser-qa
+          if($LASTEXITCODE -ne 0){throw 'PDF first-page or paper size regression'}
+      - name: Package full server and check native dependencies
+        shell: pwsh
+        env:
+          QA_WINDOWS_IMAGE: ${{ matrix.os }}
+        run: |
+          python scripts/report-button-audit.py --version $env:GITHUB_SHA.Substring(0,7)
+          if($LASTEXITCODE -ne 0){throw 'Button audit report failed'}
+          python scripts/package-excel-server.py --version $env:GITHUB_SHA.Substring(0,7)
+          if($LASTEXITCODE -ne 0){throw 'Full server packaging failed'}
+          $dumpbin=Get-ChildItem 'C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe','C:/Program Files/Microsoft Visual Studio/18/Enterprise/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if($dumpbin){$deps=& $dumpbin.FullName /dependents $env:SERVER_EXE; $deps | Out-File dist/excel-qa/pe-dependencies.txt; if($deps -match 'VCRUNTIME|MSVCP[0-9]'){throw 'External VC runtime required'}}
+      - name: Packaged double-click launch and LocalService setup
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $zip=Get-ChildItem dist/excel-release/*.zip | Select-Object -First 1
+          ./scripts/test-server-service.ps1 -Zip $zip.FullName
+      - name: Packaged read-only SMB launch and trusted Edge
+        timeout-minutes: 6
+        shell: pwsh
+        run: |
+          $zip=Get-ChildItem dist/excel-release/*.zip | Select-Object -First 1
+          ./scripts/test-shared-folder.ps1 -Zip $zip.FullName
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: excel-evidence-${{ matrix.os }}
+          path: |
+            dist/excel-qa/
+            dist/ie-layout-qa/
+            dist/browser-qa/
+            dist/shared-qa/
+            dist/button-audit-report.txt
+            server/Cargo.lock
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ProductionCycleExcel-${{ matrix.os }}
+          path: dist/excel-release/*.zip*
+          if-no-files-found: error
+  release:
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@v4
+        with:
+          name: ProductionCycleExcel-windows-2022
+          path: release
+      - name: Publish verified full offline server
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="server-excel-${GITHUB_SHA:0:7}"
+          gh release create "$tag" release/*.zip release/*.sha256 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Производственный цикл — сервер, Excel и поиск" --notes-file docs/excel-server-update.txt

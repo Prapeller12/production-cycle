@@ -35,6 +35,7 @@
   window.external.Viewport(1440,1000);window.scrollTo(0,0);await pause(200);
   name.value='Администратор проверки вёрстки';pin.value='739201';repeat.value='739201';el('createAuditUserBtn').click();
   await wait(function(){return !el('createAuditUserBtn').disabled&&document.querySelector('#auditUserError .ok');},'administrator creation');
+  await pause(500);if(el('onboardingModal').classList.contains('open'))document.querySelector('[data-close="onboardingModal"]').click();
   el('registryTab').click();await pause(150);
   var values={projectName:'Проверка формы в Internet Explorer',orderNo:'IE-11',initiator:'Администратор',executor:'Исполнитель',projectStart:'2026-11-09',projectDeadline:'2026-12-31',projectAddressees:'Предприятие'};
   Object.keys(values).forEach(function(id){el(id).value=values[id];el(id).dispatchEvent(new Event('input',{bubbles:true}));el(id).dispatchEvent(new Event('change',{bubbles:true}));});

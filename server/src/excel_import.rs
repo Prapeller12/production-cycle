@@ -16,7 +16,7 @@ pub struct PreviewRow{pub code:String,pub parent_code:Option<String>,pub title:S
 #[derive(Serialize)]#[serde(rename_all="camelCase")]
 pub struct ImportResult{pub snapshot:ProductionSnapshot,pub rows:Vec<PreviewRow>,pub warnings:Vec<String>}
 
-pub fn template()->Result<serde_json::Value,String>{serde_json::from_str(include_str!("../../resources/project-import-template.json")).map_err(|e|e.to_string())}
+pub fn template()->Result<serde_json::Value,String>{serde_json::from_str(include_str!("../resources/project-import-template.json")).map_err(|e|e.to_string())}
 pub fn parse(encoded:&str,file_name:&str)->Result<ImportResult,String>{
     if !file_name.to_lowercase().ends_with(".xlsx"){return Err("Выберите файл .xlsx по образцу программы.".into())}
     if encoded.len()>MAX_FILE.div_ceil(3)*4{return Err("Файл Excel больше 5 МиБ. Разделите проекты по отдельным файлам.".into())}
@@ -103,7 +103,7 @@ pub fn parse_bytes(bytes:&[u8])->Result<ImportResult,String>{
     };
     let header=stage_rows.iter().position(|(_,row)|{let keys:HashSet<_>=row.iter().map(key).collect();STAGE_FIELDS.iter().all(|name|keys.contains(*name))}).ok_or("Лист «Этапы»: не найдены все восемь заголовков таблицы. Используйте образец программы.")?;
     let columns:Vec<_>=STAGE_FIELDS.iter().map(|name|stage_rows[header].1.iter().position(|cell|key(cell)==*name).unwrap()).collect();
-    if columns.iter().copied().collect::<HashSet<_>>().len()!=8{return Err("Повторяются заголовки таблицы этапов.".into())}
+    if STAGE_FIELDS.iter().any(|name|stage_rows[header].1.iter().filter(|cell|key(cell)==*name).count()!=1){return Err("Повторяются заголовки таблицы этапов.".into())}
     let mut rows=Vec::new();let mut code_indices=HashMap::new();
     for(row_no,row)in stage_rows.iter().skip(header+1){
         let cells:Vec<_>=columns.iter().map(|&column|row.get(column).cloned().unwrap_or(Data::Empty)).collect();
