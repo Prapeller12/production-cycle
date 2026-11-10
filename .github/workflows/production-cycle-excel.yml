@@ -62,6 +62,14 @@ jobs:
         run: cargo test --locked --release --manifest-path server/Cargo.toml
       - name: Build complete Windows EXE with static runtime
         run: cargo build --locked --release --manifest-path server/Cargo.toml
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: excel-server-${{ matrix.os }}-${{ hashFiles('server/Cargo.lock') }}-${{ github.run_id }}
       - name: HTTPS API and Excel role/persistence regression
         shell: pwsh
         env:

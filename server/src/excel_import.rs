@@ -60,8 +60,8 @@ fn sheet(book:&mut Xlsx<Cursor<&[u8]>>,name:&str)->Result<Vec<(usize,Vec<Data>)>
     }
     {
         let mut cells=book.worksheet_cells_reader(name).map_err(|e|e.to_string())?;
-        if let Some(cell)=cells.next_formula().map_err(|_|format!("Не удалось проверить формулы листа «{name}»."))?{
-            return Err(format!("Лист «{name}», строка {}: замените формулы готовыми значениями перед импортом.",cell.get_position().0+1))
+        while let Some(cell)=cells.next_formula().map_err(|_|format!("Не удалось проверить формулы листа «{name}»."))?{
+            if !cell.get_value().is_empty(){return Err(format!("Лист «{name}», строка {}: замените формулы готовыми значениями перед импортом.",cell.get_position().0+1))}
         }
     }
     let range=book.worksheet_range(name).map_err(|_|format!("Не удалось прочитать лист «{name}»."))?;
