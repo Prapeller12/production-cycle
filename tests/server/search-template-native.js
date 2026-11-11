@@ -15,6 +15,7 @@
   await wait(function(){return open('networkLoginModal')&&el('networkLoginUser').options.length===3;},'login');
   for(var index=0;index<C.users.length;index++){
    var user=C.users[index];result.phase=user.role;fill('networkLoginUser',user.id);fill('networkLoginPin','739201');await click('#networkLoginBtn');await wait(function(){return !open('networkLoginModal');},'login');await wait(function(){return open('onboardingModal');},'first rules');await click('[data-close="onboardingModal"]');
+   if(window.__focusedBeforeRole)await window.__focusedBeforeRole(index);
    assert(document.querySelector('label[for="projectsSearch"]').textContent==='поиск проектов','Wrong label');assert(!el('projectsModal').contains(el('projectsSearch')),'Search remained inside dialog');
    var cases=[['000924-27',[C.projects[0].id,C.projects[1].id]],[' 000924-27 ',[C.projects[0].id,C.projects[1].id]],['мОнТаЖ',[C.projects[0].id]],['зАвОд б',[C.projects[1].id]],['000777-27',[C.projects[2].id]],['нет такого проекта',[]],['%',[]],['',C.projects.map(function(p){return p.id;})]];
    for(var j=0;j<cases.length;j++){
@@ -29,5 +30,6 @@
    result.roles.push(user.role);await click('#networkLogoutBtn');await wait(function(){return open('networkLoginModal')&&!el('networkLogoutBtn').disabled;},'logout');
   }
  }catch(error){result.error=String(error&&error.stack||error);try{window.external.Capture('focused-failure');}catch(ignored){}}
+ result.entryPath=window.location.pathname;result.layout=window.__focusedLayout||[];
  window.external.Report(JSON.stringify(result));
 }());

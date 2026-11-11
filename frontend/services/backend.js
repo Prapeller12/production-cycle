@@ -144,7 +144,11 @@
     const bundle=await invoke('production_export_txt',{snapshot:toSnapshot(state)});
     return {out:bundle.outgoingText,in:bundle.incomingText,outFileName:bundle.outgoingFileName,inFileName:bundle.incomingFileName};
   }
-  async function excelTemplate(){if(!window.ProductionServer)throw Error('Образец Excel доступен в серверной программе.');return invoke('production_excel_template')}
+  async function excelTemplate(){
+    const template=Production.importTemplate;
+    if(!template||!template.fileName||!template.base64)throw Error('В комплекте отсутствует образец Excel. Распакуйте новый ZIP целиком.');
+    return {fileName:template.fileName,base64:template.base64,sha256:template.sha256};
+  }
   async function claimOnboarding(){return window.ProductionServer?invoke('ui_claim_onboarding'):{show:false}}
   async function importExcel(file){
     if(!window.ProductionServer)throw Error('Импорт Excel доступен в серверной программе.');

@@ -3,6 +3,10 @@ const babel=require('@babel/core'),postcss=require('postcss'),properties=require
 const root=path.resolve(__dirname,'..'),frontend=path.join(root,'frontend'),out=path.join(frontend,'legacy');
 (async()=>{
  fs.mkdirSync(out,{recursive:true});
+ const template=JSON.parse(fs.readFileSync(path.join(root,'server/resources/project-import-template.json'),'utf8'));
+ const workbook=Buffer.from(template.base64,'base64');
+ if(crypto.createHash('sha256').update(workbook).digest('hex')!==template.sha256||workbook[0]!==0x50||workbook[1]!==0x4b)throw Error('Excel template integrity check failed');
+ fs.writeFileSync(path.join(frontend,'config/import-template.js'),"'use strict';\nwindow.Production=window.Production||{};\nProduction.importTemplate=Object.freeze("+JSON.stringify(template)+");\n");
  const html=fs.readFileSync(path.join(frontend,'index.html'),'utf8');
  const scripts=[...html.matchAll(/<script defer src="([^"]+)"><\/script>/g)].map(m=>m[1]);
  const transformed=scripts.map(name=>babel.transformSync(fs.readFileSync(path.join(frontend,name),'utf8'),{filename:name,sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]],comments:false,compact:false}).code).join('\n;\n');
@@ -18,8 +22,8 @@ const root=path.resolve(__dirname,'..'),frontend=path.join(root,'frontend'),out=
  result.root.walkDecls(decl=>{for(let i=0;i<20&&decl.value.includes('var(');i++){const old=decl.value;decl.value=decl.value.replace(/var\((--[\w-]+)(?:,\s*([^()]*))?\)/g,(match,name,fallback)=>variables.get(name)||fallback||match);if(old===decl.value)break;}});
  const finalCss=result.root.toString();if(finalCss.includes('var('))throw Error('Unresolved legacy CSS custom property');
  fs.writeFileSync(path.join(out,'app.css'),finalCss);
- const head=fs.readFileSync(path.join(frontend,'compat/ie11-head.js'),'utf8');acorn.parse(head,{ecmaVersion:5});
- const revision=crypto.createHash('sha256').update(code+finalCss+head).digest('hex').slice(0,12);
+ const head=fs.readFileSync(path.join(frontend,'compat/ie11-head.js'),'utf8'),entry=fs.readFileSync(path.join(frontend,'compat/browser-entry.js'),'utf8');acorn.parse(head,{ecmaVersion:5});acorn.parse(entry,{ecmaVersion:5});
+ const revision=crypto.createHash('sha256').update(code+finalCss+head+entry).digest('hex').slice(0,12);
  const legacy=html.replace(/<link rel="stylesheet" href="styles\/[^\"]+">/g,'').replace(/<script defer src="[^\"]+"><\/script>/g,'').replace('</head>','<script src="/compat/ie11-head.js?v='+revision+'"></script>\n<link rel="stylesheet" href="/legacy/app.css?v='+revision+'">\n</head>').replace('</body>','<script defer src="/legacy/app.js?v='+revision+'"></script>\n</body>');
  fs.writeFileSync(path.join(out,'index.html'),legacy);
  const smoke=fs.readFileSync(path.join(root,'tests/network-native-smoke.js'),'utf8').replaceAll('window.__TAURI__.core.invoke','window.__browserTestInvoke');

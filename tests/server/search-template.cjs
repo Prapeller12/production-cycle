@@ -48,4 +48,5 @@ async function edge(){
   }catch(e){result.error=String(e.stack||e);await page.screenshot({path:path.join(out,(legacy?'es5-':'edge-')+'focused-failure.png'),fullPage:true});throw e;}finally{fs.writeFileSync(path.join(out,legacy?'es5-focused.json':'edge-focused.json'),JSON.stringify(result,null,2));await context.close();await server.stop();}
  }}finally{await browser.close()}
 }
-(process.argv.includes('--ie')?native():edge()).catch(e=>{console.error(e);process.exitCode=1});
+module.exports={arrange};
+if(require.main===module)(process.argv.includes('--ie')?native():edge()).catch(e=>{console.error(e);process.exitCode=1});

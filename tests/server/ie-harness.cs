@@ -112,7 +112,8 @@ public class IETest {
             }
             if (!injected && browser.Document != null) {
                 try {
-                    object ready = browser.Document.InvokeScript("eval", new object[] { "!!(window.ProductionServer && window.Production && Production.backend)" });
+                    string probe=Environment.GetEnvironmentVariable("IE_ENTRY_PROBE")=="1"?"document.readyState==='complete'":"!!(window.ProductionServer && window.Production && Production.backend)";
+                    object ready = browser.Document.InvokeScript("eval", new object[] { probe });
                     if (ready is bool && (bool)ready) {
                         injected = true;
                         browser.Document.InvokeScript("eval", new object[] { File.ReadAllText(args[1], Encoding.UTF8) });

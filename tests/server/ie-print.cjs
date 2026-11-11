@@ -3,7 +3,7 @@ const {startServer,repo}=require('./helpers.cjs');
 (async()=>{
  if(process.platform!=='win32')throw Error('Real MSHTML and Windows print dialogs are required');
  const out=process.env.SERVER_QA_DIR||path.join(repo,'dist/button-qa');fs.mkdirSync(out,{recursive:true});
- for(const baseline of [true,false]){
+ for(const baseline of (process.argv.includes('--current')?[false]:[true,false])){
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'production-print-'));
   fs.cpSync(baseline?process.env.BASELINE_FRONTEND:path.join(repo,'frontend'),path.join(root,'frontend'),{recursive:true});
   const server=await startServer({root,tls:false});
