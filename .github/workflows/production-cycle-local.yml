@@ -35,7 +35,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Domain tests failed'}
           git diff --check
           if($LASTEXITCODE -ne 0){throw 'Whitespace check failed'}
-          cargo test --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
+          cargo test --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
           if($LASTEXITCODE -ne 0){throw 'Native Rust tests failed'}
           cargo build --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
           if($LASTEXITCODE -ne 0){throw 'Native build failed'}
