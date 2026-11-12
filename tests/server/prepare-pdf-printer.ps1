@@ -1,9 +1,11 @@
 param([Parameter(Mandatory=$true)][string]$OutputPath,[ValidateSet('portrait','landscape')][string]$Orientation='portrait',[switch]$Remove)
 $ErrorActionPreference='Stop'
-$name='ProductionCycle print QA'
+$name='ProductionCycle print QA '+[IO.Path]::GetFileNameWithoutExtension($OutputPath)
 if($Remove){
  if(Get-Printer -Name $name -ErrorAction SilentlyContinue){Remove-Printer -Name $name}
- if(Get-PrinterPort -Name $OutputPath -ErrorAction SilentlyContinue){Remove-PrinterPort -Name $OutputPath}
+ # Windows 2025 can retain a completed spool handle briefly after removing the queue.
+ # A private, uniquely named test port is safe for the ephemeral runner to reclaim.
+ if(Get-PrinterPort -Name $OutputPath -ErrorAction SilentlyContinue){Remove-PrinterPort -Name $OutputPath -ErrorAction SilentlyContinue}
  if(Test-Path "$OutputPath.default-printer.txt"){
   $original=Get-Content "$OutputPath.default-printer.txt" -Raw
   if($original.Trim() -and (Get-Printer -Name $original.Trim() -ErrorAction SilentlyContinue)){(New-Object -ComObject WScript.Network).SetDefaultPrinter($original.Trim())}
