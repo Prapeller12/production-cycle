@@ -6,6 +6,7 @@
 .report-project .report-field{display:table-cell;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word}
 .report-summary .report-kpi{display:table-cell;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word}
 .report-stage-table th,.report-stage-table td{box-sizing:border-box;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
+.report-stage-table td:first-child{white-space:nowrap}
 .report-stage-name,.report-stage-parent,.report-confirmation{word-wrap:break-word;overflow-wrap:break-word}
 .report-status{box-sizing:border-box;max-width:100%;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
 .report-date-part{display:inline-block;white-space:nowrap}
