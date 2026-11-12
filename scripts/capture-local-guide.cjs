@@ -7,7 +7,7 @@ const captures=[],pin='739201';
 let browser,page,child,admin,manager,reviewer,projectId,base,assembly,procurement;
 async function fill(id,value){const e=page.locator('#'+id);if(await e.evaluate(e=>e.tagName==='SELECT'))await e.selectOption(String(value));else await e.fill(String(value));await e.dispatchEvent('change');}
 async function click(selector){await page.locator(selector).click();}
-async function close(id){if(await page.locator('#'+id).evaluate(e=>e.classList.contains('open')))await click('#'+id+' [data-close="'+id+'"]');}
+async function close(id){if(await page.locator('#'+id).evaluate(e=>e.classList.contains('open')))await page.locator('#'+id+' [data-close="'+id+'"]').first().click();}
 async function more(id){await page.evaluate(()=>document.querySelector('.more-actions').open=true);await click('#'+id);}
 async function shot(name,scope,marks=[]){
  const selectors=Array.isArray(scope)?scope:[scope];await page.locator(selectors[0]).scrollIntoViewIfNeeded();await sleep(160);
@@ -59,7 +59,7 @@ async function loadCurrent(){await click('#loadJsonBtn');await page.waitForSelec
   base=await page.evaluate(id=>Production.backend.loadById(id),projectId);procurement=base.stages.find(s=>s.title==='Закупка комплектующих').uid;
   await page.locator('#treeBody tr[data-stage-uid="'+procurement+'"] [data-act="edit"]').click();await fill('stageDeadline','2026-10-20');await fill('stageComment','Согласован перенос срока поставки');
   await shot('edit','#stageModal .modal',[[1,'#stageDeadline','right'],[2,'#stageComment'],[3,'#saveStageBtn','right']]);await click('#saveStageBtn');await click('#saveJsonBtn');await sign('Срок поставки перенесён с 15 на 20 октября');
-  await all();await shot('deadline-flags','#registryView .table-wrap',[[1,'#treeBody tr.root','left'],[2,'#treeBody tr[data-stage-uid="'+procurement+'"] .status-badge','right'],[3,'#treeBody .deadline-warning','right']]);
+  await all();await page.setViewportSize({width:1600,height:1200});await shot('deadline-flags','#registryView .table-wrap',[[1,'#treeBody tr.root','left'],[2,'#treeBody tr[data-stage-uid="'+procurement+'"] .status-badge','right'],[3,'#treeBody .deadline-warning','right']]);
   await click('#toggleStructureBtn');await shot('structure','#structureCard',[[1,'#toggleStructureBtn','right'],[2,'#structureTree','left']]);
   await page.locator('#treeBody tr[data-stage-uid="'+assembly+'"] [data-act="edit"]').click();await fill('stageStatus','done');await fill('completionScope','stage');
   await shot('completion-start','#stageModal .modal',[[1,'#stageStatus'],[2,'#completionScope'],[3,'#saveStageBtn','right']]);await click('#saveStageBtn');await page.waitForSelector('#saveConfirmationModal.open');
