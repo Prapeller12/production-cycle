@@ -13,11 +13,15 @@ public class BrowserReport {
     public Action<int,int> ResizeViewport;
     public Func<int> CountPrintDialogs;
     public Func<string> DescribePrintDialogs;
+    public Action PrintCurrent;
+    public Func<bool> IsPdfReady;
     public void Report(string json) { Receive(json); }
     public void Capture(string name) { SaveCapture(name); }
     public void Viewport(int width, int height) { ResizeViewport(width,height); }
     public int NativePrintCount() { return CountPrintDialogs(); }
     public string NativePrintDetails() { return DescribePrintDialogs(); }
+    public void PrintCurrentDocument() { PrintCurrent(); }
+    public bool PdfReady() { return IsPdfReady(); }
 }
 public class CaptureBrowser : WebBrowser {
     [StructLayout(LayoutKind.Sequential)] private struct Rect {public int Left,Top,Right,Bottom;}
@@ -54,6 +58,15 @@ public class IETest {
         DateTime deadline = DateTime.UtcNow.AddSeconds(180);
         bool injected = false, finished = false; int code = 1;
         BrowserReport report = new BrowserReport();
+        report.PrintCurrent=delegate{browser.Print();};
+        report.IsPdfReady=delegate{
+            string path=Environment.GetEnvironmentVariable("IE_PDF_OUTPUT");
+            if(String.IsNullOrEmpty(path)||!File.Exists(path))return false;
+            try{using(var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite)){
+                if(stream.Length<1000)return false;int length=(int)Math.Min(256,stream.Length);stream.Seek(-length,SeekOrigin.End);
+                byte[] bytes=new byte[length];stream.Read(bytes,0,length);return Encoding.ASCII.GetString(bytes).Contains("%%EOF");
+            }}catch{return false;}
+        };
         int printDialogs=0;string printDetails="";var seenDialogs=new System.Collections.Generic.HashSet<IntPtr>();
         report.CountPrintDialogs=delegate{return printDialogs;};report.DescribePrintDialogs=delegate{return printDetails;};
         Timer nativeTimer=new Timer();nativeTimer.Interval=100;

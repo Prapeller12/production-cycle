@@ -13,7 +13,7 @@ const root=path.resolve(__dirname,'..'),frontend=path.join(root,'frontend'),out=
  const polyfills=fs.readFileSync(require.resolve('core-js-bundle/minified.js'),'utf8')+'\n'+fs.readFileSync(require.resolve('regenerator-runtime/runtime.js'),'utf8')+'\n'+fs.readFileSync(path.join(frontend,'compat/ie11.js'),'utf8');
  const code=polyfills+'\n'+transformed;acorn.parse(code,{ecmaVersion:5,sourceType:'script'});
  fs.writeFileSync(path.join(out,'app.js'),code);
- const css=['styles/app.css','styles/reference-theme.css','compat/ie11.css'].map(name=>fs.readFileSync(path.join(frontend,name),'utf8')).join('\n');
+ const css=['styles/app.css','styles/reference-theme.css','compat/ie11.css','styles/report-print.css'].map(name=>fs.readFileSync(path.join(frontend,name),'utf8')).join('\n');
  const ast=postcss.parse(css),variables=new Map();
  ast.walkDecls(/^--/,decl=>{if(decl.parent.type==='rule'&&decl.parent.selector===':root')variables.set(decl.prop,decl.value)});
  ast.append(postcss.rule({selector:':root',nodes:[...variables].map(([prop,value])=>postcss.decl({prop,value}))}));
