@@ -35,7 +35,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Domain tests failed'}
           git diff --check
           if($LASTEXITCODE -ne 0){throw 'Whitespace check failed'}
-          cargo test --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
+          cargo test --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
           if($LASTEXITCODE -ne 0){throw 'Native Rust tests failed'}
           cargo build --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
           if($LASTEXITCODE -ne 0){throw 'Native build failed'}
@@ -60,6 +60,16 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'Test tools failed'}
           node tests/local-window.cjs
           if($LASTEXITCODE -ne 0){throw 'Local window UI regression'}
+      - name: Inspect actual PDF pages
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check pymupdf==1.26.7
+          if($LASTEXITCODE -ne 0){throw 'PDF inspection tools failed'}
+          python tests/verify-local-pdf.py dist/local-window-qa
+          if($LASTEXITCODE -ne 0){throw 'Printed PDF layout failed'}
+      - name: Launch as a real standard Windows account
+        shell: pwsh
+        run: ./scripts/test-local-standard-user.ps1 -Zip ./dist/local/ProductionCycle-local-windows-x64.zip
       - name: Offline EXE with system-only PATH
         shell: pwsh
         run: |

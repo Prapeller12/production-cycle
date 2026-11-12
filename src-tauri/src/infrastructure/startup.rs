@@ -35,7 +35,8 @@ fn wide(text: &str) -> Vec<u16> { text.encode_utf16().chain(Some(0)).collect() }
 #[cfg(windows)]
 pub fn show_error(message: &str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
-    let body = wide(&format!("Программа не смогла открыться.\n\n{message}\n\nЗапускайте EXE на своём компьютере из Проводника Windows в обычном сеансе пользователя. Общая папка должна быть доступна для чтения и записи.\nЕсли ошибка повторится, передайте администратору снимок этого окна."));
+    let help = if cfg!(feature="local-desktop") { "Распакуйте ZIP целиком в папку на локальном диске и откройте production-cycle.exe. У вашего пользователя должны быть права записи в эту папку." } else { "Запускайте EXE на своём компьютере из Проводника Windows в обычном сеансе пользователя. Общая папка должна быть доступна для чтения и записи." };
+    let body = wide(&format!("Программа не смогла открыться.\n\n{message}\n\n{help}\nЕсли ошибка повторится, передайте администратору снимок этого окна."));
     unsafe { MessageBoxW(std::ptr::null_mut(), body.as_ptr(), wide("Производственный цикл — ошибка запуска").as_ptr(), MB_OK | MB_ICONERROR | MB_SETFOREGROUND); }
 }
 #[cfg(not(windows))]

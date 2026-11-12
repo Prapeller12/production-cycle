@@ -85,6 +85,7 @@ fn main(){
                 .initialization_script(if cfg!(feature="local-desktop"){"window.ProductionDesktop=true;"}else{""})
                 .inner_size(1440.0,900.0).min_inner_size(700.0,500.0)
                 .data_directory(infrastructure::launch::native_local_path(&paths.webview))
+                .additional_browser_args(&if smoke {std::env::var("PRODUCTION_CYCLE_SMOKE_BROWSER_ARGS").unwrap_or_default()}else{String::new()})
                 .on_page_load(move |window,payload|{if smoke && payload.event()==tauri::webview::PageLoadEvent::Finished {if cfg!(feature="local-desktop"){let _=window.eval(smoke::LOCAL_TRACE);}
                     let _=window.eval(if cfg!(feature="local-desktop"){smoke::LOCAL_SCRIPT}else if network_enabled{smoke::NETWORK_SCRIPT}else{smoke::SCRIPT});}})
                 .on_navigation(|url|matches!(url.scheme(),"production") || url.host_str()==Some("production.localhost"))
