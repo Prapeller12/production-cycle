@@ -1,0 +1,43 @@
+name: Capture released local EXE for its user guide
+on:
+  push:
+    branches: [docs/local-guide-20261112]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  screenshots:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Prepare screenshot tools and the exact delivered ZIP
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if($LASTEXITCODE -ne 0){throw 'Screenshot tools unavailable'}
+          gh run download 43253992454 --repo $env:GITHUB_REPOSITORY --name ProductionCycle-local-windows-2022 --dir dist/release
+          if($LASTEXITCODE -ne 0){throw 'Verified release unavailable'}
+          if((Get-FileHash dist/release/ProductionCycle-local-windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant() -cne '408609e0876b8a2b83f76d6685dd64f83a1879188e97332782cf3787b6ecc13f'){throw 'Release does not match the delivered local ZIP'}
+          if(Test-Path C:/ProductionCycle){throw 'Guide fixture folder already exists'}
+          Expand-Archive dist/release/ProductionCycle-local-windows-x64.zip C:/
+      - name: Capture native windows using training data only
+        shell: pwsh
+        run: |
+          $policy='HKLM:/SOFTWARE/Policies/Microsoft/Edge/WebView2/AdditionalBrowserArguments'
+          New-Item -Path $policy -Force | Out-Null
+          New-ItemProperty -Path $policy -Name '*' -PropertyType String -Value '--remote-debugging-port=9222 --lang=ru-RU' -Force | Out-Null
+          try{node scripts/capture-local-guide.cjs;if($LASTEXITCODE -ne 0){throw 'Native documentation capture failed'}}finally{Remove-ItemProperty -Path $policy -Name '*' -ErrorAction SilentlyContinue}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: ProductionCycle-local-guide-screens
+          path: dist/local-guide-capture/**
+          retention-days: 14
+          if-no-files-found: error
