@@ -14,7 +14,7 @@ with zipfile.ZipFile(a.base)as z:
  for f in old['files']:assert sha(z.read('ProductionCycleServer/'+f['path']))==f['sha256'],f['path']
 shutil.rmtree(target/'frontend');shutil.copytree(a.frontend,target/'frontend')
 for name in ['ui/app.js','legacy/app.js']:
- text=(target/'frontend'/name).read_text(encoding='utf-8');assert 'report-date-part'in text and '<table class="report-project"'in text and 'data-act="copy"'in text
+ text=(target/'frontend'/name).read_text(encoding='utf-8');assert 'report-date-part'in text and 'report-project'in text and 'report-summary'in text and 'data-act="copy"'in text
 assert (target/'frontend/styles/report-print.css').is_file()
 (target/'ИСПРАВЛЕНИЕ_ПЕЧАТИ_IE.txt').write_text((ROOT/'docs/ie-report-print-update.txt').read_text(encoding='utf-8'),encoding='utf-8-sig')
 (target/'VERSION.txt').write_text('server-ie-report-'+a.source[:7]+'\nserver-base=14fbf50\n',encoding='ascii')

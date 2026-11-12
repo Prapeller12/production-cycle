@@ -28,7 +28,7 @@ for path in sorted(root.glob('*report-*.pdf'))+sorted(root.glob('native-*.pdf'))
   for n,page in enumerate(d):
    bad=overlaps(page);assert not bad,(path,'Overlapping printed words',n+1,bad[:8])
    for w in page.get_text('words'):assert w[0]>=10 and w[2]<=page.rect.width-10,(path,'Text exceeds paper',n+1,w)
-  years=[s['size']for p in d for b in p.get_text('dict')['blocks']for l in b.get('lines',[])for s in l['spans']if s['text'].strip()=='2026']
+  years=[s['size']for p in d for b in p.get_text('dict')['blocks']for l in b.get('lines',[])for s in l['spans']if s['text'].strip()in ('2026','31.08.2026')]
   assert years and min(years)>=13.4,(path,'Stage date font shrank below 14pt',years[:8])
   if 'many' in path.stem:assert len(d)>1,(path,'Long report did not paginate')
  else:

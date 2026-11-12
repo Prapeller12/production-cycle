@@ -22,7 +22,7 @@ if(-not(Get-PrinterPort -Name $OutputPath -ErrorAction SilentlyContinue)){Add-Pr
 Add-Printer -Name $name -DriverName 'Microsoft Print To PDF' -PortName $OutputPath
 Add-Type -AssemblyName System.Printing,ReachFramework
 $printServer=New-Object System.Printing.LocalPrintServer
-$queue=$printServer.GetPrintQueue($name)
+$queue=New-Object System.Printing.PrintQueue($printServer,$name,[System.Printing.PrintSystemDesiredAccess]::AdministratePrinter)
 $ticket=$queue.DefaultPrintTicket
 $ticket.PageMediaSize=New-Object System.Printing.PageMediaSize([System.Printing.PageMediaSizeName]::ISOA4)
 $ticket.PageOrientation=if($Orientation -eq 'landscape'){[System.Printing.PageOrientation]::Landscape}else{[System.Printing.PageOrientation]::Portrait}
