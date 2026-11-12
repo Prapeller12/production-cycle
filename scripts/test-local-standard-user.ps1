@@ -13,6 +13,8 @@ try{
  $acl=Get-Acl $root
  $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new("$env:COMPUTERNAME\$name",'Modify','ContainerInherit, ObjectInherit','None','Allow'))
  Set-Acl $root $acl
+ & "$env:SystemRoot/System32/icacls.exe" $root /setowner "$env:COMPUTERNAME\$name" /T /Q | Out-Null
+ if($LASTEXITCODE -ne 0){throw 'Cannot simulate standard-user-owned ZIP extraction'}
  Start-Service seclogon
  Add-Type -Path (Join-Path $PSScriptRoot 'launch-limited-token.cs')
  Copy-Item (Join-Path $PSScriptRoot 'launch-limited-token.cs') (Join-Path $root 'network-standard-user-probe.cs')

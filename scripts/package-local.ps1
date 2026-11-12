@@ -13,7 +13,7 @@ Copy-Item "$source/frontend" $root -Recurse
 Remove-Item "$root/frontend/legacy" -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item "$source/config/portable.json" "$root/config/portable.json"
 Copy-Item "$runtime/*" "$root/runtime/webview2" -Recurse
-Copy-Item "$source/docs/local/Инструкция.txt" "$root/Инструкция.txt"
+[IO.File]::WriteAllText("$root/Инструкция.txt",[IO.File]::ReadAllText("$source/docs/local/Инструкция.txt"),[Text.UTF8Encoding]::new($true))
 $sample=Get-Content "$source/server/resources/project-import-template.json" -Raw | ConvertFrom-Json
 [IO.File]::WriteAllBytes((Join-Path "$root/samples" $sample.fileName),[Convert]::FromBase64String($sample.base64))
 [IO.File]::WriteAllText("$root/app/start.cmd","@echo off`r`nstart `"`" `"%~dp0..\production-cycle.exe`"`r`n",[Text.Encoding]::ASCII)

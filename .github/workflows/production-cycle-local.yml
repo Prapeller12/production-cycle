@@ -68,9 +68,11 @@ jobs:
           python tests/verify-local-pdf.py dist/local-window-qa
           if($LASTEXITCODE -ne 0){throw 'Printed PDF layout failed'}
       - name: Launch as a real standard Windows account
+        if: ${{ !cancelled() && env.LOCAL_TEST_ROOT != '' }}
         shell: pwsh
         run: ./scripts/test-local-standard-user.ps1 -Zip ./dist/local/ProductionCycle-local-windows-x64.zip
       - name: Offline EXE with system-only PATH
+        if: ${{ !cancelled() && env.LOCAL_TEST_ROOT != '' }}
         shell: pwsh
         run: |
           if(@(Get-NetFirewallProfile | Where-Object {-not $_.Enabled}).Count){throw 'Firewall is not enabled'}
@@ -78,7 +80,7 @@ jobs:
           try{
             foreach($program in @("$env:LOCAL_TEST_ROOT/production-cycle.exe","$env:LOCAL_TEST_ROOT/runtime/webview2/msedgewebview2.exe")){
               $name='ProductionCycle-offline-'+[guid]::NewGuid().ToString()
-              New-NetFirewallRule -Name $name -DisplayName $name -Direction Outbound -Program $program -Action Block -Profile Any | Out-Null
+              New-NetFirewallRule -Name $name -DisplayName $name -Direction Outbound -Program (Resolve-Path -LiteralPath $program).Path -Action Block -Profile Any | Out-Null
               $rules+=$name
             }
             $env:PATH="$env:SystemRoot\System32;$env:SystemRoot"

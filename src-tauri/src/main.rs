@@ -62,7 +62,7 @@ fn main(){
             let relative=if relative.is_empty(){"index.html"}else{relative};
             let path=frontend.join(relative);
             let body=path.canonicalize().ok().filter(|p|p.starts_with(&frontend)&&p.is_file()).and_then(|p|std::fs::read(p).ok());
-            let mime=match path.extension().and_then(|s|s.to_str()){Some("js")=>"text/javascript; charset=utf-8",Some("css")=>"text/css; charset=utf-8",Some("html")=>"text/html; charset=utf-8",_=>"application/octet-stream"};
+            let mime=match path.extension().and_then(|s|s.to_str()){Some("js")=>"text/javascript; charset=utf-8",Some("css")=>"text/css; charset=utf-8",Some("html")=>"text/html; charset=utf-8",Some("svg")=>"image/svg+xml",Some("woff2")=>"font/woff2",Some("woff")=>"font/woff",Some("png")=>"image/png",Some("jpg"|"jpeg")=>"image/jpeg",Some("ico")=>"image/x-icon",_=>"application/octet-stream"};
             Response::builder().status(if body.is_some(){200}else{404}).header("Content-Type",mime).header("Cache-Control","no-store").header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ipc: http://ipc.localhost; object-src 'none'; frame-src 'none'").body(body.unwrap_or_default()).unwrap()
         })
         .invoke_handler(tauri::generate_handler![
