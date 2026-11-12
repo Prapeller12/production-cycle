@@ -47,7 +47,7 @@ impl Paths {
         let root = if direct.join("config/portable.json").is_file() { direct } else { legacy.filter(|p| p.join("config/portable.json").is_file()).ok_or("Invalid application layout: config/portable.json was not found beside the program")? }.canonicalize().map_err(|e| e.to_string())?;
         let c: Config = serde_json::from_slice(&fs::read(root.join("config/portable.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         if c.technical_logging { return Err("Technical logging is not implemented in this prototype".into()); }
-        let network_client=std::env::var_os("PRODUCTION_CYCLE_NETWORK_CLIENT").is_some();
+        let network_client=!cfg!(feature="local-desktop") && std::env::var_os("PRODUCTION_CYCLE_NETWORK_CLIENT").is_some();
         let recovery=std::env::var_os("PRODUCTION_CYCLE_NETWORK_RECOVERY").map(PathBuf::from);
         let mut result=Self::resolve(&root,&c,network_client,recovery.as_deref())?;
         // Report the exact writable profile/temp path before WebView2 can hang

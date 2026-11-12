@@ -120,7 +120,8 @@ pub struct NetworkRuntime {
 
 impl NetworkRuntime {
     pub fn from_environment(local_data: PathBuf,recovery_data: PathBuf) -> Result<Self, String> {
-        let Some(shared) = env::var_os(NETWORK_ROOT_ENV) else {
+        let shared_env = if cfg!(feature="local-desktop") { None } else { env::var_os(NETWORK_ROOT_ENV) };
+        let Some(shared) = shared_env else {
             return Ok(Self { enabled:false, version:String::new(), maximum:DEFAULT_MAX_CLIENTS, shared_root:None, local_data, recovery_data, session:Mutex::new(None) });
         };
         let shared_root=PathBuf::from(shared).canonicalize().map_err(|e|format!("Сетевая папка недоступна: {e}"))?;
@@ -737,7 +738,7 @@ fn copy_checked_database(source:&Path,target:&Path)->Result<(),String>{
     atomic_replace(&pending,target)
 }
 
-fn atomic_write(path:&Path,bytes:&[u8])->Result<(),String>{atomic_write_io(path,bytes).map_err(|e|e.to_string())}
+pub(crate) fn atomic_write(path:&Path,bytes:&[u8])->Result<(),String>{atomic_write_io(path,bytes).map_err(|e|e.to_string())}
 fn atomic_write_io(path:&Path,bytes:&[u8])->std::io::Result<()>{
     let parent=path.parent().filter(|parent|!parent.as_os_str().is_empty()).unwrap_or_else(||Path::new("."));
     fs::create_dir_all(parent)?;
