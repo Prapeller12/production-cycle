@@ -7,7 +7,7 @@ Remove-Item "$root/docs","$root/README.md" -Recurse -Force -ErrorAction Silently
 New-Item -ItemType Directory -Path "$root/samples" -Force | Out-Null
 $sample=Get-Content "$PSScriptRoot/../server/resources/project-import-template.json" -Raw | ConvertFrom-Json
 [IO.File]::WriteAllBytes((Join-Path "$root/samples" $sample.fileName),[Convert]::FromBase64String($sample.base64))
-Copy-Item "$PSScriptRoot/../docs/native-share-startup.txt" "$root/КАК ЗАПУСТИТЬ.txt"
+[IO.File]::WriteAllText("$root/КАК ЗАПУСТИТЬ.txt",[IO.File]::ReadAllText("$PSScriptRoot/../docs/native-share-startup.txt"),[Text.UTF8Encoding]::new($true))
 # Refresh the immutable executable payload after selecting the native UI.
 $entries=@(foreach($name in @('production-cycle.exe','frontend','runtime','config','app')){
  $item=Get-Item (Join-Path $root $name)

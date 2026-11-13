@@ -109,6 +109,7 @@ pub fn show_error(message:&str){
 
 pub fn start(){
     update("Запуск программы…");
+    detail("Сборка",option_env!("GITHUB_SHA").unwrap_or(env!("CARGO_PKG_VERSION")));
     if let Ok(exe)=std::env::current_exe(){detail("EXE",&exe.display().to_string());}
     if let Ok(cwd)=std::env::current_dir(){detail("Рабочая папка ярлыка",&cwd.display().to_string());}
     // A staged child's launcher owns the visible native diagnostic window.

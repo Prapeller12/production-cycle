@@ -26,6 +26,7 @@ jobs:
             src-tauri/target
           key: startup-native-${{ matrix.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ github.run_id }}
           restore-keys: |
+            startup-native-${{ matrix.os }}-
             local-rust-${{ matrix.os }}-
             windows-rust-network-${{ matrix.os }}-
       - name: Domain contracts and native build
