@@ -78,7 +78,7 @@
    click('#dictionaryTab');await wait(()=>document.querySelector('#dictionaryList .dictionary-row'),'dictionary');assert($('dictionaryList').innerText.includes('Предприятие'),'Saved dictionary absent');
    click('#auditBackupsTab');await wait(()=>document.querySelector('#backupList .backup-row'),'automatic backups');fill('backupAdminPin','739201');click('#createBackupBtn');await wait(()=>$('backupResult').innerText.includes('Копия создана'),'manual backup');
    const backup=(await B.listBackups()).find(b=>b.kind==='manual');assert(backup&&backup.valid,'Manual backup invalid');const restoredBackup=await B.restoreBackup(backup.fileName,admin.id,'739201');assert(restoredBackup.integrityCheck==='ok','Restore integrity failed');assert((await B.listProjects()).length===2,'Restore lost project');checks.push('admin login, signed journal, signature verification, dictionaries, automatic/manual backup and verified restore');click('#closeAdminBtn');
-   phase='autosave';fill('projectName','Несохранённый черновик');await sleep(1600);assert((await B.networkStatus()).active,'Session lost during autosave');const draft=await B.networkSaveDraft(state);assert(draft.location==='local','Local draft failed');checks.push('active session and local draft autosave');
+   phase='autosave';fill('projectName','Несохранённый черновик');await sleep(1600);assert((await B.networkStatus()).active,'Session lost during autosave');const draft=await B.networkSaveDraft(state);assert(draft.location===(window.ProductionShared?'shared':'local'),'Native draft failed');checks.push('active session and native draft autosave');
   }
   phase='native Excel and per-user preferences';
   const template=await B.excelTemplate(),raw=atob(template.base64),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));

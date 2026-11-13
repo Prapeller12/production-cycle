@@ -200,6 +200,22 @@ try{
   }
   Run-FunctionalSmoke $unc 'unc-first-run'
   Run-FunctionalSmoke $unc 'unc-relaunch'
+  # Actual Windows desktop shortcut, with a deliberately unrelated working folder.
+  $shell=New-Object -ComObject WScript.Shell
+  $shortcutPath=Join-Path $testRoot 'Рабочий стол — Производственный цикл.lnk'
+  $shortcut=$shell.CreateShortcut($shortcutPath)
+  $shortcut.TargetPath="\\$env:COMPUTERNAME\$share\ProductionCycleNetwork\production-cycle.exe"
+  $shortcut.WorkingDirectory="$env:SystemRoot\System32";$shortcut.WindowStyle=1;$shortcut.Save()
+  $env:PRODUCTION_CYCLE_SMOKE_REPORT=$null
+  $null=$shell.Run('"'+$shortcutPath+'"',1,$false)
+  $shortcutWindow=Wait-VisibleWindow 'Производственный цикл'
+  $shortcutClientId=[LaunchWindows]::Owner($shortcutWindow)
+  $shortcutClient=Get-CimInstance Win32_Process -Filter "ProcessId=$shortcutClientId"
+  if($shortcutClient.ExecutablePath -notlike "$localProfile*" -or $shortcutClient.CommandLine -notmatch '--network-client'){throw 'Desktop shortcut did not open the staged local client'}
+  $shortcutProcess=Get-Process -Id $shortcutClientId
+  [LaunchWindows]::PostMessage($shortcutWindow,0x0010,[IntPtr]::Zero,[IntPtr]::Zero)|Out-Null
+  if(-not $shortcutProcess.WaitForExit(30000)){throw 'Desktop shortcut client did not close'}
+  @{ok=$true;shortcut=$shortcutPath;target=$shortcut.TargetPath;workingDirectory=$shortcut.WorkingDirectory;client=$shortcutClient.ExecutablePath;visibleReadyWindow=$true}|ConvertTo-Json|Set-Content (Join-Path $testRoot 'network-desktop-shortcut.json') -Encoding utf8
   # A stale or damaged cache must be rebuilt without overwriting a locked EXE.
   $initial=Get-Content (Join-Path $testRoot 'network-launch-unc-first-run.json') -Raw | ConvertFrom-Json
   $sentinel=Join-Path $initial.cache 'data/keep-on-rebuild.txt'
@@ -266,7 +282,7 @@ try{
   $env:PRODUCTION_CYCLE_SMOKE_REPORT=$null
   # A normal launch (without self-test) must display an actual top-level window.
   $launcher=Start-NetworkProcess $unc
-  $window=Wait-VisibleWindow 'Производственный цикл — self-test v1'
+  $window=Wait-VisibleWindow 'Производственный цикл'
   $clients=@(Get-CimInstance Win32_Process -Filter "Name='production-cycle.exe'" | Where-Object {$_.CommandLine -match '--network-client'})
   if($clients.Count -ne 1 -or $clients[0].ExecutablePath -notlike "$localProfile*"){throw 'Normal UNC launch did not create one local client'}
   $clientId=$clients[0].ProcessId

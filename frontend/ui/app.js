@@ -369,11 +369,12 @@ function printGantt(size){
  }catch(error){printFailure(error)}
 }
 
+function desktopLocal(){return window.ProductionDesktop&&!window.ProductionShared}
 function updateNetworkState(status,text=''){
  if(status&&typeof status.role==='string'){networkSessionRole=status.role;updateUserActions()}
  const chip=$('networkState');if(!networkMode){chip.hidden=true;return}chip.hidden=false;
  const occupied=status?.occupied??0,maximum=status?.maximum??3;chip.className='network-state '+(status?.active?'connected':'waiting');
- chip.textContent=text||(window.ProductionDesktop?(status?.active?'Локальный сеанс · '+(status.displayName||'Первичная настройка'):'Войдите под своим профилем'):(status?.active?`Сетевые сеансы: ${occupied} из ${maximum} · ${status.displayName||'сеанс активен'}`:`Сетевые сеансы: ${occupied} из ${maximum}`));
+ chip.textContent=text||(desktopLocal()?(status?.active?'Локальный сеанс · '+(status.displayName||'Первичная настройка'):'Войдите под своим профилем'):(status?.active?`Сетевые сеансы: ${occupied} из ${maximum} · ${status.displayName||'сеанс активен'}`:`Сетевые сеансы: ${occupied} из ${maximum}`));
 }
 function lockNetworkWorkspace(locked){
  document.querySelector('.shell').inert=locked;document.querySelector('.tabs').inert=locked;
@@ -406,7 +407,7 @@ async function pollNetworkSession(){
   if(networkSessionActive&&!status.active){networkEpoch++;networkSessionActive=false;clearNetworkIdentity();clearTimeout(networkDraftTimer);lockNetworkWorkspace(true);$('networkLoginPin').value='';$('networkLoginModal').classList.add('open');$('networkLoginStatus').className='network-login-status error';$('networkLoginStatus').textContent='Сеанс завершён. Войдите повторно. Несохранённый проект остаётся в этом окне.';return}
   if(status.evictionRequested){networkEvictionStarted=true;updateNetworkState(status,'Входит администратор · сохраняем черновик и закрываем сеанс…');if(!await flushNetworkDraft(true))throw Error('Не удалось сохранить черновик');await B.networkFinishEviction();}
  }
- catch(_error){updateNetworkState({active:false,occupied:'?',maximum:3},window.ProductionDesktop?'Локальная база временно недоступна':'Общая папка временно недоступна')}
+ catch(_error){updateNetworkState({active:false,occupied:'?',maximum:3},desktopLocal()?'Локальная база временно недоступна':'Общая папка временно недоступна')}
  finally{if(networkPollPending===pending)networkPollPending=null;networkEvictionStarted=false}
 }
 function activateNetworkSession(status,showOnboarding=true){
@@ -427,14 +428,14 @@ async function logoutNetworkSession(){
  finally{networkTransition=false;$('networkLogoutBtn').disabled=false;lockNetworkWorkspace(!networkSessionActive);void pollNetworkSession()}
 }
 async function submitNetworkLogin(){
- const button=$('networkLoginBtn'),statusBox=$('networkLoginStatus'),userId=$('networkLoginUser').value;if(button.disabled||networkTransition)return;button.disabled=true;statusBox.className='network-login-status';statusBox.textContent=window.ProductionDesktop?'Проверяем PIN…':'Проверяем PIN и свободное место…';
+ const button=$('networkLoginBtn'),statusBox=$('networkLoginStatus'),userId=$('networkLoginUser').value;if(button.disabled||networkTransition)return;button.disabled=true;statusBox.className='network-login-status';statusBox.textContent=desktopLocal()?'Проверяем PIN…':'Проверяем PIN и свободное место…';
  try{const result=await B.networkLogin(userId?Number(userId):null,$('networkLoginPin').value);if(result.state==='active'||result.state==='standalone'){activateNetworkSession({active:true,userId:userId?Number(userId):null,occupied:result.occupied,maximum:result.maximum,displayName:$('networkLoginUser').selectedOptions[0]?.textContent||'',role:result.role||null});return}statusBox.className='network-login-status error';statusBox.textContent=result.state==='full'?'Все 3 места заняты. Закройте программу на одном из компьютеров и повторите вход.':'Администратор запросил освобождение места. Подождите несколько секунд и нажмите «Войти» ещё раз.'}
  catch(error){statusBox.className='network-login-status error';statusBox.textContent=String(error)}finally{button.disabled=false}
 }
 async function initializeNetworkMode(){
  const epoch=networkEpoch;
  try{$('networkLoginBtn').disabled=false;$('networkLoginStatus').textContent='';const status=await B.networkStatus();if(epoch!==networkEpoch)return;if(!status.enabled)return;networkMode=true;updateNetworkState(status);startNetworkPolling();lockNetworkWorkspace(!networkSessionActive);const users=await B.listAuditUsers();if(epoch!==networkEpoch)return;if(networkSessionActive&&status.active)return;if((window.ProductionServer||window.ProductionDesktop)&&status.active&&status.userId){activateNetworkSession(status,false);return;}if(!users.length){const result=await B.networkLogin(null,'');if(result.state!=='active')throw Error('Нет свободного места для первичной настройки. Закройте лишние окна программы и нажмите «Повторить».');activateNetworkSession({active:true,occupied:result.occupied,maximum:result.maximum,displayName:'Первичная настройка'},false);await openProfiles();$('newAuditUserName').focus();return}const select=$('networkLoginUser');select.innerHTML=users.filter(user=>user.active).map(user=>`<option value="${user.id}">${escapeHtml(user.displayName)} · ${escapeHtml(roleLabel(user.role))}</option>`).join('');$('networkLoginModal').classList.add('open');requestAnimationFrame(()=>$('networkLoginUser').focus())}
- catch(error){networkMode=true;lockNetworkWorkspace(true);$('networkLoginModal').classList.add('open');$('networkLoginBtn').disabled=true;$('networkLoginStatus').className='network-login-status error';$('networkLoginStatus').textContent=(window.ProductionDesktop?'Не удалось открыть локальную базу: ':'Не удалось открыть общую рабочую папку: ')+error}
+ catch(error){networkMode=true;lockNetworkWorkspace(true);$('networkLoginModal').classList.add('open');$('networkLoginBtn').disabled=true;$('networkLoginStatus').className='network-login-status error';$('networkLoginStatus').textContent=(desktopLocal()?'Не удалось открыть локальную базу: ':'Не удалось открыть общую рабочую папку: ')+error}
 }
 
 function newProject(){if((state.project.name||state.stages.length)&&!confirm('Очистить текущий проект и начать новый?'))return;state={databaseId:null,project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};savedSnapshot=null;persistedStatuses=new Map();syncForm();render();refreshAutocomplete();message('ok','Создан новый пустой проект.')}
@@ -492,6 +493,6 @@ document.querySelectorAll('.tab').forEach(tab=>{tab.onclick=()=>setWorkspace(tab
 window.addEventListener('beforeunload',e=>{if((state.project.name||state.stages.length)&&J.fingerprint(state)!==savedSnapshot){e.preventDefault();e.returnValue=''}});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')void flushNetworkDraft(true)});
 document.addEventListener('keydown',e=>{const modal=topOpenModal();if(!modal)return;if(e.key==='Escape'){e.preventDefault();if(modal.id!=='networkLoginModal')closeModal(modal.id)}else if(e.key==='Tab')trapModalFocus(e,modal)});
-async function boot(){if(window.ProductionServer||window.ProductionDesktop){$('networkLoginTitle').textContent='Вход в производственный цикл';document.querySelector('.network-login-modal .onboarding-step').textContent=window.ProductionDesktop?'Локальная рабочая база':'Общая рабочая база';}if(window.ProductionDesktop){document.querySelector('.network-login-modal .modal-body > p').textContent='Выберите свой профиль и введите персональный PIN.';document.querySelector('.network-limit-note').textContent='Данные хранятся в локальной папке программы. Для смены пользователя нажмите «Выйти из сеанса».';}enhanceAccessibility();setWorkspace('registry');setAuditView('journal');syncForm();render();refreshAutocomplete();if(window.__TAURI__?.core?.invoke)await window.__TAURI__.core.invoke("frontend_ready");await initializeNetworkMode();if(!networkMode&&!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250)}
+async function boot(){if(window.ProductionServer||window.ProductionDesktop){$('networkLoginTitle').textContent='Вход в производственный цикл';document.querySelector('.network-login-modal .onboarding-step').textContent=desktopLocal()?'Локальная рабочая база':'Общая рабочая база';}if(window.ProductionDesktop){document.querySelector('.network-login-modal .modal-body > p').textContent='Выберите свой профиль и введите персональный PIN.';document.querySelector('.network-limit-note').textContent=window.ProductionShared?'Общие данные хранятся в серверной папке. Окно программы работает на этом компьютере. Для смены пользователя нажмите «Выйти из сеанса».':'Данные хранятся в локальной папке программы. Для смены пользователя нажмите «Выйти из сеанса».';}enhanceAccessibility();setWorkspace('registry');setAuditView('journal');syncForm();render();refreshAutocomplete();if(window.__TAURI__?.core?.invoke)await window.__TAURI__.core.invoke("frontend_ready");await initializeNetworkMode();if(!networkMode&&!onboardingSeen())setTimeout(()=>{markOnboardingSeen();openOnboarding(0)},250)}
 void boot();
 })();

@@ -1,9 +1,10 @@
-//! Local EXE adapter. No listener, service, browser session or network share.
+//! Native EXE adapter. A configured shared-folder package uses the existing
+//! admitted-session/snapshot transport; a standalone package keeps local data.
 use std::{fs::OpenOptions, io::Write, sync::{Mutex, atomic::{AtomicBool, Ordering}}};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 use tauri::State;
-use crate::{audit::AuditUserSummary, infrastructure::portable::Paths, production::ProductionDb};
+use crate::{audit::AuditUserSummary, infrastructure::{portable::Paths,network::NetworkRuntime}, production::ProductionDb};
 
 #[derive(Default)]
 pub struct LocalSession(Mutex<Option<AuditUserSummary>>, AtomicBool);
@@ -32,35 +33,58 @@ impl LocalSession {
 }
 
 #[tauri::command]
-pub fn local_status(session: State<'_, LocalSession>) -> Result<Value, String> { session.status() }
-
-#[tauri::command]
-pub fn local_login(user_id: Option<i64>, pin: String, db: State<'_, ProductionDb>, session: State<'_, LocalSession>) -> Result<Value, String> {
-    session.login(&db, user_id, &pin)
+pub fn local_status(session: State<'_, LocalSession>, network:State<'_,NetworkRuntime>) -> Result<Value, String> {
+    if !network.enabled(){return session.status();}
+    let mut value=serde_json::to_value(network.status()?).map_err(|e|e.to_string())?;
+    value["mode"]=json!("shared-folder");
+    value["userId"]=if value["active"]==true{json!(session.0.lock().map_err(|_|"Сеанс занят")?.as_ref().map(|user|user.id))}else{Value::Null};
+    Ok(value)
 }
 
 #[tauri::command]
-pub fn local_logout(session: State<'_, LocalSession>) -> Result<(), String> {
+pub fn local_login(user_id: Option<i64>, pin: String, db: State<'_, ProductionDb>, session: State<'_, LocalSession>,network:State<'_,NetworkRuntime>) -> Result<Value, String> {
+    if !network.enabled(){return session.login(&db,user_id,&pin);}
+    let user=network.with_read(&db,||{
+        if db.list_audit_users()?.is_empty(){if user_id.is_some(){return Err("Сначала создайте администратора.".into());}Ok(None)}
+        else{Ok(Some(db.authorize_user(user_id.ok_or("Выберите пользователя.")?,&pin)?))}
+    })?;
+    let admitted=network.login(user.clone())?;
+    if admitted.state=="active"{*session.0.lock().map_err(|_|"Сеанс занят")?=user.clone();session.1.store(user.is_none(),Ordering::SeqCst);}
+    let mut value=serde_json::to_value(admitted).map_err(|e|e.to_string())?;
+    value["userId"]=json!(user.as_ref().map(|u|u.id));value["role"]=json!(user.as_ref().map(|u|&u.role));
+    Ok(value)
+}
+
+#[tauri::command]
+pub fn local_logout(session: State<'_, LocalSession>,network:State<'_,NetworkRuntime>) -> Result<(), String> {
+    network.release()?;
     *session.0.lock().map_err(|_| "Сеанс занят")? = None;
     session.1.store(false, Ordering::SeqCst);
     Ok(())
 }
 
 #[tauri::command]
-pub fn ui_claim_onboarding(db: State<'_, ProductionDb>, session: State<'_, LocalSession>) -> Result<Value, String> {
-    Ok(json!({"show":crate::ui_preferences::claim_onboarding(&db, &session.user()?.key_fingerprint)?}))
+pub fn local_finish_eviction(app:tauri::AppHandle,session:State<'_,LocalSession>,network:State<'_,NetworkRuntime>)->Result<(),String>{
+    network.release()?;*session.0.lock().map_err(|_|"Сеанс занят")?=None;session.1.store(false,Ordering::SeqCst);app.exit(0);Ok(())
 }
 
 #[tauri::command]
-pub fn production_import_excel(file_name: String, base64: String, session: State<'_, LocalSession>) -> Result<crate::excel_import::ImportResult, String> {
-    session.user()?;
+pub fn ui_claim_onboarding(db: State<'_, ProductionDb>, session: State<'_, LocalSession>,network:State<'_,NetworkRuntime>) -> Result<Value, String> {
+    let user=session.user()?;
+    network.with_write(&db,||Ok(json!({"show":crate::ui_preferences::claim_onboarding(&db,&user.key_fingerprint)?})))
+}
+
+#[tauri::command]
+pub fn production_import_excel(file_name: String, base64: String, session: State<'_, LocalSession>,network:State<'_,NetworkRuntime>) -> Result<crate::excel_import::ImportResult, String> {
+    network.require_active_session()?;session.user()?;
     std::panic::catch_unwind(|| crate::excel_import::parse(&base64, &file_name))
         .map_err(|_| "Не удалось прочитать Excel. Используйте образец программы.".to_string())?
 }
 
 #[tauri::command]
-pub fn local_save_draft(snapshot: crate::production::ProductionSnapshot, paths: State<'_, Paths>, session: State<'_, LocalSession>) -> Result<Value, String> {
+pub fn local_save_draft(snapshot: crate::production::ProductionSnapshot, paths: State<'_, Paths>, session: State<'_, LocalSession>,network:State<'_,NetworkRuntime>) -> Result<Value, String> {
     let user = session.user()?;
+    if network.enabled(){return serde_json::to_value(network.save_draft(&snapshot)?).map_err(|e|e.to_string());}
     let folder = paths.data.join("drafts");
     std::fs::create_dir_all(&folder).map_err(|e|e.to_string())?;
     let saved_at = chrono::Utc::now().to_rfc3339();

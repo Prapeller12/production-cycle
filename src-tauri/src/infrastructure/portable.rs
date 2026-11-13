@@ -47,14 +47,24 @@ impl Paths {
         let root = if direct.join("config/portable.json").is_file() { direct } else { legacy.filter(|p| p.join("config/portable.json").is_file()).ok_or("Invalid application layout: config/portable.json was not found beside the program")? }.canonicalize().map_err(|e| e.to_string())?;
         let c: Config = serde_json::from_slice(&fs::read(root.join("config/portable.json")).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
         if c.technical_logging { return Err("Technical logging is not implemented in this prototype".into()); }
-        let network_client=!cfg!(feature="local-desktop") && std::env::var_os("PRODUCTION_CYCLE_NETWORK_CLIENT").is_some();
+        let network_client=std::env::var_os("PRODUCTION_CYCLE_NETWORK_CLIENT").is_some();
         let recovery=std::env::var_os("PRODUCTION_CYCLE_NETWORK_RECOVERY").map(PathBuf::from);
         let mut result=Self::resolve(&root,&c,network_client,recovery.as_deref())?;
+        super::startup::detail("Конфигурация",&root.join("config/portable.json").display().to_string());
+        super::startup::detail("Интерфейс",&result.frontend.display().to_string());
+        super::startup::detail("WebView2",&result.runtime.display().to_string());
+        super::startup::detail("Профиль WebView2",&result.webview.display().to_string());
+        super::startup::detail("Рабочая база",&result.data.join("production-cycle.db").display().to_string());
+        if let Some(shared)=std::env::var_os("PRODUCTION_CYCLE_SHARED_ROOT"){super::startup::detail("Общая папка",&PathBuf::from(shared).display().to_string());}
         // Report the exact writable profile/temp path before WebView2 can hang
         // in its own profile-lock initialization with an opaque failure.
         for path in [&result.webview,&result.data,&result.recovery,&result.exports,&result.process_temp]{super::launch::probe_directory(path)?;}
         if !result.runtime.join("msedgewebview2.exe").is_file() { return Err("Missing bundled Fixed WebView2 Runtime. Extract the complete portable ZIP.".into()); }
-        if network_client && [&result.runtime,&result.webview,&result.data,&result.recovery].iter().any(|path|!super::network::is_local_disk(path)) {return Err("Runtime, профиль или рабочие данные клиента оказались на сетевом диске. Запуск отменён: нужна локальная папка клиента.".into());}
+        if [&result.runtime,&result.webview,&result.data,&result.recovery].iter().any(|path|!super::network::is_local_disk(path)) {return Err("WebView2, профиль или рабочая SQLite оказались на сетевом диске. Запуск остановлен до создания окна: нужна локальная копия клиента.".into());}
+        for relative in ["index.html","compat/browser-entry.js","services/browser-transport.js","config/contracts.js","config/import-template.js","domain/cycle.js","services/exchange.js","services/backend.js","services/project-file.js","ui/app.js","styles/app.css","styles/reference-theme.css","styles/report-print.css"]{
+            let path=result.frontend.join(relative);
+            std::fs::File::open(&path).map_err(|e|super::launch::io_error("Недоступен обязательный файл интерфейса",&path,e))?;
+        }
         // Microsoft Fixed Runtime >=120 needs these runtime-folder rights on Windows 10.
         // No registry changes, elevation or sandbox disabling; only read/execute in this app folder.
         #[cfg(windows)]
@@ -72,6 +82,7 @@ impl Paths {
                 Ok(value)=>Some(format!("Не удалось подготовить права Runtime {}: {}",result.runtime.display(),String::from_utf8_lossy(&value.stderr).trim())),
                 Err(error)=>Some(super::launch::io_error("Windows запретила вспомогательную настройку прав Runtime",&helper,error)),
             };
+            if let Some(warning)=&result.runtime_warning{super::startup::detail("Предупреждение о правах WebView2",warning);}
         }
         let native_temp=super::launch::native_local_path(&result.process_temp);
         std::env::set_var("TEMP",&native_temp); std::env::set_var("TMP",&native_temp);

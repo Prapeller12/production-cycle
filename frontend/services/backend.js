@@ -2,7 +2,7 @@
 (() => {
   const D=Production.domain,X=Production.exchange;
   const native=()=>Boolean(window.ProductionServer||(window.__TAURI__&&window.__TAURI__.core&&typeof window.__TAURI__.core.invoke==='function'));
-  const localCommands={network_status:'local_status',network_login:'local_login',network_save_draft:'local_save_draft',network_logout:'local_logout',network_finish_eviction:'local_logout'};
+  const localCommands={network_status:'local_status',network_login:'local_login',network_save_draft:'local_save_draft',network_logout:'local_logout',network_finish_eviction:'local_finish_eviction'};
   const invoke=(command,args={})=>window.ProductionServer?window.ProductionServer.invoke(command,args):window.__TAURI__.core.invoke(window.ProductionDesktop?(localCommands[command]||command):command,args);
   function toSnapshot(state){
     return {

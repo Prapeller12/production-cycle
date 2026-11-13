@@ -1,0 +1,96 @@
+name: Verify native shortcut startup and visible diagnostics
+on:
+  push:
+    branches: [fix/shortcut-startup-20261113]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: startup-native-${{ matrix.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            local-rust-${{ matrix.os }}-
+            windows-rust-network-${{ matrix.os }}-
+      - name: Domain contracts and native build
+        shell: pwsh
+        run: |
+          node --test tests/domain.test.cjs
+          if($LASTEXITCODE -ne 0){throw 'Domain checks failed'}
+          git diff --check
+          if($LASTEXITCODE -ne 0){throw 'Whitespace check failed'}
+          cargo test --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
+          if($LASTEXITCODE -ne 0){throw 'Native Rust tests failed'}
+          cargo build --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
+          if($LASTEXITCODE -ne 0){throw 'Native build failed'}
+      - name: Offline runtime and both native package layouts
+        shell: pwsh
+        run: |
+          ./scripts/fetch-runtime.ps1 -Destination "$env:RUNNER_TEMP/fixed-webview"
+          $runtime=(Get-Content "$env:RUNNER_TEMP/fixed-webview/runtime-path.txt" -Raw).Trim()
+          ./scripts/package-local.ps1 -FixedRuntimePath $runtime -OutputPath ./dist/local
+          $version='native-startup-'+$env:GITHUB_SHA.Substring(0,7)
+          ./scripts/package-native-share.ps1 -FixedRuntimePath $runtime -Version $version -OutputPath ./dist/native-share
+          Expand-Archive ./dist/local/ProductionCycle-local-windows-x64.zip "$env:RUNNER_TEMP/Локальный запуск"
+          "LOCAL_TEST_ROOT=$env:RUNNER_TEMP/Локальный запуск/ProductionCycle"|Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Local launch and startup failure diagnostics
+        shell: pwsh
+        run: |
+          ./scripts/test-local.ps1 -Root $env:LOCAL_TEST_ROOT
+          ./scripts/test-startup-diagnostics.ps1 -Root $env:LOCAL_TEST_ROOT
+      - name: Current native UI buttons and reports
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if($LASTEXITCODE -ne 0){throw 'UI tools unavailable'}
+          node tests/local-window.cjs
+          if($LASTEXITCODE -ne 0){throw 'Native UI regression'}
+          python -m pip install --disable-pip-version-check pymupdf==1.26.7
+          if($LASTEXITCODE -ne 0){throw 'PDF tools unavailable'}
+          python tests/verify-local-pdf.py dist/local-window-qa
+          if($LASTEXITCODE -ne 0){throw 'PDF layout regression'}
+      - name: Real SMB share, desktop shortcut and standard user
+        timeout-minutes: 25
+        shell: pwsh
+        run: |
+          $version='native-startup-'+$env:GITHUB_SHA.Substring(0,7)
+          ./scripts/test-network-portable.ps1 -Zip ./dist/native-share/ProductionCycle-native-share-windows-x64.zip -Version $version
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: startup-evidence-${{ matrix.os }}
+          path: |
+            dist/startup-qa/**
+            dist/local-window-qa/**
+            ${{ env.LOCAL_TEST_ROOT }}/temp/self-test*.json
+            ${{ runner.temp }}/Сетевая проверка программы/network-*.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ProductionCycle-native-startup-${{ matrix.os }}
+          path: |
+            dist/native-share/*.zip
+            dist/native-share/*.sha256
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: startup-native-${{ matrix.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ github.run_id }}
