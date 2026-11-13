@@ -342,6 +342,23 @@ try{
   if(-not (Test-Path (Join-Path $root 'shared/database/production-cycle.db'))){throw 'Shared database snapshot missing'}
   if(-not (Test-Path -LiteralPath (Join-Path $cache 'runtime/webview2/msedgewebview2.exe'))){throw 'Local Fixed Runtime missing'}
   if(Test-Path (Join-Path $root 'temp/webview2')){throw 'WebView profile created in shared folder'}
+  # Reuse a signed database from the local release, retaining profiles and PINs.
+  if($env:LOCAL_TEST_ROOT -and (Test-Path "$env:LOCAL_TEST_ROOT/data/production-cycle.db")){
+    if(Test-Path "$root/data"){throw 'Legacy migration fixture would overwrite data'}
+    $legacySource="$env:LOCAL_TEST_ROOT/data/production-cycle.db"
+    $legacyHash=(Get-FileHash $legacySource -Algorithm SHA256).Hash
+    Move-Item "$root/shared" "$root/shared.saved"
+    New-Item -ItemType Directory -Path "$root/data"|Out-Null
+    Copy-Item $legacySource "$root/data/production-cycle.db"
+    try{
+      Run-FunctionalSmoke $unc 'migration-local-data'
+      if(-not(Test-Path "$root/shared/database/production-cycle.db")){throw 'Legacy database was not published as a shared snapshot'}
+      if((Get-FileHash $legacySource -Algorithm SHA256).Hash -ne $legacyHash){throw 'Migration changed the original local database'}
+    }finally{
+      Remove-Item "$root/shared","$root/data" -Recurse -Force
+      Move-Item "$root/shared.saved" "$root/shared"
+    }
+  }
   if($null -ne $standardError){throw $standardError}
 }finally{
   foreach($key in $old.Keys){[Environment]::SetEnvironmentVariable($key,$old[$key],'Process')}

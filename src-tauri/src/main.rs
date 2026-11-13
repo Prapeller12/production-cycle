@@ -37,6 +37,7 @@ fn startup_failure(message:&str)->!{
 fn main(){
     infrastructure::startup::start();
     match infrastructure::network::maybe_relaunch_network_client(){Ok(true)=>return,Ok(false)=>{},Err(_) if infrastructure::startup::cancelled()=>return,Err(e)=>startup_failure(&e)}
+    infrastructure::startup::window_host();
     infrastructure::startup::update("Подготовка локального WebView2…");
     let paths=match Paths::load(){Ok(p)=>p,Err(e)=>startup_failure(&e)};
     infrastructure::startup::update("Открытие локальной базы…");

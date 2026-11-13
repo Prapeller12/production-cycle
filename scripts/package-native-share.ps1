@@ -3,6 +3,7 @@ $ErrorActionPreference='Stop'
 & "$PSScriptRoot/package-network-windows.ps1" -FixedRuntimePath $FixedRuntimePath -Version $Version -OutputPath $OutputPath
 $root=Join-Path ([IO.Path]::GetFullPath($OutputPath)) 'ProductionCycleNetwork'
 Remove-Item "$root/frontend/legacy" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "$root/docs","$root/README.md" -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path "$root/samples" -Force | Out-Null
 $sample=Get-Content "$PSScriptRoot/../server/resources/project-import-template.json" -Raw | ConvertFrom-Json
 [IO.File]::WriteAllBytes((Join-Path "$root/samples" $sample.fileName),[Convert]::FromBase64String($sample.base64))

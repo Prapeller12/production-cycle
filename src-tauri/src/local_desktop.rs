@@ -44,12 +44,13 @@ pub fn local_status(session: State<'_, LocalSession>, network:State<'_,NetworkRu
 #[tauri::command]
 pub fn local_login(user_id: Option<i64>, pin: String, db: State<'_, ProductionDb>, session: State<'_, LocalSession>,network:State<'_,NetworkRuntime>) -> Result<Value, String> {
     if !network.enabled(){return session.login(&db,user_id,&pin);}
+    let mut identity=session.0.lock().map_err(|_|"Сеанс занят")?;
     let user=network.with_read(&db,||{
         if db.list_audit_users()?.is_empty(){if user_id.is_some(){return Err("Сначала создайте администратора.".into());}Ok(None)}
         else{Ok(Some(db.authorize_user(user_id.ok_or("Выберите пользователя.")?,&pin)?))}
     })?;
     let admitted=network.login(user.clone())?;
-    if admitted.state=="active"{*session.0.lock().map_err(|_|"Сеанс занят")?=user.clone();session.1.store(user.is_none(),Ordering::SeqCst);}
+    if admitted.state=="active"{*identity=user.clone();session.1.store(user.is_none(),Ordering::SeqCst);}
     let mut value=serde_json::to_value(admitted).map_err(|e|e.to_string())?;
     value["userId"]=json!(user.as_ref().map(|u|u.id));value["role"]=json!(user.as_ref().map(|u|&u.role));
     Ok(value)

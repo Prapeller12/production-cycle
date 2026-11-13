@@ -5,13 +5,15 @@ use std::time::{Duration, Instant};
 
 static COMPLETE: AtomicBool = AtomicBool::new(false);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
+static WINDOW_HOST:AtomicBool = AtomicBool::new(false);
 static STATUS: OnceLock<Mutex<Status>> = OnceLock::new();
+static SIGNAL:Mutex<()> = Mutex::new(());
 struct Status {stage:String,started:Instant,phase_started:Instant,details:Vec<(String,String)>}
 impl Default for Status {
     fn default()->Self {Self{stage:"Запуск программы…".into(),started:Instant::now(),phase_started:Instant::now(),details:Vec::new()}}
 }
 fn status()->&'static Mutex<Status>{STATUS.get_or_init(||Mutex::new(Status::default()))}
-fn publish(){super::launch::signal_status(serde_json::json!({"state":"starting","processId":std::process::id(),"stage":current_message(),"diagnostics":diagnostics()}));}
+fn publish(){let Ok(_signal)=SIGNAL.lock()else{return;};if is_ready(){return;}super::launch::signal_status(serde_json::json!({"state":"starting","processId":std::process::id(),"stage":current_message(),"diagnostics":diagnostics()}));}
 pub fn update(message:&str){
     if let Ok(mut state)=status().lock(){if state.stage!=message{state.phase_started=Instant::now();}state.stage=message.to_string();}
     publish();
@@ -22,6 +24,7 @@ pub fn detail(label:&str,value:&str){
 }
 pub fn is_ready()->bool{COMPLETE.load(Ordering::Acquire)}
 pub fn cancelled()->bool{CANCELLED.load(Ordering::Acquire)}
+pub fn window_host(){WINDOW_HOST.store(true,Ordering::Release);}
 pub fn current_message()->String{status().lock().map(|state|state.stage.clone()).unwrap_or_else(|_|"Запуск программы".into())}
 pub fn diagnostics()->String{
     status().lock().map(|state|{
@@ -36,8 +39,10 @@ pub fn frontend_ready(window:tauri::WebviewWindow)->Result<(),String>{
     if window.label()!="main"{return Err("Неверное окно интерфейса.".into());}
     window.show().map_err(|e|e.to_string())?;
     if !window.is_visible().map_err(|e|e.to_string())?{return Err("Основное окно не открыто.".into());}
+    stop();
+    let _signal=SIGNAL.lock().map_err(|_|"Не удалось подтвердить запуск.")?;
     super::launch::signal_status(serde_json::json!({"state":"ready","processId":std::process::id(),"windowVisible":true,"frontendReady":true,"executable":std::env::current_exe().ok(),"diagnostics":diagnostics()}));
-    stop();Ok(())
+    Ok(())
 }
 #[tauri::command]
 pub fn frontend_failed(window:tauri::WebviewWindow,message:String,resource:Option<String>)->Result<(),String>{
@@ -116,7 +121,7 @@ pub fn start(){
             let mut previous=String::new();
             loop{
                 if COMPLETE.load(Ordering::Acquire){DestroyWindow(hwnd);break;}
-                native::pump();if IsWindow(hwnd)==0{CANCELLED.store(true,Ordering::Release);break;}
+                native::pump();if IsWindow(hwnd)==0{CANCELLED.store(true,Ordering::Release);if WINDOW_HOST.load(Ordering::Acquire){std::process::exit(0);}break;}
                 let text=diagnostics().replace('\n',"\r\n");if text!=previous{SetWindowTextW(edit,wide(&text).as_ptr());previous=text;}
                 if status().lock().map(|state|timeout(&state)).unwrap_or(false){crate::startup_failure("Превышено время ожидания. Текущий этап не завершился; готовность интерфейса не подтверждена. Причина зависания WebView2 не установлена: проверьте права доступа и разрешение запуска указанных файлов в защите Windows.");}
                 std::thread::sleep(Duration::from_millis(100));

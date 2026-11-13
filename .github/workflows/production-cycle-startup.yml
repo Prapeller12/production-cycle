@@ -71,6 +71,20 @@ jobs:
         run: |
           $version='native-startup-'+$env:GITHUB_SHA.Substring(0,7)
           ./scripts/test-network-portable.ps1 -Zip ./dist/native-share/ProductionCycle-native-share-windows-x64.zip -Version $version
+      - name: Offline local EXE with system-only PATH
+        if: matrix.os == 'windows-2022'
+        shell: pwsh
+        run: |
+          $rules=@();$oldPath=$env:PATH
+          try{
+            foreach($program in @("$env:LOCAL_TEST_ROOT/production-cycle.exe","$env:LOCAL_TEST_ROOT/runtime/webview2/msedgewebview2.exe")){
+              $name='ProductionCycle-startup-offline-'+[guid]::NewGuid().ToString()
+              New-NetFirewallRule -Name $name -DisplayName $name -Direction Outbound -Program (Resolve-Path -LiteralPath $program).Path -Action Block -Profile Any|Out-Null
+              $rules+=$name
+            }
+            $env:PATH="$env:SystemRoot\System32;$env:SystemRoot"
+            ./scripts/test-local.ps1 -Root $env:LOCAL_TEST_ROOT
+          }finally{$env:PATH=$oldPath;foreach($name in $rules){Remove-NetFirewallRule -Name $name -ErrorAction SilentlyContinue}}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
