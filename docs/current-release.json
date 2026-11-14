@@ -1,0 +1,21 @@
+{
+  "application": "ProductionCycle",
+  "architecture": "native-exe-with-shared-folder",
+  "artifact": "ProductionCycle_FINAL_2026-11-13.zip",
+  "artifactSizeBytes": 389693824,
+  "artifactSHA256": "27c39386792ac84baaf9d29831b177b75fdb1f4febaa9449c63d277be9b0a55d",
+  "manifestVersion": "native-startup-0c7663b",
+  "nativeSourceCommit": "0c7663bf101322dfac8b9abcdd3a3b7b87a09f47",
+  "packageSourceCommit": "d12e437761752434422eee2965f086c9aaee6cd3",
+  "localRollbackBaseCommit": "3226084e53862d163cfeaf203a9a0dd7ca6f26af",
+  "maxSharedSessions": 3,
+  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-5e92ee4c0da08191b128275cf1d21df5_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
+  "artifactAccess": "Issued file in the owner's ChatGPT account; not a public GitHub release asset",
+  "passport": "ProductionCycle_Project_Passport_2026-11-14.txt",
+  "verifiedRuns": [
+    "https://github.com/Prapeller12/production-cycle/actions/runs/43373470258",
+    "https://github.com/Prapeller12/production-cycle/actions/runs/43393559008"
+  ],
+  "documentationDate": "2026-11-14",
+  "note": "These identifiers describe the previously issued ZIP. Builds from later main commits have their own source identifiers and checksums."
+}

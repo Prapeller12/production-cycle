@@ -31,4 +31,3 @@ calamine = { version = "=0.38.0", features = ["chrono"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.8"
-
