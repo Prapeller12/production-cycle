@@ -5,4 +5,10 @@ data/
 exports/
 temp/
 runtime/
+server/target/
+frontend/legacy/
+node_modules/
+tls/
+server-data/
 *.log
+server.cer

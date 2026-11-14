@@ -1,0 +1,5 @@
+module.exports=function(count=9){
+ const titles=['Модуль обработки MICS84-01-NCoated','Электродвигатель 120-1-0,8-2','Преобразователь ПОУ-1-1/2-ЗУ-ФТ-Л','Модуль cPCI-504-IPC-SSD/II','Накопитель Innodisk DES18-F28D82SWBQB','Блок БУП, УМ, СТ','Блок СВЧ ШИВРА','Проверка электрических соединений','Приёмка готового изделия'];
+ const project={name:'Учебный производственный проект ЗЦ-30.0-М',orderNo:'167',initiator:'Производственная дирекция',executor:'АО «Учебный завод»',addressees:'АО «Учебное предприятие»',start:'2023-05-01',deadline:'2026-08-31'};
+ return {format:'production-cycle-builder-v8',project,stages:Array.from({length:count},(_,i)=>({uid:'report-stage-'+(i+1),seq:i+1,sort:i+1,parentUid:i>0&&i%8===0?'report-stage-'+i:null,title:(titles[i%9]+(i>=9?' — расширенная проверка № '+(i+1):'')),executor:['ООО «Учебный изготовитель»','АО «Отдел снабжения и производства»','ГК «Учебный поставщик»'][i%3],addressees:'Производственный отдел',start:i%2?'2024-09-05':'2023-01-13',deadline:'2026-08-31',status:i<4?'done':'work',comment:'Учебные данные для проверки печатного отчёта'})),nextSeq:count+1,collapsed:{}};
+};

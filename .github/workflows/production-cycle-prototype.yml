@@ -1,11 +1,11 @@
-name: Production cycle prototype checks
+name: Production cycle native checks
 on:
   push:
     branches: [main, codex/production-cycle-prototype]
-    paths: ['frontend/**', 'src-tauri/**', 'scripts/**', 'config/**', '.cargo/**', 'tests/**', '.github/workflows/production-cycle-prototype.yml']
+    paths: ['frontend/**', 'src-tauri/**', 'server/**', 'scripts/**', 'config/**', '.cargo/**', 'tests/**', 'package*.json', '.github/workflows/production-cycle-prototype.yml', '.github/workflows/production-cycle-startup.yml']
   pull_request:
     branches: [main]
-    paths: ['frontend/**', 'src-tauri/**', 'scripts/**', 'config/**', '.cargo/**', 'tests/**', '.github/workflows/production-cycle-prototype.yml']
+    paths: ['frontend/**', 'src-tauri/**', 'server/**', 'scripts/**', 'config/**', '.cargo/**', 'tests/**', 'package*.json', '.github/workflows/production-cycle-prototype.yml', '.github/workflows/production-cycle-startup.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: '22'
       - run: node --test tests/domain.test.cjs
+      - run: git diff --check
       - name: Install browser test tools
         run: |
           npm install --prefix /tmp/prototype-tests playwright@1.58.2
@@ -36,75 +37,8 @@ jobs:
             /tmp/production-cycle-structure-print.pdf
             /tmp/production-cycle-gantt-print-a3.pdf
             /tmp/production-cycle-gantt-print-a4.pdf
-  windows-host:
-    runs-on: windows-latest
-    timeout-minutes: 30
+  native:
+    needs: contracts
+    uses: ./.github/workflows/production-cycle-startup.yml
     permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: windows-rust-portable-${{ hashFiles('src-tauri/Cargo.toml', '.cargo/config.toml') }}-${{ github.run_id }}
-          restore-keys: windows-rust-portable-${{ hashFiles('src-tauri/Cargo.toml', '.cargo/config.toml') }}-
-      - name: Check and test Rust host
-        run: cargo test --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
-      - name: Build native prototype host
-        run: cargo build --release --features custom-protocol --manifest-path src-tauri/Cargo.toml
-      - name: Obtain and verify Microsoft Fixed Runtime
-        shell: pwsh
-        run: ./scripts/fetch-runtime.ps1 -Destination "$env:RUNNER_TEMP/fixed-webview"
-      - name: Package complete portable ZIP
-        shell: pwsh
-        run: |
-          $runtime=(Get-Content "$env:RUNNER_TEMP/fixed-webview/runtime-path.txt" -Raw).Trim()
-          ./scripts/package-windows.ps1 -FixedRuntimePath $runtime -OutputPath ./dist/portable
-      - name: Test extracted ZIP with Cyrillic and spaces
-        shell: pwsh
-        run: |
-          $testRoot=Join-Path $env:RUNNER_TEMP 'Проверка программы'
-          Expand-Archive ./dist/portable/ProductionCycle-prototype-1-windows-x64.zip $testRoot
-          ./scripts/test-portable.ps1 -Root (Join-Path $testRoot 'ProductionCycle')
-      - name: Verify offline launch without Python or Node on PATH
-        shell: pwsh
-        run: ./scripts/test-offline.ps1 -Zip ./dist/portable/ProductionCycle-prototype-1-windows-x64.zip
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
-        with:
-          name: production-cycle-build-evidence
-          path: |
-            src-tauri/Cargo.lock
-            ${{ runner.temp }}/Проверка программы/ProductionCycle/temp/self-test.json
-            ${{ runner.temp }}/fixed-webview/unpacked/**/RUNTIME-PROVENANCE.json
-            ${{ runner.temp }}/Offline check/ProductionCycle/temp/self-test.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: ProductionCycle-prototype-1-windows-x64
-          path: |
-            dist/portable/*.zip
-            dist/portable/*.sha256
-          if-no-files-found: error
-      - name: Publish portable prerelease
-        if: github.event_name == 'push'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $tag='portable-prototype-1-'+$env:GITHUB_SHA.Substring(0,7)
-          gh release view $tag --repo $env:GITHUB_REPOSITORY 2>$null
-          if($LASTEXITCODE -ne 0){
-            gh release create $tag ./dist/portable/ProductionCycle-prototype-1-windows-x64.zip ./dist/portable/ProductionCycle-prototype-1-windows-x64.zip.sha256 src-tauri/Cargo.lock --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --prerelease --title "Production Cycle - portable prototype 1" --notes-file docs/release-notes.md
-            if($LASTEXITCODE -ne 0){throw 'Prerelease publication failed'}
-          }
-      - uses: actions/cache/save@v4
-        if: always()
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: windows-rust-portable-${{ hashFiles('src-tauri/Cargo.toml', '.cargo/config.toml') }}-${{ github.run_id }}
+      contents: read

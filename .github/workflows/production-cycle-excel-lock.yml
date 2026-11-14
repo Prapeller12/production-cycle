@@ -1,0 +1,32 @@
+name: Prepare Excel server dependency lock
+on:
+  push:
+    branches: [archive/excel-bootstrap]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      RUSTFLAGS: '-C target-feature=+crt-static'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            server/target
+          key: excel-bootstrap-${{ hashFiles('server/Cargo.toml') }}
+          restore-keys: |
+            excel-bootstrap-
+            browser-server-windows-2022-
+      - name: Resolve only newly required packages and test the actual parser
+        run: cargo test --release --manifest-path server/Cargo.toml
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: excel-server-lock
+          path: server/Cargo.lock
+          if-no-files-found: error

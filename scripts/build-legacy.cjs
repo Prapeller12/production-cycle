@@ -1,0 +1,47 @@
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const babel=require('@babel/core'),postcss=require('postcss'),properties=require('postcss-custom-properties'),prefixer=require('autoprefixer'),acorn=require('acorn');
+const root=path.resolve(__dirname,'..'),frontend=path.join(root,'frontend'),out=path.join(frontend,'legacy');
+(async()=>{
+ fs.mkdirSync(out,{recursive:true});
+ const template=JSON.parse(fs.readFileSync(path.join(root,'server/resources/project-import-template.json'),'utf8'));
+ const workbook=Buffer.from(template.base64,'base64');
+ if(crypto.createHash('sha256').update(workbook).digest('hex')!==template.sha256||workbook[0]!==0x50||workbook[1]!==0x4b)throw Error('Excel template integrity check failed');
+ fs.writeFileSync(path.join(frontend,'config/import-template.js'),"'use strict';\nwindow.Production=window.Production||{};\nProduction.importTemplate=Object.freeze("+JSON.stringify(template)+");\n");
+ const html=fs.readFileSync(path.join(frontend,'index.html'),'utf8');
+ const scripts=[...html.matchAll(/<script defer src="([^"]+)"><\/script>/g)].map(m=>m[1]);
+ const transformed=scripts.map(name=>babel.transformSync(fs.readFileSync(path.join(frontend,name),'utf8'),{filename:name,sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]],comments:false,compact:false}).code).join('\n;\n');
+ const polyfills=fs.readFileSync(require.resolve('core-js-bundle/minified.js'),'utf8')+'\n'+fs.readFileSync(require.resolve('regenerator-runtime/runtime.js'),'utf8')+'\n'+fs.readFileSync(path.join(frontend,'compat/ie11.js'),'utf8');
+ const code=polyfills+'\n'+transformed;acorn.parse(code,{ecmaVersion:5,sourceType:'script'});
+ fs.writeFileSync(path.join(out,'app.js'),code);
+ const css=['styles/app.css','styles/reference-theme.css','compat/ie11.css','styles/report-print.css'].map(name=>fs.readFileSync(path.join(frontend,name),'utf8')).join('\n');
+ const ast=postcss.parse(css),variables=new Map();
+ ast.walkDecls(/^--/,decl=>{if(decl.parent.type==='rule'&&decl.parent.selector===':root')variables.set(decl.prop,decl.value)});
+ ast.append(postcss.rule({selector:':root',nodes:[...variables].map(([prop,value])=>postcss.decl({prop,value}))}));
+ const result=await postcss([properties({preserve:false}),prefixer({overrideBrowserslist:['ie 11'],grid:false})]).process(ast,{from:undefined,map:false});
+ variables.set('--depth','0');variables.set('--gantt-label-width','340px');
+ result.root.walkDecls(decl=>{for(let i=0;i<20&&decl.value.includes('var(');i++){const old=decl.value;decl.value=decl.value.replace(/var\((--[\w-]+)(?:,\s*([^()]*))?\)/g,(match,name,fallback)=>variables.get(name)||fallback||match);if(old===decl.value)break;}});
+ const finalCss=result.root.toString();if(finalCss.includes('var('))throw Error('Unresolved legacy CSS custom property');
+ fs.writeFileSync(path.join(out,'app.css'),finalCss);
+ const head=fs.readFileSync(path.join(frontend,'compat/ie11-head.js'),'utf8'),entry=fs.readFileSync(path.join(frontend,'compat/browser-entry.js'),'utf8');acorn.parse(head,{ecmaVersion:5});acorn.parse(entry,{ecmaVersion:5});
+ const revision=crypto.createHash('sha256').update(code+finalCss+head+entry).digest('hex').slice(0,12);
+ const legacy=html.replace(/<link rel="stylesheet" href="styles\/[^\"]+">/g,'').replace(/<script defer src="[^\"]+"><\/script>/g,'').replace('</head>','<script src="/compat/ie11-head.js?v='+revision+'"></script>\n<link rel="stylesheet" href="/legacy/app.css?v='+revision+'">\n</head>').replace('</body>','<script defer src="/legacy/app.js?v='+revision+'"></script>\n</body>');
+ fs.writeFileSync(path.join(out,'index.html'),legacy);
+ const smoke=fs.readFileSync(path.join(root,'tests/network-native-smoke.js'),'utf8').replaceAll('window.__TAURI__.core.invoke','window.__browserTestInvoke');
+ const hook="window.__browserTestInvoke=function(command,args){if(command==='finish_smoke'){args.documentMode=document.documentMode;if(args.error){args.fields={};['evidenceType','evidenceReference','evidenceComment'].forEach(function(id){var e=document.getElementById(id);args.fields[id]=e?e.value:null;});}window.external.Report(JSON.stringify(args));return Promise.resolve(false);}if(command==='save_file')return Promise.resolve(args.name);throw Error('Unexpected test hook '+command);};\n";
+ const test=babel.transformSync(hook+smoke,{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
+ acorn.parse(test,{ecmaVersion:5});fs.mkdirSync(path.join(root,'dist'),{recursive:true});fs.writeFileSync(path.join(root,'dist/ie-test.js'),test);
+ const layout=babel.transformSync(fs.readFileSync(path.join(root,'tests/server/ie-layout.js'),'utf8'),{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
+ acorn.parse(layout,{ecmaVersion:5});fs.writeFileSync(path.join(root,'dist/ie-layout-test.js'),layout);
+ const printTest=babel.transformSync(fs.readFileSync(path.join(root,'tests/server/ie-print.js'),'utf8'),{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
+ acorn.parse(printTest,{ecmaVersion:5});fs.writeFileSync(path.join(root,'dist/ie-print-test.js'),printTest);
+ const trace=fs.readFileSync(path.join(root,'tests/server/button-trace.js'),'utf8');
+ const buttonsHook="window.__smokeDone=null;window.__browserTestInvoke=function(command,args){if(command==='finish_smoke'){window.__smokeDone=args;return Promise.resolve(false);}if(command==='save_file')return Promise.resolve(args.name);throw Error('Unexpected test hook '+command);};window.__buttonAuditFinish=function(result){window.external.Report(JSON.stringify(result));};\n";
+ const buttons=babel.transformSync(trace+'\n'+buttonsHook+smoke+'\n'+fs.readFileSync(path.join(root,'tests/server/button-audit.js'),'utf8'),{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
+ acorn.parse(buttons,{ecmaVersion:5});fs.writeFileSync(path.join(root,'dist/ie-button-test.js'),buttons);
+ if(fs.existsSync(path.join(root,'dist/excel-fixtures.json'))){
+ const excelFixture=JSON.parse(fs.readFileSync(path.join(root,'dist/excel-fixtures.json'),'utf8')).markup;
+ const excel=babel.transformSync('window.__excelMarkup='+JSON.stringify(excelFixture)+';\n'+fs.readFileSync(path.join(root,'tests/server/excel-ui.js'),'utf8'),{sourceType:'script',presets:[[require('@babel/preset-env'),{targets:{ie:'11'},modules:false,useBuiltIns:false}]]}).code;
+ acorn.parse(excel,{ecmaVersion:5});fs.writeFileSync(path.join(root,'dist/ie-excel-test.js'),excel);
+ }
+ console.log('IE11: shared scripts transpiled and parsed as ES5; local polyfills and CSS fallback included.');
+})().catch(error=>{console.error(error);process.exitCode=1});

@@ -19,7 +19,7 @@
       if(!text(s.uid)||seen.has(s.uid))errors.push('Пустой или дублирующийся UID этапа.');seen.add(s.uid);map.set(s.uid,s);
       if(!Number.isSafeInteger(s.seq)||s.seq<1||seqs.has(s.seq))errors.push('Некорректный или повторяющийся seq этапа.');seqs.add(s.seq);
       if(!Number.isSafeInteger(s.sort)||s.sort<0)errors.push('Некорректный порядок этапа.');
-      if(s.parentUid!==null&&s.parentUid!==undefined&&!text(s.parentUid))errors.push('Некорректный родитель.');
+      if(s.parentUid!==null&&s.parentUid!==undefined&&!text(s.parentUid))errors.push('Некорректный головной этап.');
     }
     if(errors.length)return errors;
     const done=new Set();
@@ -28,7 +28,7 @@
       while(s&&!done.has(s.uid)){
         if(path.has(s.uid)){errors.push('Циклическая связь этапов.');break}
         path.add(s.uid);
-        if(s.parentUid&&!map.has(s.parentUid)){errors.push('У этапа отсутствует родитель: '+s.uid);break}
+        if(s.parentUid&&!map.has(s.parentUid)){errors.push('У этапа отсутствует головной этап: '+s.uid);break}
         s=s.parentUid?map.get(s.parentUid):null;
       }
       for(const id of path)done.add(id);
@@ -48,7 +48,7 @@
     const errors=structureErrors(state),warnings=[];if(errors.length)return{errors,warnings};
     const fields=(obj,keys,label)=>{for(const key of keys){if(typeof obj[key]!=='string')errors.push(label+': неверный тип '+key);else if(!draft&&!text(obj[key]))errors.push(label+': не заполнено '+key);else if(/[\t\r\n]/.test(obj[key]))errors.push(label+': TAB/CR/LF недопустимы в '+key)}};
     fields(state.project,['name','orderNo','initiator','executor','addressees','start','deadline'],'Проект');
-    function dates(obj,label){for(const key of ['start','deadline'])if(obj[key]&&!validDate(obj[key]))errors.push(label+': неверная дата '+key);if(validDate(obj.start)&&validDate(obj.deadline)&&obj.start>obj.deadline)errors.push(label+': начало позже дедлайна')}
+    function dates(obj,label){for(const key of ['start','deadline'])if(obj[key]&&!validDate(obj[key]))errors.push(label+': неверная дата '+key);if(validDate(obj.start)&&validDate(obj.deadline)&&obj.start>obj.deadline)errors.push(label+': начало позже срока исполнения')}
     dates(state.project,'Проект');
     for(const s of state.stages){fields(s,['title','executor','addressees','start','deadline'],'Этап '+s.seq);if(s.comment!==undefined&&typeof s.comment!=='string')errors.push('Этап '+s.seq+': неверный тип comment');dates(s,'Этап '+s.seq);if(!Object.hasOwn(STATUS,s.status))errors.push('Некорректный статус этапа '+s.seq)}
     if(!state.stages.length)warnings.push('Проект не содержит этапов: входящий TXT будет содержать только заголовок.');

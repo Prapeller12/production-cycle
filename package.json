@@ -1,0 +1,21 @@
+{
+  "name": "production-cycle-browser-build",
+  "private": true,
+  "version": "0.2.0",
+  "scripts": {
+    "build:legacy": "node scripts/build-legacy.cjs",
+    "test": "node --test tests/domain.test.cjs",
+    "test:server": "node tests/server/browser.cjs"
+  },
+  "devDependencies": {
+    "@babel/core": "7.28.5",
+    "@babel/preset-env": "7.28.5",
+    "acorn": "8.15.0",
+    "autoprefixer": "10.4.22",
+    "core-js-bundle": "3.46.0",
+    "playwright": "1.58.2",
+    "postcss": "8.5.6",
+    "postcss-custom-properties": "14.0.6",
+    "regenerator-runtime": "0.14.1"
+  }
+}

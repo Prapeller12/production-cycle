@@ -1,0 +1,47 @@
+name: Finalize native package and verify UNC fallback launcher
+on:
+  push:
+    branches: [fix/final-package-20261113]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Obtain the exact fully tested native release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 43373470258 --repo $env:GITHUB_REPOSITORY --name ProductionCycle-native-startup-windows-2022 --dir dist/base
+          if($LASTEXITCODE -ne 0){throw 'Verified base release unavailable'}
+      - name: Reproduce the remaining UNC CMD failure
+        shell: pwsh
+        run: ./scripts/test-final-launcher.ps1 -Zip ./dist/base/ProductionCycle-native-share-windows-x64.zip -ExpectLegacyFailure
+      - name: Finalize the package without rebuilding the verified native engine
+        shell: pwsh
+        run: ./scripts/finalize-native-package.ps1 -BaseZip ./dist/base/ProductionCycle-native-share-windows-x64.zip -OutputPath ./dist/final
+      - name: Verify the repaired CMD launcher and signed persistence over SMB
+        shell: pwsh
+        run: ./scripts/test-final-launcher.ps1 -Zip ./dist/final/ProductionCycle_FINAL_2026-11-13.zip
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: final-evidence-${{ matrix.os }}
+          path: dist/final-evidence/**
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ProductionCycle-final-${{ matrix.os }}
+          path: |
+            dist/final/*.zip
+            dist/final/*.sha256
+          if-no-files-found: error
