@@ -1,8 +1,9 @@
 'use strict';
 (() => {
   const D=Production.domain,X=Production.exchange;
-  const native=()=>Boolean(window.__TAURI__&&window.__TAURI__.core&&typeof window.__TAURI__.core.invoke==='function');
-  const invoke=(command,args={})=>window.__TAURI__.core.invoke(command,args);
+  const native=()=>Boolean(window.ProductionServer||(window.__TAURI__&&window.__TAURI__.core&&typeof window.__TAURI__.core.invoke==='function'));
+  const localCommands={network_status:'local_status',network_login:'local_login',network_save_draft:'local_save_draft',network_logout:'local_logout',network_finish_eviction:'local_finish_eviction'};
+  const invoke=(command,args={})=>window.ProductionServer?window.ProductionServer.invoke(command,args):window.__TAURI__.core.invoke(window.ProductionDesktop?(localCommands[command]||command):command,args);
   function toSnapshot(state){
     return {
       databaseId:Number.isSafeInteger(state.databaseId)?state.databaseId:null,
@@ -144,6 +145,20 @@
     const bundle=await invoke('production_export_txt',{snapshot:toSnapshot(state)});
     return {out:bundle.outgoingText,in:bundle.incomingText,outFileName:bundle.outgoingFileName,inFileName:bundle.incomingFileName};
   }
+  async function excelTemplate(){
+    const template=Production.importTemplate;
+    if(!template||!template.fileName||!template.base64)throw Error('В комплекте отсутствует образец Excel. Распакуйте новый ZIP целиком.');
+    return {fileName:template.fileName,base64:template.base64,sha256:template.sha256};
+  }
+  async function claimOnboarding(){return (window.ProductionServer||window.ProductionDesktop)?invoke('ui_claim_onboarding'):{show:false}}
+  async function importExcel(file){
+    if(!window.ProductionServer&&!window.ProductionDesktop)throw Error('Импорт Excel доступен в программе.');
+    if(!file||!String(file.name||'').toLowerCase().endsWith('.xlsx'))throw Error('Выберите файл .xlsx по образцу программы.');
+    if(!file.size||file.size>5*1024*1024)throw Error('Файл пуст или превышает 5 МиБ.');
+    const base64=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=()=>reject(Error('Не удалось прочитать Excel.'));reader.onload=()=>{try{const bytes=new Uint8Array(reader.result),parts=[];for(let i=0;i<bytes.length;i+=8192)parts.push(String.fromCharCode.apply(null,bytes.subarray(i,i+8192)));resolve(btoa(parts.join('')))}catch(error){reject(error)}};reader.readAsArrayBuffer(file)});
+    const result=await invoke('production_import_excel',{fileName:file.name,base64});
+    return {state:fromSnapshot(result.snapshot),rows:result.rows,warnings:result.warnings};
+  }
   async function report(state){
     if(!native())return D.report(state);
     const value=await invoke('production_get_management_report',{snapshot:toSnapshot(state)});
@@ -159,5 +174,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report,excelTemplate,importExcel,claimOnboarding});
 })();

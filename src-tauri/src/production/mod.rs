@@ -3,7 +3,9 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{collections::{HashMap, HashSet}, path::{Path, PathBuf}, sync::Mutex};
+#[cfg(not(feature = "server"))]
 use tauri::State;
+#[cfg(not(feature = "server"))]
 use crate::infrastructure::network::NetworkRuntime;
 
 const MIGRATION: &str = include_str!("../../migrations/001_production_cycle.sql");
@@ -452,24 +454,34 @@ pub(crate) fn validate_snapshot_revision(conn:&Connection,snapshot:&ProductionSn
     Ok(())
 }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_validate(snapshot:ProductionSnapshot)->std::result::Result<ValidationResult,String>{validate_snapshot(&snapshot).map_err(|e|e.to_string())}
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_save_snapshot(snapshot:ProductionSnapshot,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<i64,String>{network.with_write(&db,||db.save_snapshot(&snapshot).map_err(|e|e.to_string()))}
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_load_snapshot(order_no:String,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Option<ProductionSnapshot>,String>{network.with_read(&db,||db.load_snapshot(&order_no).map_err(|e|e.to_string()))}
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_load_snapshot_by_id(project_id:i64,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Option<ProductionSnapshot>,String>{network.with_read(&db,||db.load_snapshot_by_id(project_id).map_err(|e|e.to_string()))}
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_list_projects(db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Vec<ProjectSummary>,String>{network.with_read(&db,||db.list_projects().map_err(|e|e.to_string()))}
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_list_deadline_control(db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Vec<DeadlineControlItem>,String>{network.with_read(&db,||db.list_deadline_control(Local::now().date_naive()).map_err(|e|e.to_string()))}
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_list_dictionary(kind:DictionaryKind,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<Vec<DictionaryEntry>,String>{network.with_read(&db,||db.list_dictionary(kind).map_err(|e|e.to_string()))}
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_replace_dictionary_value(kind:DictionaryKind,from_value:String,to_value:String,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<DictionaryReplaceResult,String>{network.with_write(&db,||db.replace_dictionary_value(kind,&from_value,&to_value).map_err(|e|e.to_string()))}
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_export_txt(snapshot:ProductionSnapshot)->std::result::Result<TxtExportBundle,String>{build_txt_export(&snapshot).map_err(|e|e.to_string())}
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn production_get_management_report(snapshot:ProductionSnapshot,db:State<'_,ProductionDb>,network:State<'_,NetworkRuntime>)->std::result::Result<ProductionReport,String>{
     network.with_read(&db,||{let mut report=build_report(&snapshot,Local::now().date_naive()).map_err(|e|e.to_string())?;

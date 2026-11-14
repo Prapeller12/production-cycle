@@ -1,0 +1,34 @@
+[package]
+name = "production-cycle-server"
+version = "0.2.0"
+edition = "2021"
+
+[features]
+default = ["server"]
+server = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+rusqlite = { version = "0.32", features = ["backup", "bundled"] }
+thiserror = "2"
+argon2 = "0.5"
+base64 = "0.22"
+chacha20poly1305 = "0.10"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+fs2 = "0.4"
+tiny_http = { version = "0.12", features = ["ssl-rustls"] }
+rcgen = "0.13"
+time = "0.3"
+url = "2"
+rustls = "0.20.9"
+rustls-pemfile = "0.2.1"
+calamine = { version = "=0.38.0", features = ["chrono"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
+

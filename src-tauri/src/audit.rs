@@ -8,8 +8,10 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+#[cfg(not(feature = "server"))]
 use tauri::State;
 use uuid::Uuid;
+#[cfg(not(feature = "server"))]
 use crate::infrastructure::network::NetworkRuntime;
 
 use crate::production::{
@@ -956,24 +958,31 @@ pub fn attach_completion_confirmations(
     Ok(())
 }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn audit_list_users(db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<Vec<AuditUserSummary>, String> { network.with_read(&db, || db.list_audit_users()) }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn audit_authorize_admin(user_id: i64, pin: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<(), String> { network.with_read(&db, || db.authorize_admin(user_id,&pin)) }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn audit_create_user(input: CreateAuditUserInput, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<AuditUserSummary, String> { network.with_write(&db, || db.create_audit_user(input)) }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn audit_save_snapshot(snapshot: ProductionSnapshot, user_id: i64, pin: String, comment: String, evidence: Option<CompletionEvidenceInput>, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<SignedSaveResult, String> { network.with_write(&db, || db.save_signed_snapshot(&snapshot,user_id,&pin,&comment,evidence)) }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn audit_list_events(project_id: Option<i64>, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<Vec<AuditEventSummary>, String> { network.with_read(&db, || db.list_audit_events(project_id)) }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn audit_verify_log(admin_user_id: i64, admin_pin: String, project_id: Option<i64>, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<AuditVerificationReport, String> { network.with_read(&db, || db.verify_audit_log(admin_user_id,&admin_pin,project_id)) }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn audit_replace_dictionary_value(kind: DictionaryKind, from_value: String, to_value: String, user_id: i64, pin: String, comment: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> std::result::Result<DictionaryReplaceResult, String> { network.with_write(&db, || db.replace_dictionary_value_signed(kind,&from_value,&to_value,user_id,&pin,&comment)) }
 

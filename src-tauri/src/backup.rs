@@ -2,8 +2,10 @@ use chrono::{DateTime, Local};
 use rusqlite::{backup::Progress, Connection, DatabaseName, OpenFlags};
 use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}};
+#[cfg(not(feature = "server"))]
 use tauri::State;
 use uuid::Uuid;
+#[cfg(not(feature = "server"))]
 use crate::infrastructure::network::NetworkRuntime;
 
 use crate::production::{initialize_schema, ProductionDb, SCHEMA_VERSION};
@@ -254,16 +256,19 @@ impl ProductionDb {
     }
 }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn backup_list(db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> Result<Vec<BackupSummary>, String> {
     network.with_read(&db, || db.list_backups())
 }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn backup_create(admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> Result<BackupSummary, String> {
     network.with_read(&db, || db.create_backup_as_admin(admin_user_id, &admin_pin))
 }
 
+#[cfg(not(feature = "server"))]
 #[tauri::command]
 pub fn backup_restore(file_name: String, admin_user_id: i64, admin_pin: String, db: State<'_, ProductionDb>, network: State<'_, NetworkRuntime>) -> Result<RestoreReport, String> {
     network.with_write(&db, || db.restore_backup_as_admin(&file_name, admin_user_id, &admin_pin))

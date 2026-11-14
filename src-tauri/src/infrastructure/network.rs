@@ -120,7 +120,8 @@ pub struct NetworkRuntime {
 
 impl NetworkRuntime {
     pub fn from_environment(local_data: PathBuf,recovery_data: PathBuf) -> Result<Self, String> {
-        let Some(shared) = env::var_os(NETWORK_ROOT_ENV) else {
+        let shared_env = env::var_os(NETWORK_ROOT_ENV);
+        let Some(shared) = shared_env else {
             return Ok(Self { enabled:false, version:String::new(), maximum:DEFAULT_MAX_CLIENTS, shared_root:None, local_data, recovery_data, session:Mutex::new(None) });
         };
         let shared_root=PathBuf::from(shared).canonicalize().map_err(|e|format!("Сетевая папка недоступна: {e}"))?;
@@ -554,10 +555,12 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
     let exe=env::current_exe().map_err(|e|e.to_string())?;
     let direct=exe.parent().ok_or_else(||"Не удалось определить папку программы.".to_string())?;
     let root=direct.canonicalize().map_err(|e|L::io_error("Нет доступа к папке запуска",direct,e))?;
+    super::startup::detail("Исходная папка программы",&root.display().to_string());
+    super::startup::update("Проверка способа запуска и общей папки…");
     let config_path=root.join("config/network.json");
     let exists=config_path.try_exists().map_err(|e|L::io_error("Не удалось проверить сетевую конфигурацию",&config_path,e))?;
     if !exists{
-        if !is_local_disk(&root)||root.join(L::MANIFEST).is_file(){return Err(format!("В сетевой поставке отсутствует {}. Распакуйте новый ZIP целиком.",config_path.display()))}
+        if !is_local_disk(&root)||root.join(L::MANIFEST).is_file(){return Err(format!("Запуск выполнен из сетевой папки, но загрузчик локального клиента не настроен: отсутствует {}. Встроенный WebView2 нельзя открывать непосредственно по сети. Используйте полный комплект для запуска через сетевой ярлык либо распакуйте локальную версию на локальный диск компьютера.",config_path.display()))}
         return Ok(false)
     }
     let config=read_network_config(&config_path)?;
@@ -569,6 +572,7 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
     let bases=L::cache_bases()?;let origin=shared_root_key(&root);let mut errors:Vec<String>=Vec::new();let mut stable_recovery:Option<PathBuf>=None;
     for candidate in bases{
         let base=match candidate{Ok(base)=>base,Err(error)=>{errors.push(error);continue}};
+        super::startup::detail("Папка локального клиента",&base.display().to_string());
         let attempt=(||{
             let recovery=match &stable_recovery{Some(value)=>value.clone(),None=>{
                 let value=workspace_recovery_directory(&base,&origin)?;L::probe_directory(&value)?;stable_recovery=Some(value.clone());value
@@ -589,6 +593,7 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
             let cache=L::prepare_cache(&root,&base,&origin,&config.version,&manifest)?;
             FileExt::unlock(&lock).map_err(|e|L::io_error("Не удалось освободить локальную подготовку",&lock_path,e))?;drop(lock);
             let local_exe=cache.join("production-cycle.exe");let status=cache.join("temp").join(format!("launch-{}.json",Uuid::new_v4()));
+            super::startup::detail("Запускаемый локальный EXE",&local_exe.display().to_string());
             let budget=Duration::from_secs(290).saturating_sub(overall.elapsed()).min(Duration::from_secs(120));
             if budget.is_zero(){return Err("Превышено общее время подготовки локального клиента.".into())}
             super::startup::update("Открытие локального клиента. Ожидание готового рабочего окна…");
@@ -737,7 +742,7 @@ fn copy_checked_database(source:&Path,target:&Path)->Result<(),String>{
     atomic_replace(&pending,target)
 }
 
-fn atomic_write(path:&Path,bytes:&[u8])->Result<(),String>{atomic_write_io(path,bytes).map_err(|e|e.to_string())}
+pub(crate) fn atomic_write(path:&Path,bytes:&[u8])->Result<(),String>{atomic_write_io(path,bytes).map_err(|e|e.to_string())}
 fn atomic_write_io(path:&Path,bytes:&[u8])->std::io::Result<()>{
     let parent=path.parent().filter(|parent|!parent.as_os_str().is_empty()).unwrap_or_else(||Path::new("."));
     fs::create_dir_all(parent)?;

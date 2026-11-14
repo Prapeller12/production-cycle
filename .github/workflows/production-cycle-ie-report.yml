@@ -1,0 +1,124 @@
+name: Verify real IE report PDF pages and print regressions
+on:
+  push:
+    branches: [fix/ie-report-print-20261112]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      SERVER_QA_DIR: ${{ github.workspace }}/dist/report-print-qa
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Prepare the shared interface and regression baseline
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if($LASTEXITCODE -ne 0){throw 'Dependency preparation failed'}
+          python tests/server/make-excel-fixtures.py
+          if($LASTEXITCODE -ne 0){throw 'Excel fixture preparation failed'}
+          npm run build:legacy
+          if($LASTEXITCODE -ne 0){throw 'IE11 build failed'}
+          node --test tests/domain.test.cjs
+          if($LASTEXITCODE -ne 0){throw 'Domain regression'}
+          git diff --check
+          if($LASTEXITCODE -ne 0){throw 'Whitespace errors'}
+          git fetch --depth=1 origin dd5d86d905b84171f03cbf20913af2721fef60f2
+          if($LASTEXITCODE -ne 0){throw 'Baseline fetch failed'}
+          git worktree add --detach dist/baseline dd5d86d905b84171f03cbf20913af2721fef60f2
+          if($LASTEXITCODE -ne 0){throw 'Baseline checkout failed'}
+          $env:NODE_PATH=Join-Path $env:GITHUB_WORKSPACE 'node_modules'
+          node dist/baseline/scripts/build-legacy.cjs
+          if($LASTEXITCODE -ne 0){throw 'Baseline IE11 build failed'}
+          "BASELINE_FRONTEND=$env:GITHUB_WORKSPACE/dist/baseline/frontend" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Use the verified existing server executable
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Path dist/released -Force | Out-Null
+          gh release download server-excel-14fbf50 --repo $env:GITHUB_REPOSITORY --pattern '*.zip' --output dist/released/server.zip
+          if($LASTEXITCODE -ne 0){throw 'Release download failed'}
+          if((Get-FileHash dist/released/server.zip -Algorithm SHA256).Hash.ToLowerInvariant() -cne '99ecf6e76a71bd6858d584c86a6101b2a08410bc77cf2f2989c04e2aed037c3b'){throw 'Server base hash mismatch'}
+          Expand-Archive dist/released/server.zip dist/released/unpacked
+          $root=Join-Path $env:GITHUB_WORKSPACE 'dist/released/unpacked/ProductionCycleServer'
+          $manifest=Get-Content "$root/package-manifest.json" -Raw | ConvertFrom-Json
+          foreach($entry in $manifest.files){if((Get-FileHash -LiteralPath (Join-Path $root $entry.path) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.sha256){throw "Manifest mismatch $($entry.path)"}}
+          "SERVER_EXE=$root/Производственный_цикл.exe" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $edge=@('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe','C:/Program Files/Microsoft/Edge/Application/msedge.exe') | Where-Object {Test-Path $_} | Select-Object -First 1
+          if(-not $edge){throw 'Microsoft Edge unavailable'}
+          "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$edge" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          $env:IE_HARNESS=Join-Path $env:RUNNER_TEMP 'production-cycle-ie.exe'
+          $source=Join-Path $env:GITHUB_WORKSPACE 'tests/server/ie-harness.cs'
+          & powershell.exe -NoProfile -Command "Add-Type -Path '$source' -ReferencedAssemblies System.Windows.Forms,System.Drawing -OutputAssembly '$env:IE_HARNESS' -OutputType WindowsApplication"
+          if($LASTEXITCODE -ne 0){throw 'MSHTML harness build failed'}
+          "IE_HARNESS=$env:IE_HARNESS" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Print actual report PDFs with real MSHTML and the Windows PDF driver
+        shell: pwsh
+        run: |
+          node tests/server/report-print.cjs --ie
+          if($LASTEXITCODE -ne 0){throw 'MSHTML report PDF regression'}
+      - name: Print report pages with current Edge and the ES5 bundle
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          node tests/server/report-print.cjs
+          if($LASTEXITCODE -ne 0){throw 'Edge report PDF regression'}
+      - name: All buttons, Excel import and copying in all roles
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          node tests/server/buttons.cjs
+          if($LASTEXITCODE -ne 0){throw 'All-button regression'}
+          node tests/server/excel-ui.cjs
+          if($LASTEXITCODE -ne 0){throw 'Excel regression'}
+          node tests/server/copy-stage.cjs
+          if($LASTEXITCODE -ne 0){throw 'Edge stage-copy regression'}
+          node tests/server/copy-stage.cjs --ie
+          if($LASTEXITCODE -ne 0){throw 'MSHTML stage-copy regression'}
+      - name: Browser print PDFs and native IE print dialogs
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $env:SERVER_QA_DIR=Join-Path $env:GITHUB_WORKSPACE 'dist/gantt-print-qa'
+          node tests/server/browser.cjs
+          if($LASTEXITCODE -ne 0){throw 'Browser/print regression'}
+          node tests/server/ie-print.cjs --current
+          if($LASTEXITCODE -ne 0){throw 'Native print-dialog regression'}
+          python -m pip install PyMuPDF==1.26.7
+          if($LASTEXITCODE -ne 0){throw 'PDF verifier unavailable'}
+          python tests/server/verify-pdf.py dist/gantt-print-qa
+          if($LASTEXITCODE -ne 0){throw 'Blank-page or paper-size regression'}
+          python tests/server/verify-report-pdf.py dist/report-print-qa
+          if($LASTEXITCODE -ne 0){throw 'Printed report overlap, content or layout regression'}
+      - name: Package the exact checked interface
+        shell: pwsh
+        run: |
+          Compress-Archive -LiteralPath frontend -DestinationPath dist/ie-report-frontend.zip
+          (Get-FileHash dist/ie-report-frontend.zip -Algorithm SHA256).Hash.ToLowerInvariant() | Out-File dist/ie-report-frontend.zip.sha256 -Encoding ascii
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: IE-report-frontend-${{ matrix.os }}
+          path: dist/ie-report-frontend.zip*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: IE-report-evidence-${{ matrix.os }}
+          path: |
+            dist/report-print-qa/*.json
+            dist/report-print-qa/*.png
+            dist/report-print-qa/*.pdf
+            dist/gantt-print-qa/*.json
+            dist/gantt-print-qa/*.pdf
+          if-no-files-found: error

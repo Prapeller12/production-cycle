@@ -1,0 +1,11 @@
+{
+  "listen": "127.0.0.1:8080",
+  "publicUrl": "http://127.0.0.1:8080",
+  "tls": false,
+  "certificate": "tls/server.pem",
+  "privateKey": "tls/server-key.pem",
+  "dataDirectory": "server-data",
+  "maxClients": 3,
+  "sessionTimeoutSeconds": 120,
+  "allowInsecureLan": false
+}

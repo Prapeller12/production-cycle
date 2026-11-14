@@ -200,6 +200,23 @@ try{
   }
   Run-FunctionalSmoke $unc 'unc-first-run'
   Run-FunctionalSmoke $unc 'unc-relaunch'
+  # Actual Windows desktop shortcut, with a deliberately unrelated working folder.
+  Add-Type -Path (Join-Path $PSScriptRoot 'native-shortcut.cs')
+  $shortcutPath=Join-Path $testRoot 'Рабочий стол — Производственный цикл.lnk'
+  $shortcutTarget="\\$env:COMPUTERNAME\$share\ProductionCycleNetwork\production-cycle.exe"
+  $shortcutDirectory="$env:SystemRoot\System32"
+  [DesktopShortcut]::Create($shortcutPath,$shortcutTarget,$shortcutDirectory)
+  $env:PRODUCTION_CYCLE_SMOKE_REPORT=$null
+  $shortcutStart=[Diagnostics.ProcessStartInfo]::new();$shortcutStart.FileName=$shortcutPath;$shortcutStart.UseShellExecute=$true
+  $null=[Diagnostics.Process]::Start($shortcutStart)
+  $shortcutWindow=Wait-VisibleWindow 'Производственный цикл'
+  $shortcutClientId=[LaunchWindows]::Owner($shortcutWindow)
+  $shortcutClient=Get-CimInstance Win32_Process -Filter "ProcessId=$shortcutClientId"
+  if($shortcutClient.ExecutablePath -notlike "$localProfile*" -or $shortcutClient.CommandLine -notmatch '--network-client'){throw 'Desktop shortcut did not open the staged local client'}
+  $shortcutProcess=Get-Process -Id $shortcutClientId
+  [LaunchWindows]::PostMessage($shortcutWindow,0x0010,[IntPtr]::Zero,[IntPtr]::Zero)|Out-Null
+  if(-not $shortcutProcess.WaitForExit(30000)){throw 'Desktop shortcut client did not close'}
+  @{ok=$true;shortcut=$shortcutPath;target=$shortcutTarget;workingDirectory=$shortcutDirectory;client=$shortcutClient.ExecutablePath;visibleReadyWindow=$true}|ConvertTo-Json|Set-Content (Join-Path $testRoot 'network-desktop-shortcut.json') -Encoding utf8
   # A stale or damaged cache must be rebuilt without overwriting a locked EXE.
   $initial=Get-Content (Join-Path $testRoot 'network-launch-unc-first-run.json') -Raw | ConvertFrom-Json
   $sentinel=Join-Path $initial.cache 'data/keep-on-rebuild.txt'
@@ -266,7 +283,7 @@ try{
   $env:PRODUCTION_CYCLE_SMOKE_REPORT=$null
   # A normal launch (without self-test) must display an actual top-level window.
   $launcher=Start-NetworkProcess $unc
-  $window=Wait-VisibleWindow 'Производственный цикл — self-test v1'
+  $window=Wait-VisibleWindow 'Производственный цикл'
   $clients=@(Get-CimInstance Win32_Process -Filter "Name='production-cycle.exe'" | Where-Object {$_.CommandLine -match '--network-client'})
   if($clients.Count -ne 1 -or $clients[0].ExecutablePath -notlike "$localProfile*"){throw 'Normal UNC launch did not create one local client'}
   $clientId=$clients[0].ProcessId
@@ -326,6 +343,23 @@ try{
   if(-not (Test-Path (Join-Path $root 'shared/database/production-cycle.db'))){throw 'Shared database snapshot missing'}
   if(-not (Test-Path -LiteralPath (Join-Path $cache 'runtime/webview2/msedgewebview2.exe'))){throw 'Local Fixed Runtime missing'}
   if(Test-Path (Join-Path $root 'temp/webview2')){throw 'WebView profile created in shared folder'}
+  # Reuse a signed database from the local release, retaining profiles and PINs.
+  if($env:LOCAL_TEST_ROOT -and (Test-Path "$env:LOCAL_TEST_ROOT/data/production-cycle.db")){
+    if(Test-Path "$root/data"){throw 'Legacy migration fixture would overwrite data'}
+    $legacySource="$env:LOCAL_TEST_ROOT/data/production-cycle.db"
+    $legacyHash=(Get-FileHash $legacySource -Algorithm SHA256).Hash
+    Move-Item "$root/shared" "$root/shared.saved"
+    New-Item -ItemType Directory -Path "$root/data"|Out-Null
+    Copy-Item $legacySource "$root/data/production-cycle.db"
+    try{
+      Run-FunctionalSmoke $unc 'migration-local-data'
+      if(-not(Test-Path "$root/shared/database/production-cycle.db")){throw 'Legacy database was not published as a shared snapshot'}
+      if((Get-FileHash $legacySource -Algorithm SHA256).Hash -ne $legacyHash){throw 'Migration changed the original local database'}
+    }finally{
+      Remove-Item "$root/shared","$root/data" -Recurse -Force
+      Move-Item "$root/shared.saved" "$root/shared"
+    }
+  }
   if($null -ne $standardError){throw $standardError}
 }finally{
   foreach($key in $old.Keys){[Environment]::SetEnvironmentVariable($key,$old[$key],'Process')}

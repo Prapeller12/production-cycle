@@ -1,0 +1,110 @@
+name: Verify and package standalone local EXE
+on:
+  push:
+    branches: [feat/local-return-20261112]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: local-rust-${{ matrix.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            local-rust-${{ matrix.os }}-
+            windows-rust-portable-
+      - name: Verify contracts and compile native host
+        shell: pwsh
+        run: |
+          node --test tests/domain.test.cjs
+          if($LASTEXITCODE -ne 0){throw 'Domain tests failed'}
+          git diff --check
+          if($LASTEXITCODE -ne 0){throw 'Whitespace check failed'}
+          cargo test --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
+          if($LASTEXITCODE -ne 0){throw 'Native Rust tests failed'}
+          cargo build --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
+          if($LASTEXITCODE -ne 0){throw 'Native build failed'}
+      - name: Obtain verified bundled runtime
+        shell: pwsh
+        run: ./scripts/fetch-runtime.ps1 -Destination "$env:RUNNER_TEMP/fixed-webview"
+      - name: Package complete offline local ZIP
+        shell: pwsh
+        run: |
+          $runtime=(Get-Content "$env:RUNNER_TEMP/fixed-webview/runtime-path.txt" -Raw).Trim()
+          ./scripts/package-local.ps1 -FixedRuntimePath $runtime -OutputPath ./dist/local
+          $root=Join-Path $env:RUNNER_TEMP 'Локальная программа с пробелами'
+          Expand-Archive ./dist/local/ProductionCycle-local-windows-x64.zip $root
+          "LOCAL_TEST_ROOT=$root/ProductionCycle" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Native EXE UI and persistence checks
+        shell: pwsh
+        run: ./scripts/test-local.ps1 -Root $env:LOCAL_TEST_ROOT
+      - name: Native window buttons and actual PDF layout
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if($LASTEXITCODE -ne 0){throw 'Test tools failed'}
+          node tests/local-window.cjs
+          if($LASTEXITCODE -ne 0){throw 'Local window UI regression'}
+      - name: Inspect actual PDF pages
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check pymupdf==1.26.7
+          if($LASTEXITCODE -ne 0){throw 'PDF inspection tools failed'}
+          python tests/verify-local-pdf.py dist/local-window-qa
+          if($LASTEXITCODE -ne 0){throw 'Printed PDF layout failed'}
+      - name: Launch as a real standard Windows account
+        if: ${{ !cancelled() && env.LOCAL_TEST_ROOT != '' }}
+        shell: pwsh
+        run: ./scripts/test-local-standard-user.ps1 -Zip ./dist/local/ProductionCycle-local-windows-x64.zip
+      - name: Offline EXE with system-only PATH
+        if: ${{ !cancelled() && env.LOCAL_TEST_ROOT != '' }}
+        shell: pwsh
+        run: |
+          if(@(Get-NetFirewallProfile | Where-Object {-not $_.Enabled}).Count){throw 'Firewall is not enabled'}
+          $rules=@();$oldPath=$env:PATH
+          try{
+            foreach($program in @("$env:LOCAL_TEST_ROOT/production-cycle.exe","$env:LOCAL_TEST_ROOT/runtime/webview2/msedgewebview2.exe")){
+              $name='ProductionCycle-offline-'+[guid]::NewGuid().ToString()
+              New-NetFirewallRule -Name $name -DisplayName $name -Direction Outbound -Program (Resolve-Path -LiteralPath $program).Path -Action Block -Profile Any | Out-Null
+              $rules+=$name
+            }
+            $env:PATH="$env:SystemRoot\System32;$env:SystemRoot"
+            ./scripts/test-local.ps1 -Root $env:LOCAL_TEST_ROOT
+          }finally{$env:PATH=$oldPath;foreach($name in $rules){Remove-NetFirewallRule -Name $name -ErrorAction SilentlyContinue}}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: local-evidence-${{ matrix.os }}
+          path: |
+            ${{ env.LOCAL_TEST_ROOT }}/temp/self-test*.json
+            dist/local-window-qa/**
+            src-tauri/Cargo.lock
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ProductionCycle-local-${{ matrix.os }}
+          path: |
+            dist/local/*.zip
+            dist/local/*.sha256
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: local-rust-${{ matrix.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ github.run_id }}

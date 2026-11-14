@@ -1,0 +1,23 @@
+/* Shared print layout uses tables and normal wrapping supported by IE11 and Edge. */
+.report-header{display:table;width:100%;table-layout:fixed}
+.report-header>div{display:table-cell;vertical-align:top}
+.report-header>.report-meta{width:30%;padding-left:6mm}
+.report-project,.report-summary{display:table;width:100%;table-layout:fixed;border-collapse:separate;border-spacing:4px;margin:6px 0}
+.report-project .report-field{display:table-cell;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word}
+.report-summary .report-kpi{display:table-cell;vertical-align:top;word-wrap:break-word;overflow-wrap:break-word}
+.report-stage-table th,.report-stage-table td{box-sizing:border-box;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
+.report-stage-table td:first-child{white-space:nowrap}
+.report-stage-name,.report-stage-parent,.report-confirmation{word-wrap:break-word;overflow-wrap:break-word}
+.report-status{box-sizing:border-box;max-width:100%;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
+.report-date-part{display:inline-block;white-space:nowrap}
+.report-days-label,.report-days-number{display:block;max-width:100%;white-space:normal;word-wrap:break-word;overflow-wrap:break-word}
+.report-footer{display:table;width:100%;table-layout:fixed}
+.report-footer>span{display:table-cell;vertical-align:top}
+.report-footer>span:last-child{width:25%;padding-left:5mm;text-align:right}
+@media print{
+ .report-header,.report-project,.report-summary,.report-risk{page-break-inside:avoid;break-inside:avoid}
+ .report-section-title{page-break-after:avoid;break-after:avoid-page}
+ .report-stage-table{page-break-inside:auto;break-inside:auto}
+ .report-stage-table td{font-size:14pt}
+ .report-stage-table tfoot{display:table-row-group}
+}

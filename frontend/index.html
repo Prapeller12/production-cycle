@@ -2,10 +2,13 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Производственный цикл</title>
+<script src="/compat/browser-entry.js"></script>
 <link rel="stylesheet" href="styles/app.css">
 <link rel="stylesheet" href="styles/reference-theme.css">
+<link rel="stylesheet" href="styles/report-print.css">
 </head>
 <body>
 <svg class="ui-icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
@@ -42,9 +45,10 @@
     <h1 id="workspaceTitle">Новый проект</h1>
     <div class="toolbar-group" aria-label="Основные действия"><button class="btn" id="newBtn"><span class="ui-icon ui-icon-plus" aria-hidden="true"></span>Новый проект</button><button class="btn" id="loadJsonBtn"><span class="ui-icon ui-icon-folder" aria-hidden="true"></span>Сохранённые проекты</button><button class="btn primary" id="saveJsonBtn"><span class="ui-icon ui-icon-save" aria-hidden="true"></span>Подписать и сохранить</button></div>
     <input type="file" id="jsonFile" class="hidden-file" accept="application/json,.json" />
-    <details class="more-actions"><summary class="btn"><span class="ui-icon ui-icon-settings" aria-hidden="true"></span>Ещё<span class="ui-icon ui-icon-chevron-down more-chevron" aria-hidden="true"></span></summary><div class="more-actions-menu"><button class="btn" id="importBtn"><span class="ui-icon ui-icon-upload" aria-hidden="true"></span>Импорт проекта</button><button class="btn" id="exportBtn"><span class="ui-icon ui-icon-download" aria-hidden="true"></span>Экспорт для Реестра</button><button class="btn" id="pdfReportBtn"><span class="ui-icon ui-icon-print" aria-hidden="true"></span>Печать отчёта / PDF</button><button class="btn" id="validateBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Проверить заполнение</button><button class="btn secondary" id="demoBtn"><span class="ui-icon ui-icon-document" aria-hidden="true"></span>Учебный пример</button><button class="btn danger-outline" id="completeProjectBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Завершить весь проект…</button></div></details>
+    <details class="more-actions"><summary class="btn"><span class="ui-icon ui-icon-settings" aria-hidden="true"></span>Ещё<span class="ui-icon ui-icon-chevron-down more-chevron" aria-hidden="true"></span></summary><div class="more-actions-menu"><button class="btn" id="importBtn"><span class="ui-icon ui-icon-upload" aria-hidden="true"></span>Импорт проекта</button><button class="btn" id="downloadImportTemplateBtn"><span class="ui-icon ui-icon-download" aria-hidden="true"></span>Скачать образец отчёта</button><button class="btn" id="hintsBtn"><span class="ui-icon ui-icon-document" aria-hidden="true"></span>Подсказки</button><button class="btn" id="exportBtn" hidden><span class="ui-icon ui-icon-download" aria-hidden="true"></span>Экспорт для Реестра</button><button class="btn" id="pdfReportBtn"><span class="ui-icon ui-icon-print" aria-hidden="true"></span>Печать отчёта / PDF</button><button class="btn" id="validateBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Проверить заполнение</button><button class="btn secondary" id="demoBtn"><span class="ui-icon ui-icon-document" aria-hidden="true"></span>Учебный пример</button><button class="btn danger-outline" id="completeProjectBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Завершить весь проект…</button></div></details>
   </div>
 
+  <form id="projectSearchForm" class="project-search-main" role="search"><label for="projectsSearch">поиск проектов</label><input id="projectsSearch" placeholder="Номер заказа, название или предприятие" autocomplete="off" /><button class="btn" id="searchProjectsBtn" type="submit"><span class="ui-icon ui-icon-folder" aria-hidden="true"></span>Найти</button></form>
   <section class="project-card">
     <div class="project-grid">
       <div class="field"><label for="projectName">Название проекта *</label><input id="projectName" list="projectNameOptions" placeholder="Например: Изделие 5П-20К заказ №924" /></div>
@@ -169,8 +173,7 @@
 
 <div class="modal-backdrop" id="projectsModal" role="dialog" aria-modal="true" aria-labelledby="projectsModalTitle">
   <div class="modal modal-wide" tabindex="-1"><div class="modal-head"><h2 id="projectsModalTitle">Сохранённые проекты</h2><span class="spacer"></span><button class="btn icon" data-close="projectsModal" aria-label="Закрыть сохранённые проекты"><span class="ui-icon ui-icon-close" aria-hidden="true"></span></button></div><div class="modal-body">
-    <label class="projects-search" for="projectsSearch">Номер заказа, название или предприятие <input id="projectsSearch" placeholder="Например: 924" /></label>
-    <section id="projectsListPane"><div class="project-list-help">Проекты с одинаковым номером заказа сохраняются раздельно. Выберите нужное название из списка.</div><div id="projectsList" class="projects-list"></div></section>
+    <section id="projectsListPane"><div id="projectsList" class="projects-list"></div></section>
   </div><div class="modal-foot"><button class="btn" data-close="projectsModal"><span class="ui-icon ui-icon-close" aria-hidden="true"></span>Закрыть</button></div></div>
 </div>
 
@@ -178,10 +181,9 @@
 
 <div class="modal-backdrop" id="importModal">
   <div class="modal modal-wide"><div class="modal-head"><h2>Импорт производственного цикла</h2><span class="spacer"></span><button class="btn icon" data-close="importModal" aria-label="Закрыть импорт"><span class="ui-icon ui-icon-close" aria-hidden="true"></span></button></div>
-    <div class="modal-body"><div class="import-files">
-      <label class="import-file"><strong>Исходящие — основной проект</strong><span id="importOutName">Выберите TXT (9 колонок)</span><input type="file" id="importOutFile" accept="text/plain,.txt"></label>
-      <label class="import-file"><strong>Входящие — этапы</strong><span id="importInName">Выберите TXT (8 колонок)</span><input type="file" id="importInFile" accept="text/plain,.txt"></label>
-    </div><div id="importValidation" class="import-validation"></div><div class="preview-tabs"><button class="preview-tab active" data-import-preview="out">Исходящие</button><button class="preview-tab" data-import-preview="in">Входящие</button></div><div class="preview-box" id="importPreview">Выберите оба файла для проверки.</div></div>
+    <div class="modal-body"><p>Выберите заполненный файл .xlsx с листами «Проект» и «Этапы». Образец доступен в меню «Ещё».</p><div class="import-files import-excel-file">
+      <label class="import-file"><strong>Проект и этапы в одном Excel-файле</strong><span id="importExcelName">Выберите файл .xlsx</span><input type="file" id="importExcelFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
+    </div><div id="importValidation" class="import-validation" aria-live="polite"></div><div class="import-excel-preview" id="importPreview">Выберите файл Excel для проверки.</div></div>
     <div class="modal-foot"><button class="btn" data-close="importModal"><span class="ui-icon ui-icon-close" aria-hidden="true"></span>Отмена</button><button class="btn primary" id="confirmImportBtn" disabled><span class="ui-icon ui-icon-upload" aria-hidden="true"></span>Импортировать и сохранить</button></div>
   </div>
 </div>
@@ -216,7 +218,7 @@
         <h3>Основание выполнения этапа</h3>
         <div id="completionTargetSummary" class="completion-target-summary" tabindex="-1"></div>
         <div class="form-grid">
-          <div><label>Официальный документ *</label><select id="evidenceType"><option value="">Выберите документ</option><option>Входящее письмо</option><option>Инвойс</option><option>Накладная</option><option>Акт приёмки</option><option>Иной официальный документ</option></select></div>
+          <div><label>Официальный документ *</label><select id="evidenceType"><option value="">Выберите документ</option><option value="Входящее письмо">Входящее письмо</option><option value="Инвойс">Инвойс</option><option value="Накладная">Накладная</option><option value="Акт приёмки">Акт приёмки</option><option value="Иной официальный документ">Иной официальный документ</option></select></div>
           <div><label>Номер, дата или реквизиты *</label><input id="evidenceReference" placeholder="Например: акт №15 от 18.09.2026" /></div>
           <div class="wide"><label>Комментарий к подтверждению *</label><textarea id="evidenceComment" rows="3" placeholder="Что подтверждает документ"></textarea></div>
         </div>
@@ -233,7 +235,9 @@
 
 <div class="modal-backdrop" id="onboardingModal" role="dialog" aria-modal="true" aria-labelledby="onboardingTitle"><div class="modal modal-wide onboarding-modal"><div class="modal-head"><div><span class="onboarding-step" id="onboardingStepLabel">Шаг 1 из 4</span><h2 id="onboardingTitle">Начало работы</h2></div><span class="spacer"></span><button class="btn icon" data-close="onboardingModal" aria-label="Закрыть обучение"><span class="ui-icon ui-icon-close" aria-hidden="true"></span></button></div><div class="modal-body"><div id="onboardingContent" class="onboarding-content"></div></div><div class="modal-foot"><button class="btn" id="onboardingBackBtn"><span class="ui-icon ui-icon-back" aria-hidden="true"></span>Назад</button><span class="spacer"></span><button class="btn primary" id="onboardingNextBtn">Далее<span class="ui-icon ui-icon-chevron-right" aria-hidden="true"></span></button></div></div></div>
 
+<script defer src="services/browser-transport.js"></script>
 <script defer src="config/contracts.js"></script>
+<script defer src="config/import-template.js"></script>
 <script defer src="domain/cycle.js"></script>
 <script defer src="services/exchange.js"></script>
 <script defer src="services/backend.js"></script>

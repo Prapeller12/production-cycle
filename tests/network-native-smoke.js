@@ -25,6 +25,7 @@
    admin=(await B.listAuditUsers())[0];assert(admin.role==='admin','First role is not administrator');
    assert((await B.networkStatus()).displayName===admin.displayName,'Bootstrap session not bound to administrator');
    checks.push('clean ZIP: first administrator created through visible UI, PIN validation, session binding');
+   await sleep(500);if(open('onboardingModal'))click('[data-close="onboardingModal"]');
    for(const [name,role] of [['Руководитель проверки','project_manager'],['Проверяющий проверки','reviewer']]){
     $('createUserDetails').open=true;fill('newAuditUserName',name);fill('newAuditUserRole',role);fill('newAuditUserPin','739201');fill('newAuditUserPinConfirm','739201');fill('authorizingUser',admin.id);fill('authorizingUserPin','739201');click('#createAuditUserBtn');
     await wait(async()=> (await B.listAuditUsers()).some(u=>u.displayName===name)&&!$('createAuditUserBtn').disabled,'create '+role);
