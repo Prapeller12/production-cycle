@@ -11,7 +11,7 @@
   "maxSharedSessions": 3,
   "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-5e92ee4c0da08191b128275cf1d21df5_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
   "artifactAccess": "Issued file in the owner's ChatGPT account; not a public GitHub release asset",
-  "passport": "ProductionCycle_Project_Passport_2026-11-14.txt",
+  "passport": "passport/ProductionCycle_Project_Passport_2026-11-14.txt",
   "verifiedRuns": [
     "https://github.com/Prapeller12/production-cycle/actions/runs/43373470258",
     "https://github.com/Prapeller12/production-cycle/actions/runs/43393559008"

@@ -98,8 +98,8 @@ Frontend этой сборки состоит из HTML, CSS и JavaScript.
 
 ## Паспорт и документация
 
-- [Подробный паспорт Word](docs/ProductionCycle_Project_Passport_2026-11-14.docx)
-- [Текстовая копия паспорта для передачи контекста](docs/ProductionCycle_Project_Passport_2026-11-14.txt)
+- [Подробный паспорт Word](docs/passport/ProductionCycle_Project_Passport_2026-11-14.docx)
+- [Текстовая копия паспорта для передачи контекста](docs/passport/ProductionCycle_Project_Passport_2026-11-14.txt)
 - [Краткий запуск текущего комплекта](docs/native-share-startup.txt)
 - [Фиксация синхронизации с main](docs/repository-sync-2026-11-14.md)
 - [Протокол общей папки](docs/network-share-multiuser-concept.md)

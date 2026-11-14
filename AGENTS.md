@@ -2,7 +2,7 @@
 
 Целевой репозиторий — Prapeller12/production-cycle. Prapeller12/otchet не является
 целевым remote. Источник требований — прямые решения владельца и актуальный паспорт
-docs/ProductionCycle_Project_Passport_2026-11-14.txt.
+docs/passport/ProductionCycle_Project_Passport_2026-11-14.txt.
 
 ## Текущее решение после отката
 
