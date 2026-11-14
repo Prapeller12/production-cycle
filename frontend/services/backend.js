@@ -6,6 +6,7 @@
   function toSnapshot(state){
     return {
       databaseId:Number.isSafeInteger(state.databaseId)?state.databaseId:null,
+      baseRevision:typeof state.baseRevision==='string'?state.baseRevision:null,
       project:{
         name:state.project.name,
         orderNo:state.project.orderNo,
@@ -23,6 +24,7 @@
     if(!snapshot)return null;
     return {
       databaseId:Number.isSafeInteger(snapshot.databaseId)?snapshot.databaseId:null,
+      baseRevision:typeof snapshot.baseRevision==='string'?snapshot.baseRevision:null,
       project:{
         name:snapshot.project.name,
         orderNo:snapshot.project.orderNo,
@@ -100,6 +102,27 @@
     if(!native())throw Error('Восстановление доступно только в Windows-приложении.');
     return invoke('backup_restore',{fileName,adminUserId:Number(adminUserId),adminPin});
   }
+  async function networkStatus(){
+    if(!native())return {enabled:false,active:true,occupied:1,maximum:1,evictionRequested:false};
+    const result=await invoke('network_status');
+    return result&&typeof result.enabled==='boolean'?result:{enabled:false,active:true,occupied:1,maximum:1,evictionRequested:false};
+  }
+  async function networkLogin(userId,pin){
+    if(!native())return {state:'standalone',occupied:1,maximum:1};
+    return invoke('network_login',{userId:userId!==null&&userId!==undefined&&String(userId).trim()!==''&&Number.isSafeInteger(Number(userId))&&Number(userId)>0?Number(userId):null,pin:String(pin||'')});
+  }
+  async function networkSaveDraft(state){
+    if(!native())return {location:'standalone',savedAt:new Date().toISOString()};
+    return invoke('network_save_draft',{snapshot:toSnapshot(state)});
+  }
+  async function networkLogout(){
+    if(!native())return true;
+    await invoke('network_logout');return true;
+  }
+  async function networkFinishEviction(){
+    if(!native())return true;
+    await invoke('network_finish_eviction');return true;
+  }
   function localDictionary(kind,state){
     const values=[];
     if(kind==='projectName')values.push(state.project.name);
@@ -136,5 +159,5 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,listDictionary,replaceDictionaryValue,exportPair,report});
+  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report});
 })();
