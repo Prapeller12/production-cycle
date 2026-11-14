@@ -11,7 +11,6 @@ permissions:
   contents: read
 jobs:
   contracts:
-    # Keep the pinned Playwright 1.58.2 on its supported Ubuntu generation.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -20,24 +19,8 @@ jobs:
           node-version: '22'
       - run: node --test tests/domain.test.cjs
       - run: git diff --check
-      - name: Install browser test tools
-        run: |
-          npm install --prefix /tmp/prototype-tests playwright@1.58.2
-          /tmp/prototype-tests/node_modules/.bin/playwright install --with-deps chromium
-      - name: Run browser scenarios
-        env:
-          PLAYWRIGHT_MODULE: /tmp/prototype-tests/node_modules/playwright
-        run: node tests/browser.cjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
-        with:
-          name: production-cycle-visual-check
-          path: |
-            /tmp/production-cycle-*.png
-            /tmp/production-cycle-report.pdf
-            /tmp/production-cycle-structure-print.pdf
-            /tmp/production-cycle-gantt-print-a3.pdf
-            /tmp/production-cycle-gantt-print-a4.pdf
+  # Exercise the packaged EXE and its actual IPC, Excel, print and SMB paths.
+  # tests/browser.cjs belongs to the historical prototype with paired TXT import.
   native:
     needs: contracts
     uses: ./.github/workflows/production-cycle-startup.yml
