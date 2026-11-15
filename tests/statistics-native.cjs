@@ -38,7 +38,7 @@ module.exports=async(page,out,root)=>{
  await page.evaluate(()=>{window.__printSignals=0;window.print=()=>window.__printSignals++});
  await page.click(scope+'[data-action="print"]');await page.waitForFunction(()=>window.__printSignals===1);
  await page.emulateMedia({media:'print'});assert.equal(await page.locator('#statisticsView').isVisible(),true);assert.equal(await page.locator('#registryView').isVisible(),false);
- await page.pdf({path:path.join(out,'native-statistics.pdf'),preferCSSPageSize:true,printBackground:true});await page.emulateMedia({media:'screen'});
+ await page.pdf({path:path.join(out,'native-statistics.pdf'),preferCSSPageSize:true,printBackground:true});await page.emulateMedia({media:null});
  await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
  assert.equal(await page.locator('body').evaluate(e=>e.classList.contains('print-statistics')),false);
  await page.screenshot({path:path.join(out,'native-statistics.png'),fullPage:true});
