@@ -174,5 +174,7 @@
       projectOverdue:value.projectOverdue
     };
   }
-  Production.backend=Object.freeze({native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report,excelTemplate,importExcel,claimOnboarding});
+  async function saveStatisticsFile(name,text){if(!native())throw Error('Экспорт доступен в программе.');return invoke('save_statistics_file',{name,text});}
+  async function printStatistics(){if(!native())return window.print();return invoke('print_report');}
+  Production.backend=Object.freeze({saveStatisticsFile,printStatistics,native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report,excelTemplate,importExcel,claimOnboarding});
 })();

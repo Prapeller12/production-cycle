@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "scripts": {
     "build:legacy": "node scripts/build-legacy.cjs",
-    "test": "node --test tests/domain.test.cjs",
+    "test": "node --test tests/domain.test.cjs tests/statistics-domain.test.cjs tests/statistics-integration.test.cjs",
     "test:server": "node tests/server/browser.cjs"
   },
   "devDependencies": {

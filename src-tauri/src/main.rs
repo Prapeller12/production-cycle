@@ -67,7 +67,7 @@ fn main(){
             Response::builder().status(if body.is_some(){200}else{404}).header("Content-Type",mime).header("Cache-Control","no-store").header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src ipc: http://ipc.localhost; object-src 'none'; frame-src 'none'").body(body.unwrap_or_default()).unwrap()
         })
         .invoke_handler(tauri::generate_handler![
-            infrastructure::startup::frontend_ready,infrastructure::startup::frontend_failed,commands::save_file,commands::print_report,smoke::finish_smoke,
+            infrastructure::startup::frontend_ready,infrastructure::startup::frontend_failed,commands::save_file,commands::save_statistics_file,commands::print_report,smoke::finish_smoke,
             production::production_validate,production::production_load_snapshot,production::production_load_snapshot_by_id,
             production::production_list_projects,production::production_list_deadline_control,production::production_list_dictionary,
             production::production_export_txt,production::production_get_management_report,

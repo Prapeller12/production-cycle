@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
-      - run: node --test tests/domain.test.cjs
+      - run: node --test tests/domain.test.cjs tests/statistics-domain.test.cjs tests/statistics-integration.test.cjs
       - run: git diff --check
   # Exercise the packaged EXE and its actual IPC, Excel, print and SMB paths.
   # tests/browser.cjs belongs to the historical prototype with paired TXT import.
