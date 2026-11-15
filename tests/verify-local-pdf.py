@@ -23,7 +23,11 @@ for path in sorted(root.glob('*.pdf')):
                     dx=min(a[2],b[2])-max(a[0],b[0]);dy=min(a[3],b[3])-max(a[1],b[1]);h=min(a[3]-a[1],b[3]-b[1])
                     assert not(dx>1.3 and h>0 and dy/h>.6),(path,'Overlapping words',a,b)
         assert(doc[0].rect.width>doc[0].rect.height)==('landscape'in path.stem),(path,'Wrong orientation')
+    if path.stem=='native-statistics':
+        text=clean('\n'.join(texts))
+        assert 'Дашборды' in text and 'Участиесоисполнителейвзаказе' in text,(path,'Statistics content missing')
+        assert 'Доляэтаповзаказа' in text,(path,'Participation columns missing')
     results.append({'file':path.name,'pages':len(doc),'noBlankPages':True,'engine':'packaged Fixed WebView2'})
-assert len(results)==7,('Missing print formats',len(results))
+assert len(results)==8,('Missing print formats',len(results))
 (root/'pdf-verification.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))
-print('PASS seven print formats with no empty pages; report dates and words checked for size, clipping and overlap')
+print('PASS eight print formats with no empty pages; report dates and words checked for size, clipping and overlap')

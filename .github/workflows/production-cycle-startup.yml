@@ -33,7 +33,7 @@ jobs:
       - name: Domain contracts and native build
         shell: pwsh
         run: |
-          node --test tests/domain.test.cjs
+          node --test tests/domain.test.cjs tests/statistics-domain.test.cjs tests/statistics-integration.test.cjs
           if($LASTEXITCODE -ne 0){throw 'Domain checks failed'}
           git diff --check
           if($LASTEXITCODE -ne 0){throw 'Whitespace check failed'}
@@ -73,6 +73,9 @@ jobs:
         run: |
           $version='native-startup-'+$env:GITHUB_SHA.Substring(0,7)
           ./scripts/test-network-portable.ps1 -Zip ./dist/native-share/ProductionCycle-native-share-windows-x64.zip -Version $version
+      - name: UNC fallback CMD launcher with signed persistence
+        shell: pwsh
+        run: ./scripts/test-final-launcher.ps1 -Zip ./dist/native-share/ProductionCycle-native-share-windows-x64.zip
       - name: Offline local EXE with system-only PATH
         if: matrix.os == 'windows-2022'
         shell: pwsh
@@ -93,6 +96,7 @@ jobs:
           name: startup-evidence-${{ matrix.os }}
           path: |
             dist/startup-qa/**
+            dist/final-evidence/**
             dist/local-window-qa/**
             ${{ env.LOCAL_TEST_ROOT }}/temp/self-test*.json
             ${{ runner.temp }}/Сетевая проверка программы/network-*.json

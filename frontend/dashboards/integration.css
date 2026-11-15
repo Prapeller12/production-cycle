@@ -1,0 +1,22 @@
+/* Host-level adjustments; dashboard rules remain scoped to [data-pcd]. */
+#statisticsView .statistics-context{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:0 0 14px;color:var(--muted);font-size:13px}
+#statisticsView .statistics-context .btn{flex-shrink:0}
+#statisticsMount{min-height:160px}
+#statisticsMount[data-pcd]{min-height:0;background:transparent}
+#statisticsMount .pc-content{padding:10px 0 20px}
+#statisticsMount .pc-cycle-tabs{padding:0 0 16px;background:transparent}
+#statisticsMount .pc-page-head{margin-bottom:14px}
+#statisticsMount .pc-page-head h1{font-size:24px;line-height:30px}
+#statisticsMount .pc-footer{margin-bottom:0}
+.statistics-notice{padding:20px 24px;background:var(--panel);color:var(--muted);border-radius:24px;line-height:1.6}
+.statistics-notice.error{color:var(--danger)}
+@media(max-width:700px){#statisticsView .statistics-context{align-items:flex-start;flex-direction:column;gap:10px}}
+@media print{
+ body.print-statistics>main.shell:not(#pdfReport):not(#ganttPrint):not(#structurePrint){display:block!important;max-width:none!important;padding:0!important}
+ body.print-statistics .shell>.workspace-view{display:none!important}
+ body.print-statistics #statisticsView{display:block!important}
+ body.print-statistics #statisticsView .statistics-context{display:none!important}
+ body.print-statistics .pdf-report,body.print-statistics .gantt-print,body.print-statistics .structure-print{display:none!important}
+ body.print-statistics #statisticsMount .pc-content{padding:0!important}
+ body.print-statistics #statisticsMount .pc-cycle-tabs{display:none!important}
+}

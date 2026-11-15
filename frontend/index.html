@@ -9,6 +9,9 @@
 <link rel="stylesheet" href="styles/app.css">
 <link rel="stylesheet" href="styles/reference-theme.css">
 <link rel="stylesheet" href="styles/report-print.css">
+<link rel="stylesheet" href="dashboards/assets/dashboard.css">
+<link rel="stylesheet" href="dashboards/assets/cycle-theme.css">
+<link rel="stylesheet" href="dashboards/integration.css">
 </head>
 <body>
 <svg class="ui-icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
@@ -37,7 +40,7 @@
   <symbol id="ui-icon-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
 </svg>
 <header class="appbar"><strong>Производственный цикл</strong><span class="project-context" id="projectContext">Новый проект</span><span class="spacer"></span><span class="network-state" id="networkState" hidden></span><button class="top-action" id="networkLogoutBtn" hidden><span class="ui-icon ui-icon-login" aria-hidden="true"></span>Выйти из сеанса</button><button class="top-action" id="profilesBtn"><span class="ui-icon ui-icon-users" aria-hidden="true"></span>Пользователи</button><button class="top-action" id="auditBtn"><span class="ui-icon ui-icon-shield" aria-hidden="true"></span>Администратор</button><span class="save-state" id="saveState">Новый проект</span><span id="taskCounter">Этапов: 0</span></header>
-<nav class="tabs" aria-label="Разделы программы" role="tablist"><button class="tab active" id="registryTab" role="tab" aria-selected="true" aria-controls="registryView" data-view="registry">Реестр цикла</button><button class="tab" id="deadlinesTab" role="tab" aria-selected="false" aria-controls="deadlinesView" data-view="deadlines">Контроль сроков <span id="deadlineRiskCount"></span></button><button class="tab" id="ganttTab" role="tab" aria-selected="false" aria-controls="ganttView" data-view="gantt">Диаграмма Ганта</button></nav>
+<nav class="tabs" aria-label="Разделы программы" role="tablist"><button class="tab active" id="registryTab" role="tab" aria-selected="true" aria-controls="registryView" data-view="registry">Реестр цикла</button><button class="tab" id="deadlinesTab" role="tab" aria-selected="false" aria-controls="deadlinesView" data-view="deadlines">Контроль сроков <span id="deadlineRiskCount"></span></button><button class="tab" id="ganttTab" role="tab" aria-selected="false" aria-controls="ganttView" data-view="gantt">Диаграмма Ганта</button><button class="tab" id="statisticsTab" role="tab" aria-selected="false" aria-controls="statisticsView" data-view="statistics">Статистика</button></nav>
 <div id="messageArea" class="message-area" role="status" aria-live="polite" aria-atomic="true"></div>
 <main class="shell">
  <div id="registryView" class="workspace-view active" role="tabpanel" aria-labelledby="registryTab">
@@ -97,6 +100,7 @@
  <div id="ganttView" class="workspace-view" role="tabpanel" aria-labelledby="ganttTab">
    <section class="panel gantt-panel"><div class="panel-head"><span class="title">Диаграмма Ганта</span><span class="muted-text" id="ganttPeriod"></span><span class="spacer"></span><label class="filter-control" for="ganttCompletionFilter">Показать <select id="ganttCompletionFilter"><option value="active">Только невыполненные</option><option value="all">Все этапы</option><option value="done">Только выполненные</option></select></label><label class="filter-control" for="ganttScale">Масштаб <select id="ganttScale"><option value="day">По дням</option><option value="week">По неделям</option><option value="month">По месяцам</option><option value="quarter" selected>По кварталам</option></select></label><button class="btn small" id="printGanttA4Btn"><span class="ui-icon ui-icon-print" aria-hidden="true"></span>Печать А4</button><button class="btn small" id="printGanttA3Btn"><span class="ui-icon ui-icon-print" aria-hidden="true"></span>Печать А3</button></div><div class="gantt-context"><span id="ganttFilterSummary"></span><span class="gantt-legend"><i class="work"></i>В работе <i class="done"></i>Выполнено <i class="overdue"></i>Просрочено <i class="new"></i>Не начато <i class="hold"></i>Приостановлено</span></div><div id="ganttChart" class="gantt-chart"></div></section>
  </div>
+ <section id="statisticsView" class="workspace-view" role="tabpanel" aria-labelledby="statisticsTab" aria-hidden="true"><div class="statistics-context"><span>Статистика учитывает сохранённые проекты. Несохранённые изменения остаются в реестре.</span><button class="btn small" id="statisticsBackBtn"><span class="ui-icon ui-icon-back" aria-hidden="true"></span>Вернуться к проекту</button></div><div id="statisticsMount"></div></section>
  <div id="adminView" class="workspace-view" aria-hidden="true">
    <section class="panel admin-page" id="auditModal">
     <div class="admin-page-head"><div><h1 id="adminPageTitle">Интерфейс администратора</h1><p id="adminPageDescription">Пользователи, справочники, подписанный журнал и резервные копии отделены от рабочего реестра.</p></div><span class="spacer"></span><span id="adminSessionLabel" class="admin-session"></span><button class="btn" id="closeAdminBtn"><span class="ui-icon ui-icon-back" aria-hidden="true"></span>Вернуться к проекту</button></div>
@@ -242,6 +246,10 @@
 <script defer src="services/exchange.js"></script>
 <script defer src="services/backend.js"></script>
 <script defer src="services/project-file.js"></script>
+<script defer src="dashboards/js/domain.js"></script>
+<script defer src="dashboards/js/tauri-adapter.js"></script>
+<script defer src="dashboards/js/dashboard.js"></script>
+<script defer src="dashboards/integration.js"></script>
 <script defer src="ui/app.js"></script>
 </body>
 </html>

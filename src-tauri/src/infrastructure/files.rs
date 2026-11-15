@@ -5,7 +5,7 @@ pub fn save_new(folder: &Path, name: &str, text: &str) -> Result<PathBuf,String>
         return Err("Invalid file name".into());
     }
     let ext=Path::new(name).extension().and_then(|s|s.to_str()).unwrap_or("");
-    if !["txt","json"].contains(&ext) {return Err("Only JSON and TXT are supported".into());}
+    if !["txt","json","csv"].contains(&ext) {return Err("Only JSON, TXT and CSV are supported".into());}
     // Each export gets its own directory. Existing user files are never overwritten.
     let stamp=SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e|e.to_string())?.as_nanos();
     let dir=folder.join(format!("{}-{}",stamp,std::process::id()));
@@ -24,6 +24,14 @@ pub fn save_new(folder: &Path, name: &str, text: &str) -> Result<PathBuf,String>
 mod tests {
     use super::*;
     #[test] fn rejects_path_traversal(){assert!(save_new(Path::new("."),"../outside.json","{}").is_err());}
+    #[test] fn csv_exports_stay_in_a_unique_folder(){
+        let root=std::env::temp_dir().join(format!("statistics-csv-test-{}",SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir(&root).unwrap();
+        let a=save_new(&root,"stages.csv","name;done\r\nA;1").unwrap();
+        let b=save_new(&root,"stages.csv","name;done\r\nA;0").unwrap();
+        assert_ne!(a,b);assert_eq!(fs::read(a).unwrap(),b"\xef\xbb\xbfname;done\r\nA;1");
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test] fn writes_bom_without_overwrite(){
         let root=std::env::temp_dir().join(format!("production-cycle-test-{}",SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
         fs::create_dir(&root).unwrap();

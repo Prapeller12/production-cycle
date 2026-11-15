@@ -11,3 +11,18 @@ pub fn save_file(name:String, text:String, paths:State<'_,Paths>) -> Result<Stri
 }
 #[tauri::command]
 pub fn print_report(window:WebviewWindow)->Result<(),String>{window.print().map_err(|e|e.to_string())}
+
+/// Read-only statistics exports go to exports; this never changes the project DB.
+#[tauri::command]
+pub fn save_statistics_file(name:String, text:String, paths:State<'_,Paths>)->Result<String,String>{
+    let body=text.trim_start_matches('\u{feff}');
+    if name.ends_with(".json") {
+        let value:serde_json::Value=serde_json::from_str(body).map_err(|e|e.to_string())?;
+        let settings=value.get("type").and_then(|v|v.as_str())==Some("production-cycle-dashboard-settings")
+            && value.get("version").and_then(|v|v.as_u64())==Some(1);
+        let dataset=value.get("schemaVersion").and_then(|v|v.as_u64())==Some(1)
+            && value.get("projects").is_some_and(|v|v.is_array());
+        if !settings&&!dataset{return Err("Неизвестный формат экспорта статистики".into());}
+    }else if !name.ends_with(".csv") {return Err("Статистика экспортируется только в CSV или JSON".into());}
+    files::save_new(&paths.exports,&name,body).map(|p|p.to_string_lossy().into_owned())
+}
