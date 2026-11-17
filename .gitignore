@@ -12,3 +12,4 @@ tls/
 server-data/
 *.log
 server.cer
+__pycache__/

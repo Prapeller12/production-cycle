@@ -25,8 +25,11 @@ for path in sorted(root.glob('*.pdf')):
         assert(doc[0].rect.width>doc[0].rect.height)==('landscape'in path.stem),(path,'Wrong orientation')
     if path.stem=='native-statistics':
         text=clean('\n'.join(texts))
-        assert 'Дашборды' in text and 'Участиесоисполнителейвзаказе' in text,(path,'Statistics content missing')
-        assert 'Доляэтаповзаказа' in text,(path,'Participation columns missing')
+        assert 'Статистика' in text and 'Соисполнителизаказа' in text,(path,'Statistics content missing')
+        assert 'Доляэтаповзаказа' in text and 'Выполненоизназначенных' in text,(path,'Participation columns missing')
+        for i in range(1,6):
+            assert 'ИсполнительQA'+str(i) in text,(path,'Statistics print was limited to preview performers',i)
+            assert 'Проектстатистики'+str(i) in text,(path,'Statistics print was limited to preview projects',i)
     results.append({'file':path.name,'pages':len(doc),'noBlankPages':True,'engine':'packaged Fixed WebView2'})
 assert len(results)==8,('Missing print formats',len(results))
 (root/'pdf-verification.json').write_text(json.dumps(results,ensure_ascii=False,indent=2))

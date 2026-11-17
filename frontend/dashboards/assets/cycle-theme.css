@@ -1,4 +1,4 @@
-+@font-face{font-family:"Golos Text";font-style:normal;font-weight:400;font-display:swap;src:url("fonts/golos-text-cyrillic-400-normal.woff2") format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:"Golos Text";font-style:normal;font-weight:400;font-display:swap;src:url("fonts/golos-text-cyrillic-400-normal.woff2") format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
 @font-face{font-family:"Golos Text";font-style:normal;font-weight:400;font-display:swap;src:url("fonts/golos-text-latin-ext-400-normal.woff2") format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
 @font-face{font-family:"Golos Text";font-style:normal;font-weight:400;font-display:swap;src:url("fonts/golos-text-latin-400-normal.woff2") format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 @font-face{font-family:"Golos Text";font-style:normal;font-weight:500;font-display:swap;src:url("fonts/golos-text-cyrillic-500-normal.woff2") format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
@@ -140,3 +140,26 @@
 [data-pcd] .pc-share-legend-done{background:var(--pc-green)}
 @media(max-width:700px){[data-pcd] .pc-participation-toolbar{gap:10px}[data-pcd] .pc-participation-toolbar>strong{margin-left:0;flex-basis:100%}[data-pcd] .pc-participation-table{min-width:740px}}
 @media print{[data-pcd] .pc-cycle-appbar,[data-pcd] .pc-cycle-tabs{display:none!important}[data-pcd] .pc-share-all{background:#2f6fe0}[data-pcd] .pc-participation-table{min-width:0!important}[data-pcd] .pc-member-highlight td{background:transparent!important}[data-pcd] .pc-participation-toolbar select{box-shadow:none;border:0;background:transparent}}
+/* Keep theme typography readable in the personal layout editor. */
+@media screen{
+  [data-pcd]{--pc-muted:#596170}
+  [data-pcd][data-theme=dark]{--pc-muted:#c0c5d2}
+  [data-pcd] :focus-visible{outline:3px solid var(--pc-info,#2f6fe0);outline-offset:3px;box-shadow:none}
+  [data-pcd] .pc-layout-editor .pc-icon-button,[data-pcd] .pc-drag-handle{width:36px;height:36px;min-width:36px;min-height:36px}
+  [data-pcd] .pc-layout-editor select{height:auto;min-height:40px;white-space:normal}
+  [data-pcd] .pc-layout-editor .pc-widget-setting select{font-size:13px}
+  [data-pcd] .pc-layout-editor .pc-widget-setting label{font-size:14px;line-height:1.5}
+  [data-pcd] .pc-layout-editor .pc-button{white-space:normal;padding:8px 12px;height:auto}
+  [data-pcd][data-font=large] .pc-layout-editor .pc-widget-setting select,[data-pcd][data-font=large] .pc-layout-editor .pc-widget-setting label,[data-pcd][data-font=large] .pc-preview-footer{font-size:17px;line-height:1.5}
+  [data-pcd][data-font=large] h2{font-size:20px;line-height:1.4}
+  [data-pcd][data-font=large] .pc-widget-head p,[data-pcd][data-font=large] .pc-calculation-note,[data-pcd][data-font=large] .pc-participation-toolbar>span,[data-pcd][data-font=large] .pc-share-label,[data-pcd][data-font=large] .pc-status-note{font-size:15px;line-height:1.5}
+  [data-pcd][data-font=large] .pc-bar-switch select{height:auto;min-height:40px;font-size:17px}
+  [data-pcd][data-font=large] .pc-widget-body .pc-button{font-size:16px;line-height:1.5;min-height:40px}
+  [data-pcd][data-font=large] .pc-table th,[data-pcd][data-font=large] .pc-table td{height:auto}
+  [data-pcd] .pc-layout-editor .pc-widget-setting .pc-drag-handle{display:inline-flex}
+  [data-pcd] .pc-calculation-note{font-size:13px}
+}
+@media screen{
+  [data-pcd][data-theme=light]{--pc-primary:#c93522;--pc-red:#b72c20;--pc-green:#137437;--pc-amber:#855000;--pc-info:#225bb8}
+  [data-pcd] .pc-layout-editor .pc-widget-setting .pc-icon-button{font-size:18px}
+}

@@ -49,7 +49,7 @@
   function analyse(data,filters={},settings={}){
     const asOf=date(filters.asOf||data.source.asOf||today(),'дата расчёта'),horizon=[7,14,30].includes(settings.horizon)?settings.horizon:7;
     const query=String(filters.search||'').trim().toLocaleLowerCase('ru');
-    const selected=data.projects.filter(p=>(!filters.enterprise||p.enterprise===filters.enterprise)&&(!filters.projectId||String(p.projectId)===String(filters.projectId))&&(!query||[p.name,p.orderNo,p.enterprise].some(x=>x.toLocaleLowerCase('ru').includes(query))));
+    const selected=data.projects.filter(p=>(!filters.orderNo||p.orderNo===filters.orderNo)&&(!filters.enterprise||p.enterprise===filters.enterprise)&&(!filters.projectId||String(p.projectId)===String(filters.projectId))&&(!query||[p.name,p.orderNo,p.enterprise].some(x=>x.toLocaleLowerCase('ru').includes(query))));
     const rows=[],projects=[];
     for(const p of selected){
       const population=settings.countMode==='leaves'?isLeafStages(p.stages):p.stages;
@@ -63,7 +63,7 @@
     }
     const active=rows.filter(s=>s.status!=='done'),overdue=active.filter(s=>s.daysLeft<0),done=rows.filter(s=>s.status==='done');
     const group=(key)=>{const map=new Map();for(const row of rows){const name=row[key];if(!map.has(name))map.set(name,{name,total:0,active:0,overdue:0,held:0,done:0});const g=map.get(name);g.total++;if(row.status==='done')g.done++;else{g.active++;if(row.daysLeft<0)g.overdue++;if(row.status==='hold')g.held++;}}return [...map.values()].sort((a,b)=>b.overdue-a.overdue||b.active-a.active||a.name.localeCompare(b.name,'ru'));};
-    const projectIds=new Set(projects.map(p=>p.projectId));const events=data.events.filter(e=>projectIds.has(e.projectId)).sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt));
+    const projectIds=new Set(selected.map(p=>p.projectId));const events=data.events.filter(e=>projectIds.has(e.projectId)).sort((a,b)=>Date.parse(b.createdAt)-Date.parse(a.createdAt));
     return {asOf,horizon,projects,rows,active,overdue,done,events,enterprises:group('enterprise'),executors:group('executor'),counts:{projects:projects.length,activeProjects:projects.filter(p=>!p.projectDone).length,projectOverdue:projects.filter(p=>p.projectOverdue).length,total:rows.length,done:done.length,active:active.length,overdue:overdue.length,heldOverdue:overdue.filter(s=>s.status==='hold').length,hold:rows.filter(s=>s.status==='hold').length,today:active.filter(s=>s.daysLeft===0).length,dueSoon:active.filter(s=>s.daysLeft>=1&&s.daysLeft<=horizon).length,donePercent:rows.length?Math.round(done.length/rows.length*100):0},statuses:STATUSES.map(status=>({status,label:labels[status],count:rows.filter(s=>s.status===status).length})),calendar:Array.from({length:horizon+1},(_,i)=>({date:addDays(asOf,i),count:active.filter(s=>s.daysLeft===i).length})),quality:{emptyProjects:projects.filter(p=>!p.stages.length).length,afterProject:rows.filter(s=>s.deadline>s.projectDeadline).length,afterParent:rows.filter(s=>s.parentDeadline&&s.deadline>s.parentDeadline).length}};
   }
   function csvCell(value){let s=String(value??'');if(/^[\s]*[=+@-]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';}
@@ -71,7 +71,8 @@
     // Keep the whole order as denominator when one performer is highlighted.
     const all=analyse(data,{...filters,executor:''},settings);
     const orders=[...new Set(all.projects.map(p=>p.orderNo))].sort((a,b)=>a.localeCompare(b,'ru',{numeric:true}));
-    const orderNo=orders.includes(requestedOrder)?requestedOrder:orders[0]||'';
+    const requested=requestedOrder||filters.orderNo||'';
+    const orderNo=requested;
     const rows=all.rows.filter(s=>s.orderNo===orderNo),total=rows.length,doneTotal=rows.filter(s=>s.status==='done').length;
     const groups=new Map();
     for(const s of rows){if(!groups.has(s.executor))groups.set(s.executor,{executor:s.executor,assigned:0,done:0,overdue:0});const g=groups.get(s.executor);g.assigned++;if(s.status==='done')g.done++;else if(s.daysLeft<0)g.overdue++;}

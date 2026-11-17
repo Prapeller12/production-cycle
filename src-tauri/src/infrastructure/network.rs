@@ -137,6 +137,36 @@ impl NetworkRuntime {
 
     pub fn enabled(&self)->bool{self.enabled}
     pub fn shared_backups(&self)->Option<PathBuf>{self.shared_root.as_ref().map(|root|root.join("shared/backups"))}
+    /// Preferences use JSON beside the shared snapshots, never an SMB SQLite connection.
+    pub(crate) fn preferences_root(&self)->Option<PathBuf>{self.shared_root.as_ref().map(|root|root.join("shared/preferences"))}
+
+    /// Hold the admitted session through a personal-settings operation so logout
+    /// cannot release its slot halfway through a commit. Reads may fall back to
+    /// the durable local cache only when the SMB identity check itself failed.
+    pub(crate) fn with_statistics_profile<T>(&self,user_id:i64,allow_offline:bool,operation:impl FnOnce(Option<String>)->Result<T,String>)->Result<T,String>{
+        if !self.enabled{return operation(None)}
+        let mut guard=self.session.lock().map_err(|_|"Состояние сетевой сессии повреждено")?;
+        let active=guard.as_ref().ok_or("Сетевой сеанс завершён. Войдите повторно.")?;
+        if active.metadata.user_id!=Some(user_id){return Err("Настройки доступны только владельцу вошедшего профиля.".into())}
+        match self.session_is_current(active){
+            Ok(true)=>{
+                if self.root()?.join("shared/control").join(format!("{}.evict",active.metadata.session_id)).is_file(){return Err("Получен запрос завершения сеанса. Сохраните локальный черновик.".into())}
+                operation(None)
+            },
+            Ok(false)=>{self.release_session(&mut guard)?;Err("Сетевой сеанс завершён или его место потеряно. Войдите повторно.".into())},
+            Err(error) if allow_offline=>operation(Some(format!("Общая папка недоступна; показана локальная копия настроек: {error}"))),
+            Err(error)=>Err(error),
+        }
+    }
+
+    /// An already admitted native profile may preserve its local draft during
+    /// an SMB outage/eviction; bootstrap and a released slot have no owner.
+    pub(crate) fn with_statistics_local_profile<T>(&self,user_id:i64,operation:impl FnOnce()->Result<T,String>)->Result<T,String>{
+        if !self.enabled{return operation()}
+        let guard=self.session.lock().map_err(|_|"Состояние сетевой сессии повреждено")?;
+        if guard.as_ref().and_then(|active|active.metadata.user_id)!=Some(user_id){return Err("Войдите под своим профилем перед работой с черновиком.".into())}
+        operation()
+    }
     fn root(&self)->Result<&Path,String>{self.shared_root.as_deref().ok_or_else(||"Сетевой режим не включён.".to_string())}
     fn shared_database(&self)->Result<PathBuf,String>{Ok(self.root()?.join("shared/database/production-cycle.db"))}
     fn store_lock_path(&self)->Result<PathBuf,String>{Ok(self.root()?.join("shared/database/store.lock"))}
@@ -891,6 +921,21 @@ mod tests{
         client.release().unwrap();called=false;
         assert!(client.with_write(&db,||{called=true;Ok(())}).is_err());assert!(!called);
         drop((client,db));let _=fs::remove_dir_all(root);
+    }
+    #[test]fn statistics_preferences_require_the_admitted_owner_and_release_revokes_local_drafts(){
+        let root=env::temp_dir().join(format!("statistics-network-owner-{}",Uuid::new_v4()));
+        let client=runtime(&root,"client");let mut called=false;
+        assert!(client.with_statistics_profile(1,true,|_|{called=true;Ok(())}).is_err());assert!(!called);
+        client.login(None).unwrap();
+        assert!(client.with_statistics_profile(1,true,|_|Ok(())).is_err());
+        assert!(client.with_statistics_local_profile(1,||Ok(())).is_err());
+        client.login(Some(user(1,"reviewer"))).unwrap();
+        client.with_statistics_profile(1,false,|warning|{assert!(warning.is_none());Ok(())}).unwrap();
+        assert!(client.with_statistics_profile(2,true,|_|Ok(())).is_err());
+        client.with_statistics_local_profile(1,||Ok(())).unwrap();client.release().unwrap();
+        assert!(client.with_statistics_local_profile(1,||Ok(())).is_err());
+        assert!(client.with_statistics_profile(1,true,|_|Ok(())).is_err());
+        drop(client);let _=fs::remove_dir_all(root);
     }
     #[test]fn invalid_initialization_marker_never_reports_success_or_replaces_valid_snapshot(){
         let root=env::temp_dir().join(format!("production-store-invalid-marker-{}",Uuid::new_v4()));

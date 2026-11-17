@@ -176,5 +176,9 @@
   }
   async function saveStatisticsFile(name,text){if(!native())throw Error('Экспорт доступен в программе.');return invoke('save_statistics_file',{name,text});}
   async function printStatistics(){if(!native())return window.print();return invoke('print_report');}
-  Production.backend=Object.freeze({saveStatisticsFile,printStatistics,native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report,excelTemplate,importExcel,claimOnboarding});
+  async function loadStatisticsPreferences(){if(!window.ProductionDesktop)throw Error('Персональные настройки доступны в текущем EXE.');return invoke('statistics_preferences_load');}
+  async function saveStatisticsPreferences(settings,expectedRevision,ownerToken){return invoke('statistics_preferences_save',{settings,expectedRevision,ownerToken});}
+  async function saveStatisticsPreferencesDraft(settings,expectedRevision,ownerToken){return invoke('statistics_preferences_save_draft',{settings,expectedRevision,ownerToken});}
+  async function clearStatisticsPreferencesDraft(ownerToken){return invoke('statistics_preferences_clear_draft',{ownerToken});}
+  Production.backend=Object.freeze({loadStatisticsPreferences,saveStatisticsPreferences,saveStatisticsPreferencesDraft,clearStatisticsPreferencesDraft,saveStatisticsFile,printStatistics,native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report,excelTemplate,importExcel,claimOnboarding});
 })();

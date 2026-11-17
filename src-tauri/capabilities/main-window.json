@@ -1,0 +1,11 @@
+{
+  "identifier": "main-window-lifecycle",
+  "description": "Confirm unsaved personal dashboard layout before closing the native main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-close",
+    "core:window:allow-destroy"
+  ]
+}
