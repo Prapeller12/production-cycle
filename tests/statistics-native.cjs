@@ -28,23 +28,35 @@ module.exports=async(page,out,root)=>{
  await page.keyboard.press('Escape');await page.waitForSelector(action('save-settings'),{state:'detached'});assert.equal(await page.locator(action('save-settings')).count(),0,'Escape outside a drag cancels the layout draft');assert.deepEqual((await preferences(page)).settings,before.settings);
  await showAllWidgets(page);assert.equal(await page.locator(S+'.pc-widget').count(),9,'Every existing widget remains available');
  await edit(page);
+ // Bring both adjacent headers into view before pressing; avoid scrolling before the drag threshold.
+ await page.locator(widget('enterprises')+' .pc-widget-head').evaluate(e=>e.scrollIntoView({block:'center',inline:'nearest'}));
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  // Keep the real pointer drag: capture trusted native events, handles and viewport geometry for either outcome.
  await page.evaluate(()=>{
   const mount=document.getElementById('statisticsMount'),events=[];
   const describe=e=>{if(!e)return null;const r=e.getBoundingClientRect(),style=getComputedStyle(e);return {tag:e.tagName,draggable:e.draggable,disabled:!!e.disabled,pointerEvents:style.pointerEvents,visibility:style.visibility,display:style.display,rect:{x:r.x,y:r.y,width:r.width,height:r.height}}};
-  window.__statisticsDragSnapshot=()=>({viewport:{width:innerWidth,height:innerHeight,scrollX,scrollY},editing:mount.dataset.editing,order:[...mount.querySelectorAll('.pc-widget')].map(e=>e.dataset.widget),source:describe(mount.querySelector('.pc-widget[data-widget="participation"] [data-drag="participation"]')),target:describe(mount.querySelector('.pc-widget[data-widget="enterprises"]'))});
-  const record=phase=>e=>{if(events.length>=500)return;let data=null;try{data=e.dataTransfer?.getData('text/plain')??null}catch{}events.push({type:e.type,phase,trusted:e.isTrusted,defaultPrevented:e.defaultPrevented,tag:e.target.tagName,drag:e.target.closest?.('[data-drag]')?.dataset.drag,widget:e.target.closest?.('[data-drop-widget]')?.dataset.dropWidget,x:e.clientX,y:e.clientY,buttons:e.buttons,scrollX,scrollY,types:e.dataTransfer?[...e.dataTransfer.types]:[],data});};
-  const capture=record('capture'),bubble=record('bubble'),types=['pointerdown','mousedown','pointerup','mouseup','dragstart','dragenter','dragover','drop','dragend'];
+  window.__statisticsDragSnapshot=()=>({viewport:{width:innerWidth,height:innerHeight,scrollX,scrollY},editing:mount.dataset.editing,order:[...mount.querySelectorAll('.pc-widget')].map(e=>e.dataset.widget),source:describe(mount.querySelector('.pc-widget[data-widget="participation"] [data-drag="participation"]')),target:describe(mount.querySelector('.pc-widget[data-widget="enterprises"] .pc-widget-head')),targetCard:describe(mount.querySelector('.pc-widget[data-widget="enterprises"]'))});
+  const record=phase=>e=>{if(events.length>=1000)return;let data=null;try{data=e.dataTransfer?.getData('text/plain')??null}catch{}events.push({type:e.type,phase,trusted:e.isTrusted,defaultPrevented:e.defaultPrevented,tag:e.target.tagName,drag:e.target.closest?.('[data-drag]')?.dataset.drag,widget:e.target.closest?.('[data-drop-widget]')?.dataset.dropWidget,x:e.clientX,y:e.clientY,buttons:e.buttons,scrollX,scrollY,types:e.dataTransfer?[...e.dataTransfer.types]:[],data});};
+  const capture=record('capture'),bubble=record('bubble'),types=['pointermove','mousemove','pointerdown','mousedown','pointerup','mouseup','dragstart','dragenter','dragover','drop','dragend'];
   for(const type of types){document.addEventListener(type,capture,true);document.addEventListener(type,bubble);}
   window.__statisticsDragTrace={before:window.__statisticsDragSnapshot(),events};
   window.__statisticsDragCleanup=()=>{for(const type of types){document.removeEventListener(type,capture,true);document.removeEventListener(type,bubble);}};
  });
  const dragBefore=await page.evaluate(()=>window.__statisticsDragTrace.before);assert.equal(dragBefore.source.draggable,true);assert.equal(dragBefore.source.disabled,false);
- await page.screenshot({path:path.join(out,'native-statistics-drag-before.png')});let dragError,dragProof;
- try{await page.dragAndDrop(widget('participation')+' [data-drag="participation"]',widget('enterprises'));}catch(error){dragError=error;}
+ for(const [name,element]of [['source',dragBefore.source],['target header',dragBefore.target]]){const r=element.rect;assert.ok(r.width>0&&r.height>0&&r.x>=0&&r.y>=0&&r.x+r.width<=dragBefore.viewport.width&&r.y+r.height<=dragBefore.viewport.height,name+' must be fully visible before mouse-down');}
+ const sourcePoint={x:dragBefore.source.rect.x+dragBefore.source.rect.width/2,y:dragBefore.source.rect.y+dragBefore.source.rect.height/2},targetPoint={x:dragBefore.target.rect.x+dragBefore.target.rect.width/2,y:dragBefore.target.rect.y+dragBefore.target.rect.height/2};
+ const hits=await page.evaluate(({sourcePoint,targetPoint})=>({source:document.elementFromPoint(sourcePoint.x,sourcePoint.y)?.closest('[data-drag]')?.dataset.drag,target:document.elementFromPoint(targetPoint.x,targetPoint.y)?.closest('[data-drop-widget]')?.dataset.dropWidget}),{sourcePoint,targetPoint});assert.deepEqual(hits,{source:'participation',target:'enterprises'});
+ await page.screenshot({path:path.join(out,'native-statistics-drag-before.png')});let dragError,dragProof,mouseHeld=false;
+ try{
+  await page.mouse.move(sourcePoint.x,sourcePoint.y);await page.mouse.down();mouseHeld=true;
+  await page.mouse.move(sourcePoint.x+12,sourcePoint.y,{steps:6});
+  await page.waitForFunction(()=>window.__statisticsDragTrace.events.some(e=>e.type==='dragstart'&&e.trusted&&e.drag==='participation'),null,{timeout:5000});
+  await page.mouse.move(targetPoint.x,targetPoint.y,{steps:24});await page.mouse.move(targetPoint.x+1,targetPoint.y+1);await page.mouse.up();mouseHeld=false;
+ }catch(error){dragError=error;}
  finally{
+  if(mouseHeld)await page.mouse.up().catch(()=>{});
   dragProof=await page.evaluate(()=>{const proof={...window.__statisticsDragTrace,after:window.__statisticsDragSnapshot()};window.__statisticsDragCleanup();delete window.__statisticsDragCleanup;delete window.__statisticsDragSnapshot;delete window.__statisticsDragTrace;return proof;});
-  fs.writeFileSync(path.join(out,'native-statistics-drag.json'),JSON.stringify(dragProof,null,2));await page.screenshot({path:path.join(out,'native-statistics-drag-after.png')});
+  dragProof.gesture={sourcePoint,targetPoint,thresholdPixels:12,driver:'real mouse down/move/up; both headers visible before press'};fs.writeFileSync(path.join(out,'native-statistics-drag.json'),JSON.stringify(dragProof,null,2));await page.screenshot({path:path.join(out,'native-statistics-drag-after.png')});
  }
  if(dragError)throw dragError;
  assert.ok(dragProof.events.some(e=>e.type==='dragstart'&&e.trusted&&e.drag==='participation'),'Real dragstart missing; inspect native-statistics-drag.json');
