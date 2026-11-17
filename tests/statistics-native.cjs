@@ -1,7 +1,7 @@
 'use strict';
 // Called only by local-window.cjs against the actual packaged EXE, SQLite and native IPC.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {S,action,widget,openStatistics,edit,save,preferences,showAllWidgets,seed,setFilter,width,expectSaved}=require('./statistics-native-helpers.cjs');
+const {S,action,widget,openStatistics,edit,cancel,save,preferences,showAllWidgets,seed,setFilter,width,expectSaved}=require('./statistics-native-helpers.cjs');
 module.exports=async(page,out,root)=>{
  assert.equal(await page.locator('#ganttTab').evaluate(e=>e.nextElementSibling.id),'statisticsTab');
  const fixture=await seed(page);await openStatistics(page);
@@ -15,14 +15,19 @@ module.exports=async(page,out,root)=>{
  await page.click(action('move-down','participation'));
  assert.equal(await page.locator(action('move-down','participation')).evaluate(e=>e===document.activeElement),true,'Move preserves keyboard focus on the same block');
  await page.click('#registryTab');await page.waitForSelector(action('leave-continue'));await page.click(action('leave-continue'));assert.equal(await page.locator('#statisticsTab').getAttribute('aria-selected'),'true','Continue editing keeps Statistics active');
- await page.click(action('cancel-settings'));
+ await cancel(page);
  assert.deepEqual(await page.locator(S+'.pc-widget').evaluateAll(nodes=>nodes.map(e=>e.dataset.widget)),originalOrder,'Cancel restores confirmed layout');
  assert.deepEqual((await preferences(page)).settings,before.settings,'Cancel performs no confirmed native settings write');
  await edit(page);await page.click(action('move-down','participation'));await page.click(action('move-up','participation'));
  assert.equal(await page.evaluate(()=>document.activeElement?.closest('[data-drop-widget]')?.dataset.dropWidget),'participation','Moving to the first position preserves focus within the same block');assert.equal(await page.evaluate(()=>!!document.activeElement?.disabled),false,'Boundary move never leaves focus on a disabled control');
- await page.locator(S+'[data-widget-toggle="enterprises"]').uncheck();await page.keyboard.press('Escape');assert.equal(await page.locator(action('save-settings')).count(),0,'Escape outside a drag cancels the layout draft');assert.deepEqual((await preferences(page)).settings,before.settings);
+ await page.locator(S+'[data-widget-toggle="enterprises"]').uncheck();
+ const draftBeforeDrag=await page.locator(S+'.pc-widget').evaluateAll(nodes=>nodes.map(e=>e.dataset.widget)),transfer=await page.evaluateHandle(()=>new DataTransfer());
+ await page.locator(widget('participation')+' [data-drag="participation"]').dispatchEvent('dragstart',{dataTransfer:transfer});await page.keyboard.press('Escape');
+ assert.equal(await page.locator(action('save-settings')).count(),1,'Escape during a drag keeps the layout editor open');assert.deepEqual(await page.locator(S+'.pc-widget').evaluateAll(nodes=>nodes.map(e=>e.dataset.widget)),draftBeforeDrag,'Cancelling a drag preserves the existing draft');
+ await page.locator(widget('participation')+' [data-drag="participation"]').dispatchEvent('dragend',{dataTransfer:transfer});await transfer.dispose();
+ await page.keyboard.press('Escape');await page.waitForSelector(action('save-settings'),{state:'detached'});assert.equal(await page.locator(action('save-settings')).count(),0,'Escape outside a drag cancels the layout draft');assert.deepEqual((await preferences(page)).settings,before.settings);
  await showAllWidgets(page);assert.equal(await page.locator(S+'.pc-widget').count(),9,'Every existing widget remains available');
- await edit(page);await page.dragAndDrop(widget('participation')+' [data-drag="participation"]',widget('enterprises'));assert.notEqual((await page.locator(S+'.pc-widget').evaluateAll(nodes=>nodes.map(e=>e.dataset.widget)))[0],'participation','Dragging a visible block header reorders its preview');await page.click(action('cancel-settings'));
+ await edit(page);await page.dragAndDrop(widget('participation')+' [data-drag="participation"]',widget('enterprises'));assert.notEqual((await page.locator(S+'.pc-widget').evaluateAll(nodes=>nodes.map(e=>e.dataset.widget)))[0],'participation','Dragging a visible block header reorders its preview');await cancel(page);
  await edit(page);await page.click(action('move-down','participation'));
  await page.evaluate(()=>window.__buttonDownloads=[]);await page.click(action('export-settings'));await page.waitForFunction(()=>window.__buttonDownloads.some(x=>x.name==='statistics-settings.json'));
  const exportedSettings=await page.evaluate(()=>JSON.parse(window.__buttonDownloads.find(x=>x.name==='statistics-settings.json').text.replace(/^\uFEFF/,'')));assert.equal(exportedSettings.version,2);assert.notEqual(exportedSettings.widgets[0].id,'participation');await save(page);
@@ -68,8 +73,12 @@ module.exports=async(page,out,root)=>{
  await page.pdf({path:path.join(out,'native-statistics.pdf'),preferCSSPageSize:true,printBackground:true});await page.emulateMedia({media:null});await page.evaluate(()=>window.dispatchEvent(new Event('afterprint')));
  assert.equal(await page.locator('body').evaluate(e=>e.classList.contains('print-statistics')),false);assert.equal(await previewRows.count(),3,'Normal preview restored after print');
  await page.screenshot({path:path.join(out,'native-statistics.png'),fullPage:true});
+ // A real Tauri close request must keep the EXE open when the user continues editing.
+ await edit(page);await page.locator(S+'[data-widget-toggle="enterprises"]').uncheck();const beforeClose=await preferences(page);
+ await page.evaluate(()=>window.__TAURI__.window.getCurrentWindow().close());await page.waitForSelector(action('leave-continue'));await page.click(action('leave-continue'));await page.waitForSelector(action('leave-continue'),{state:'detached'});
+ assert.equal(page.isClosed(),false);assert.equal(await page.locator(action('save-settings')).count(),1,'Continue editing after native close retains the draft');assert.equal(await page.locator(S+'[data-widget-toggle="enterprises"]').isChecked(),false);assert.deepEqual((await preferences(page)).settings,beforeClose.settings,'Native close guard does not silently save the draft');await cancel(page);
  // Follow a real saved project link without replacing the current registry draft.
  await page.click(widget('portfolio')+' [data-action="detail"]');await page.click(action('open-host'));await page.waitForFunction(()=>document.getElementById('registryTab').getAttribute('aria-selected')==='true');
- const summary={source:'packaged EXE / real native IPC / local SQLite',seededProjects:6,seededStages:105,participationMembers:5,percentExample:{share:'1 / 5 * 100 = 20%',completion:'1 / 1 * 100 = 100%'},singleEditor:true,explicitCancelSave:true,reorder:true,dragReorder:true,escapeCancel:true,leaveContinue:true,boundaryMoveFocus:true,fullWidthCompleteBarTable:true,equalHalfCards:true,filtersRetainedOnRefresh:true,allOrdersNoAutoselection:true,csvFullScopeRows:100,settingsNativeWrite:true,fullTable100Rows:true,invalidExportsRejected:true,statisticsPDFFullScope:true,largeFontFocus:true,projectNavigation:true,tabReopenRetained:true,processRestart:'verified separately by statistics-preferences-native.cjs'};
+ const summary={source:'packaged EXE / real native IPC / local SQLite',seededProjects:6,seededStages:105,participationMembers:5,percentExample:{share:'1 / 5 * 100 = 20%',completion:'1 / 1 * 100 = 100%'},singleEditor:true,explicitCancelSave:true,reorder:true,dragReorder:true,escapeCancel:true,dragEscapeKeepsDraft:true,leaveContinue:true,nativeCloseContinue:true,boundaryMoveFocus:true,fullWidthCompleteBarTable:true,equalHalfCards:true,filtersRetainedOnRefresh:true,allOrdersNoAutoselection:true,csvFullScopeRows:100,settingsNativeWrite:true,fullTable100Rows:true,invalidExportsRejected:true,statisticsPDFFullScope:true,largeFontFocus:true,projectNavigation:true,tabReopenRetained:true,processRestart:'verified separately by statistics-preferences-native.cjs'};
  fs.writeFileSync(path.join(out,'native-statistics.json'),JSON.stringify(summary,null,2));console.log('PASS native statistics',summary);return summary;
 };

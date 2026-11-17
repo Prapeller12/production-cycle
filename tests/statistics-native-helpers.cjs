@@ -11,10 +11,16 @@ async function openStatistics(page){
  await page.waitForFunction(()=>!document.querySelector('#statisticsMount [data-action="settings"]')?.disabled);
 }
 async function edit(page){await page.click(action('settings'));await page.waitForSelector(action('save-settings'));}
+async function cancel(page){await page.click(action('cancel-settings'));await page.waitForSelector(action('save-settings'),{state:'detached'});}
 async function save(page){await page.click(action('save-settings'));await page.waitForSelector(action('save-settings'),{state:'detached'});}
 async function preferences(page){return page.evaluate(()=>window.__TAURI__.core.invoke('statistics_preferences_load'));}
 async function login(page,userId){
- await page.evaluate(()=>document.querySelector('[data-close="onboardingModal"]')?.click());
+ await page.evaluate(()=>{
+  const modal=document.getElementById('onboardingModal');
+  const dismiss=()=>{if(modal.classList.contains('open'))modal.querySelector('[data-close="onboardingModal"]').click();};
+  if(!window.__statisticsOnboardingObserver){window.__statisticsOnboardingObserver=new MutationObserver(dismiss);window.__statisticsOnboardingObserver.observe(modal,{attributes:true,attributeFilter:['class']});}
+  dismiss();
+ });
  if(!(await page.locator('#networkLoginModal').evaluate(e=>e.classList.contains('open'))))await page.click('#networkLogoutBtn');
  await page.waitForFunction(()=>document.getElementById('networkLoginModal').classList.contains('open')&&!document.getElementById('networkLoginBtn').disabled);
  await page.locator('#networkLoginUser').selectOption(String(userId));await page.fill('#networkLoginPin','739201');await page.click('#networkLoginBtn');
@@ -49,4 +55,4 @@ async function seed(page){
 async function setFilter(page,name,value){await page.locator(S+'[data-filter="'+name+'"]').selectOption(value);}
 async function width(page,id,value){await edit(page);await page.locator(S+'[data-widget-width="'+id+'"]').selectOption(value);await save(page);}
 async function expectSaved(page){const p=await preferences(page);assert.equal(p.state,'loaded');assert.equal(p.settings?.version,2);assert.ok(p.revision>=1);return p;}
-module.exports={S,action,widget,openStatistics,edit,save,preferences,login,showAllWidgets,seed,setFilter,width,expectSaved};
+module.exports={S,action,widget,openStatistics,edit,cancel,save,preferences,login,showAllWidgets,seed,setFilter,width,expectSaved};

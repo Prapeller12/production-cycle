@@ -44,6 +44,14 @@ async function launch(fixture,clientIndex,phase,summary){
   assert.equal(run.startup.client.frontendReady,true);assert.equal(run.startup.client.windowVisible,true);
   for(const value of [run.smoke.runtime,run.smoke.profile,run.smoke.database,run.startup.cache,run.startup.recovery]){localPath(value);assert.ok(within(profile,value),phase+' must use its own local client tree');}
   assert.ok(!samePath(run.startup.sharedRoot,run.startup.cache));
+  // A newly created identity schedules onboarding after login has already
+  // resolved. Dismiss that tutorial through its real close button whenever it
+  // appears, so it cannot race the first Statistics tab click for profiles A/B.
+  await run.page.evaluate(()=>{
+   const modal=document.getElementById('onboardingModal');
+   const dismiss=()=>{if(modal.classList.contains('open'))modal.querySelector('[data-close="onboardingModal"]').click();};
+   const observer=new MutationObserver(dismiss);observer.observe(modal,{attributes:true,attributeFilter:['class']});dismiss();
+  });
   run.pageErrors=[];run.page.on('pageerror',error=>run.pageErrors.push(cleanError(error)));
   assert.ok(Number.isSafeInteger(run.smoke.processId)&&run.smoke.processId>0);
   run.record={phase,client:clientIndex+1,launcherPid:child.pid,nativePid:run.smoke.processId,cache:run.startup.cache,recovery:run.startup.recovery,runtime:run.smoke.runtime,webviewProfile:run.smoke.profile,sqliteDirectory:run.smoke.database,visibleNativeWindow:true,frontendReady:true};summary.launches.push(run.record);

@@ -16,7 +16,7 @@ async function launch(root){
   browser=await chromium.connectOverCDP('http://127.0.0.1:'+port);
   page=await wait(()=>browser.contexts()[0].pages().find(p=>p.url().includes('production.localhost')),'statistics custom protocol page');
   await wait(()=>fs.existsSync(report),'statistics startup smoke report');const smoke=JSON.parse(fs.readFileSync(report,'utf8'));assert.equal(smoke.ok,true,JSON.stringify(smoke));assert.equal(smoke.frontendReady,true);
-  await page.evaluate(()=>clearInterval(window.__smokeHoldTimer));
+  await page.waitForFunction(()=>window.__smokeDone&&window.__smokeHoldTimer);await page.evaluate(()=>clearInterval(window.__smokeHoldTimer));
   return {child,browser,page,port,smoke};
  }catch(error){await stop({child,browser,page});throw error}
 }
