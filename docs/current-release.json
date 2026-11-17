@@ -1,30 +1,30 @@
 {
   "application": "ProductionCycle",
   "architecture": "native-exe-with-shared-folder",
-  "artifact": "ProductionCycle_Statistics_2026-11-15.zip",
-  "artifactSizeBytes": 389787942,
-  "artifactSHA256": "1bf55f14679d5f2964c3e7fa672433d57b8c06645974dc51bd5103d6bd3eb8ac",
-  "manifestVersion": "native-startup-52f80c9",
-  "nativeSourceCommit": "52f80c912ff803922f80bc4e7048a37f7a18f889",
-  "packageSourceCommit": "52f80c912ff803922f80bc4e7048a37f7a18f889",
-  "sourceHeadCommit": "5ea612a1785b202cc9f7bd0e4290cde064aea185",
-  "integrationMergeCommit": "db2463d480753ce37c895b267a1d6d48f4e65706",
-  "integrationBaseCommit": "49a4c7289bf02a855e09d05d92f32024c91c32fd",
+  "artifact": "ProductionCycle_Statistics_Personal_2026-11-17.zip",
+  "artifactSizeBytes": 389875897,
+  "artifactSHA256": "6c6f8f3f1ca904f2a8d1640d72e189ac88dba12ab077eb131db54be19a61fa6e",
+  "manifestVersion": "native-startup-ffa5ff3",
+  "nativeSourceCommit": "ffa5ff3abd3c0aab5b025bd7b29e789f8d7f7b64",
+  "packageSourceCommit": "ffa5ff3abd3c0aab5b025bd7b29e789f8d7f7b64",
+  "sourceHeadCommit": "f4f0222c0229f653edff0ee785ac6a0c2645d43b",
+  "integrationMergeCommit": "d100ec390beb6df87e5c68b23f076932a9ef3ece",
+  "integrationBaseCommit": "f60e9201387c049c1f9566d2377242ac6216f548",
   "maxSharedSessions": 3,
-  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-01d69f2e66d8819190ecd04ab0b24ce5_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
+  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-ce079d4260f88191bb41826a6cfeb7b3_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
   "artifactAccess": "Issued file in the owner's ChatGPT account; not a public GitHub release asset",
-  "passport": "passport/ProductionCycle_Statistics_Addendum_2026-11-15.md",
+  "passport": "passport/ProductionCycle_Statistics_Personal_Addendum_2026-11-17.md",
   "dashboardGuide": "statistics-dashboard.md",
   "verifiedRuns": [
-    "https://github.com/Prapeller12/production-cycle/actions/runs/43686377639"
+    "https://github.com/Prapeller12/production-cycle/actions/runs/44089796999"
   ],
   "verifiedPlatforms": [
     "Windows Server 2022",
     "Windows Server 2025"
   ],
   "checks": {
-    "jsTests": 61,
-    "rustTests": 71,
+    "jsTests": 75,
+    "rustTests": 82,
     "staticButtons": 63,
     "dynamicControls": 14,
     "mainUIScenarios": 19,
@@ -35,21 +35,50 @@
     "standardWindowsAccount": true,
     "desktopShortcut": true,
     "cmdLauncher": true,
-    "offlineLocalLaunchWindowsServer2022": true
+    "offlineLocalLaunchWindowsServer2022": true,
+    "personalStatisticsLayout": true,
+    "fullWidthLegacyTableAndBars": true,
+    "trustedPointerDragReorders": true,
+    "equalHalfCardGeometry": true,
+    "nativeCloseContinueAndShortcutExit": true,
+    "profileIsolationAfterFullProcessRestart": true,
+    "sharedPreferencesAcrossIndependentClientCaches": true,
+    "sharedPreferenceRevisionConflict": true,
+    "sharedFileReadAndReplacementDenial": true,
+    "calendarHorizons": [
+      7,
+      14,
+      30
+    ],
+    "calendarDaysIncludingCalculationDate": [
+      8,
+      15,
+      31
+    ],
+    "csvFilteredRows": 100,
+    "largeFontComponentStressViewportCssPx": 320
   },
   "packageVerification": {
     "immutableFiles": 620,
     "frontendFilesMatchRepositoryAfterWindowsCheckoutEOL": 66,
     "checkoutLineEndingDifferences": 48,
-    "exeSHA256": "bced8d560a80430db69a68cad793c32055e3c728b4518fc373665b6401e75fa6",
-    "userDatabaseIncluded": false
+    "exeSHA256": "6123262513b3a0936c67af30cfcc0f0a9bed86458d9a164c0add24580cbcc687",
+    "userDatabaseIncluded": false,
+    "statisticsGuideIncluded": true
   },
   "notVerified": [
     "Clean Windows 10/11 on owner hardware",
     "Owner Windows Server 2019 and SMB environment",
-    "Physical printer"
+    "Physical printer",
+    "Two physical client computers on the owner network",
+    "Physical Windows DPI configurations"
   ],
-  "previousReleaseRecord": "releases/ProductionCycle_FINAL_2026-11-13.json",
-  "documentationDate": "2026-11-15",
-  "note": "The issued ZIP is the unchanged Windows Server 2022 build from the verified PR merge tree. The PR merge tree and source branch tree matched exactly. Later main rebuilds have their own source identifiers and checksums. Dashboards read saved projects sequentially, not an atomic historical snapshot."
+  "previousReleaseRecord": "releases/ProductionCycle_Statistics_2026-11-15.json",
+  "documentationDate": "2026-11-17",
+  "note": "The issued ZIP is an unchanged byte copy of the Windows Server 2022 artifact from the successful run. Tested PR checkout, source branch, local source and integration merge had the same source tree. Release metadata and documentation may be updated after packaging. Later rebuilds have their own identifiers and checksums. Dashboard reads are sequential saved-project reads, not an atomic historical snapshot.",
+  "sourceTree": "d9747d0c70ecf54ba9941ffddb046c3a50d1ab4c",
+  "testEnvironmentLimits": [
+    "Two independent SMB client cache roots on one physical CI host per Windows version",
+    "Windows CSS viewport stress test does not verify Windows DPI scaling or the entire host UI at 320px"
+  ]
 }

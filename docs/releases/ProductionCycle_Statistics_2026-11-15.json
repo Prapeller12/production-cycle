@@ -1,0 +1,55 @@
+{
+  "application": "ProductionCycle",
+  "architecture": "native-exe-with-shared-folder",
+  "artifact": "ProductionCycle_Statistics_2026-11-15.zip",
+  "artifactSizeBytes": 389787942,
+  "artifactSHA256": "1bf55f14679d5f2964c3e7fa672433d57b8c06645974dc51bd5103d6bd3eb8ac",
+  "manifestVersion": "native-startup-52f80c9",
+  "nativeSourceCommit": "52f80c912ff803922f80bc4e7048a37f7a18f889",
+  "packageSourceCommit": "52f80c912ff803922f80bc4e7048a37f7a18f889",
+  "sourceHeadCommit": "5ea612a1785b202cc9f7bd0e4290cde064aea185",
+  "integrationMergeCommit": "db2463d480753ce37c895b267a1d6d48f4e65706",
+  "integrationBaseCommit": "49a4c7289bf02a855e09d05d92f32024c91c32fd",
+  "maxSharedSessions": 3,
+  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-01d69f2e66d8819190ecd04ab0b24ce5_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
+  "artifactAccess": "Issued file in the owner's ChatGPT account; not a public GitHub release asset",
+  "passport": "passport/ProductionCycle_Statistics_Addendum_2026-11-15.md",
+  "dashboardGuide": "statistics-dashboard.md",
+  "verifiedRuns": [
+    "https://github.com/Prapeller12/production-cycle/actions/runs/43686377639"
+  ],
+  "verifiedPlatforms": [
+    "Windows Server 2022",
+    "Windows Server 2025"
+  ],
+  "checks": {
+    "jsTests": 61,
+    "rustTests": 71,
+    "staticButtons": 63,
+    "dynamicControls": 14,
+    "mainUIScenarios": 19,
+    "pdfFormats": 8,
+    "nativeStatistics": true,
+    "excel": true,
+    "smbUNC": true,
+    "standardWindowsAccount": true,
+    "desktopShortcut": true,
+    "cmdLauncher": true,
+    "offlineLocalLaunchWindowsServer2022": true
+  },
+  "packageVerification": {
+    "immutableFiles": 620,
+    "frontendFilesMatchRepositoryAfterWindowsCheckoutEOL": 66,
+    "checkoutLineEndingDifferences": 48,
+    "exeSHA256": "bced8d560a80430db69a68cad793c32055e3c728b4518fc373665b6401e75fa6",
+    "userDatabaseIncluded": false
+  },
+  "notVerified": [
+    "Clean Windows 10/11 on owner hardware",
+    "Owner Windows Server 2019 and SMB environment",
+    "Physical printer"
+  ],
+  "previousReleaseRecord": "releases/ProductionCycle_FINAL_2026-11-13.json",
+  "documentationDate": "2026-11-15",
+  "note": "The issued ZIP is the unchanged Windows Server 2022 build from the verified PR merge tree. The PR merge tree and source branch tree matched exactly. Later main rebuilds have their own source identifiers and checksums. Dashboards read saved projects sequentially, not an atomic historical snapshot."
+}
