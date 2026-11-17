@@ -63,6 +63,8 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'UI tools unavailable'}
           node tests/local-window.cjs
           if($LASTEXITCODE -ne 0){throw 'Native UI regression'}
+          node tests/statistics-preferences-native.cjs
+          if($LASTEXITCODE -ne 0){throw 'Personal statistics settings restart regression'}
           python -m pip install --disable-pip-version-check pymupdf==1.26.7
           if($LASTEXITCODE -ne 0){throw 'PDF tools unavailable'}
           python tests/verify-local-pdf.py dist/local-window-qa
@@ -76,6 +78,12 @@ jobs:
       - name: UNC fallback CMD launcher with signed persistence
         shell: pwsh
         run: ./scripts/test-final-launcher.ps1 -Zip ./dist/native-share/ProductionCycle-native-share-windows-x64.zip
+      - name: Personal statistics settings across independent SMB clients
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $version='native-startup-'+$env:GITHUB_SHA.Substring(0,7)
+          ./scripts/test-statistics-shared-preferences.ps1 -Zip ./dist/native-share/ProductionCycle-native-share-windows-x64.zip -Version $version
       - name: Offline local EXE with system-only PATH
         if: matrix.os == 'windows-2022'
         shell: pwsh
@@ -98,6 +106,7 @@ jobs:
             dist/startup-qa/**
             dist/final-evidence/**
             dist/local-window-qa/**
+            dist/statistics-shared-qa/**
             ${{ env.LOCAL_TEST_ROOT }}/temp/self-test*.json
             ${{ runner.temp }}/Сетевая проверка программы/network-*.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

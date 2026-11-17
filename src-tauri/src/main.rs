@@ -6,6 +6,7 @@ mod smoke;
 mod infrastructure;
 mod production;
 mod local_desktop;
+mod statistics_preferences;
 #[path="../../server/src/excel_import.rs"]
 mod excel_import;
 #[path="../../server/src/ui_preferences.rs"]
@@ -47,6 +48,7 @@ fn main(){
     let db=match ProductionDb::open_with_backup_dir(&local_db,network.shared_backups()){Ok(db)=>db,Err(e)=>startup_failure(&e.to_string())};
     if let Err(e)=network.ensure_shared_database(&db){startup_failure(&e)}
     if infrastructure::startup::cancelled(){return}
+    let preferences=statistics_preferences::StatisticsPreferences::new(&paths,&network);
     let network_enabled=network.enabled();
     let frontend=paths.frontend.clone();
     let smoke=std::env::args().any(|arg|arg=="--smoke-test");
@@ -55,6 +57,7 @@ fn main(){
         .manage(paths)
         .manage(db)
         .manage(network)
+        .manage(preferences)
         .manage(local_desktop::LocalSession::default())
         .manage(smoke::Smoke(smoke))
         .register_uri_scheme_protocol("production",move |_context,request|{
@@ -77,7 +80,9 @@ fn main(){
             infrastructure::network::network_status,infrastructure::network::network_login,infrastructure::network::network_logout,
             infrastructure::network::network_save_draft,infrastructure::network::network_finish_eviction,
             local_desktop::local_status,local_desktop::local_login,local_desktop::local_logout,local_desktop::local_finish_eviction,local_desktop::local_save_draft,
-            local_desktop::production_import_excel,local_desktop::ui_claim_onboarding,local_desktop::save_excel_template
+            local_desktop::production_import_excel,local_desktop::ui_claim_onboarding,local_desktop::save_excel_template,
+            local_desktop::statistics_preferences_load,local_desktop::statistics_preferences_save,
+            local_desktop::statistics_preferences_save_draft,local_desktop::statistics_preferences_clear_draft
         ])
         .setup(move |app|{
             let paths=app.state::<Paths>();
