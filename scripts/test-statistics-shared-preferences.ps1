@@ -10,9 +10,13 @@ if($env:OS -ne 'Windows_NT' -or $env:GITHUB_ACTIONS -ne 'true'){
 $repo=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $out=[IO.Path]::GetFullPath($ReportDirectory)
 New-Item -ItemType Directory -Path $out -Force | Out-Null
-$testRoot=Join-Path $env:RUNNER_TEMP ('Statistics shared preferences '+[guid]::NewGuid().ToString('N'))
-$payload=Join-Path $testRoot 'Shared package'
-$clients=Join-Path $testRoot 'Independent clients'
+# Keep the WebView2 data path comfortably below MAX_PATH after the launcher
+# appends its cache key and per-process directories. Other SMB acceptance tests
+# already cover long and spaced UNC launch paths.
+$fixtureId=[guid]::NewGuid().ToString('N').Substring(0,12)
+$testRoot=Join-Path $env:RUNNER_TEMP ('PCS-'+$fixtureId)
+$payload=Join-Path $testRoot 'share'
+$clients=Join-Path $env:LOCALAPPDATA ('PCStats-'+$fixtureId)
 $share='PCStatistics'+$PID
 $account=[Security.Principal.WindowsIdentity]::GetCurrent().Name
 $shareCreated=$false
@@ -38,7 +42,7 @@ try{
   $null=[IO.File]::ReadAllBytes((Join-Path $unc 'config/network.json'))
   $connections=@(Get-SmbConnection | Where-Object {$_.ShareName -eq $share} | Select-Object ServerName,ShareName,Dialect,NumOpens)
   if($connections.Count -lt 1){throw 'Windows did not report a real SMB connection for the UNC fixture'}
-  $profiles=@((Join-Path $clients 'Client A'),(Join-Path $clients 'Client B'))
+  $profiles=@((Join-Path $clients 'a'),(Join-Path $clients 'b'))
   foreach($profile in $profiles){New-Item -ItemType Directory -Path $profile -Force | Out-Null}
   $fixture=[ordered]@{
     uncRoot=$unc
@@ -67,4 +71,5 @@ try{
     Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
   }
   if($shareCreated){Remove-SmbShare -Name $share -Force -ErrorAction SilentlyContinue}
+  Remove-Item -LiteralPath $clients,$testRoot -Recurse -Force -ErrorAction SilentlyContinue
 }

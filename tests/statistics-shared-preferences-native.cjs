@@ -1,7 +1,7 @@
 'use strict';
 // Invoked by test-statistics-shared-preferences.ps1. No mock IPC, SQLite on SMB,
 // alternate business transport, or claim of two physical machines is involved.
-const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),net=require('node:net'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const fs=require('node:fs'),path=require('node:path'),net=require('node:net'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {spawn,spawnSync}=require('node:child_process'),{chromium}=require('playwright');
 const {login,openStatistics}=require('./statistics-native-helpers.cjs');
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -26,9 +26,13 @@ const cleanError=error=>String(error?.message||error).replace(/739201/g,'[fixtur
 async function freePort(){return new Promise((resolve,reject)=>{const server=net.createServer();server.once('error',reject);server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(error=>error?reject(error):resolve(port))})});}
 async function launch(fixture,clientIndex,phase,summary){
  const profile=fixture.clientProfiles[clientIndex],port=await freePort(),out=fixture.outputDirectory;
+ const temp=path.join(profile,'tmp');fs.mkdirSync(temp,{recursive:true});
  const report=path.join(out,phase+'-smoke.json'),startupReport=path.join(out,phase+'-startup.json');
  for(const file of [report,startupReport])fs.rmSync(file,{force:true});
- const child=spawn(path.join(fixture.uncRoot,'production-cycle.exe'),['--smoke-test'],{cwd:os.tmpdir(),env:{...process.env,LOCALAPPDATA:profile,PRODUCTION_CYCLE_SMOKE_REPORT:report,PRODUCTION_CYCLE_STARTUP_REPORT:startupReport,PRODUCTION_CYCLE_SMOKE_HOLD:'1',PRODUCTION_CYCLE_SMOKE_BROWSER_ARGS:'--remote-debugging-port='+port},stdio:'ignore'});
+ // Isolate every production cache fallback, not only LOCALAPPDATA. Otherwise
+ // a normal fallback after a WebView2 startup failure can make both simulated
+ // clients use the runner account's common USERPROFILE or TEMP cache.
+ const child=spawn(path.join(fixture.uncRoot,'production-cycle.exe'),['--smoke-test'],{cwd:temp,env:{...process.env,LOCALAPPDATA:profile,USERPROFILE:profile,TEMP:temp,TMP:temp,PRODUCTION_CYCLE_SMOKE_REPORT:report,PRODUCTION_CYCLE_STARTUP_REPORT:startupReport,PRODUCTION_CYCLE_SMOKE_HOLD:'1',PRODUCTION_CYCLE_SMOKE_BROWSER_ARGS:'--remote-debugging-port='+port},stdio:'ignore'});
  const run={child,profile,phase};let launchError;
  child.once('error',error=>{launchError=error});
  try{
@@ -54,7 +58,7 @@ async function launch(fixture,clientIndex,phase,summary){
   });
   run.pageErrors=[];run.page.on('pageerror',error=>run.pageErrors.push(cleanError(error)));
   assert.ok(Number.isSafeInteger(run.smoke.processId)&&run.smoke.processId>0);
-  run.record={phase,client:clientIndex+1,launcherPid:child.pid,nativePid:run.smoke.processId,cache:run.startup.cache,recovery:run.startup.recovery,runtime:run.smoke.runtime,webviewProfile:run.smoke.profile,sqliteDirectory:run.smoke.database,visibleNativeWindow:true,frontendReady:true};summary.launches.push(run.record);
+  run.record={phase,client:clientIndex+1,launcherPid:child.pid,nativePid:run.smoke.processId,localProfileRoot:profile,cache:run.startup.cache,recovery:run.startup.recovery,runtime:run.smoke.runtime,webviewProfile:run.smoke.profile,sqliteDirectory:run.smoke.database,launcherFallbackUsed:run.startup.fallbackUsed,visibleNativeWindow:true,frontendReady:true};summary.launches.push(run.record);
   return run;
  }catch(error){await stop(run);throw error;}
 }

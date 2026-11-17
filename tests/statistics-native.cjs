@@ -93,21 +93,29 @@ module.exports=async(page,out,root)=>{
  const originalHorizon=(await expectSaved(page)).settings.horizon,calendarCoverage=[];let narrowEditorGeometry;
  try{
   await page.setViewportSize({width:320,height:900});await edit(page);
-  assert.equal(await page.locator('#statisticsMount').getAttribute('data-font'),'large');
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   narrowEditorGeometry=await page.locator('#statisticsMount').evaluate(mount=>{
    const editor=mount.querySelector('.pc-layout-editor'),bounds=editor.getBoundingClientRect();
    const controls=[...editor.querySelectorAll('button,input,select')].filter(e=>e.getClientRects().length);
-   return {viewport:innerWidth,mountWidth:mount.clientWidth,mountScrollWidth:mount.scrollWidth,editorWidth:bounds.width,
+   const mountBounds=mount.getBoundingClientRect(),overflowing=mount.scrollWidth>mount.clientWidth+1;
+   const selector=node=>{const parts=[];for(let e=node;e&&e!==mount;e=e.parentElement){const key=['data-focus','data-setting','data-widget','data-action'].find(key=>e.hasAttribute(key));parts.unshift(e.tagName.toLowerCase()+(key?'['+key+'='+JSON.stringify(e.getAttribute(key))+']':':nth-child('+([...e.parentElement.children].indexOf(e)+1)+')'));}return '#statisticsMount > '+parts.join(' > ');};
+   const visible=[...mount.querySelectorAll('*')].filter(e=>e.getClientRects().length).map(e=>({element:e,rect:e.getBoundingClientRect()}));
+   const overflowElements=overflowing?Object.fromEntries(visible.filter(({rect:r})=>r.left<mountBounds.left-1||r.right>mountBounds.right+1).map(({element:e,rect:r})=>{const style=getComputedStyle(e);let clip=e.parentElement;while(clip&&clip!==mount&&!['auto','scroll','hidden','clip'].includes(getComputedStyle(clip).overflowX))clip=clip.parentElement;return [selector(e),{left:r.left,right:r.right,width:r.width,clientWidth:e.clientWidth,scrollWidth:e.scrollWidth,minWidth:style.minWidth,maxWidth:style.maxWidth,overflowX:style.overflowX,clippedBy:clip&&clip!==mount?selector(clip):null}];})):{};
+   return {viewport:innerWidth,font:mount.dataset.font,mountWidth:mount.clientWidth,mountScrollWidth:mount.scrollWidth,editorWidth:bounds.width,
+    horizontalBounds:{mountLeft:mountBounds.left,mountRight:mountBounds.right,minLeft:Math.min(mountBounds.left,...visible.map(({rect})=>rect.left)),maxRight:Math.max(mountBounds.right,...visible.map(({rect})=>rect.right))},overflowElements,
     controls:controls.length,outside:controls.filter(e=>{const r=e.getBoundingClientRect();return r.width<=0||r.height<=0||r.left<bounds.left-1||r.right>bounds.right+1}).map(e=>e.getAttribute('aria-label')||e.dataset.action||e.dataset.setting||e.outerHTML),
     layoutColumns:getComputedStyle(mount.querySelector('.pc-layout-workspace')).gridTemplateColumns};
   });
-  assert.equal(narrowEditorGeometry.viewport,320);assert.ok(narrowEditorGeometry.mountWidth>0&&narrowEditorGeometry.mountWidth<=320);
+  // Preserve narrow evidence before any assertion and before finally restores the wide viewport.
+  fs.writeFileSync(path.join(out,'native-statistics-320-geometry.json'),JSON.stringify(narrowEditorGeometry,null,2));
+  await page.screenshot({path:path.join(out,'native-statistics-320-viewport.png')});
+  await page.locator(S+'.pc-layout-editor').screenshot({path:path.join(out,'native-statistics-editor-320-large.png')});
+  assert.equal(narrowEditorGeometry.font,'large');assert.equal(narrowEditorGeometry.viewport,320);assert.ok(narrowEditorGeometry.mountWidth>0&&narrowEditorGeometry.mountWidth<=320);
   assert.ok(narrowEditorGeometry.editorWidth>0&&narrowEditorGeometry.editorWidth<=320,'The actual editor is constrained to the narrow CSS viewport');
   assert.ok(narrowEditorGeometry.mountScrollWidth<=narrowEditorGeometry.mountWidth+1,'Statistics itself has no horizontal overflow');
   assert.ok(narrowEditorGeometry.controls>0);assert.deepEqual(narrowEditorGeometry.outside,[],'Every visible editor control stays within its editor');
   assert.equal(narrowEditorGeometry.layoutColumns.trim().split(/\s+/).length,1,'Narrow editor and preview form one column');
-  await page.locator(S+'.pc-layout-editor').screenshot({path:path.join(out,'native-statistics-editor-320-large.png')});await cancel(page);
+  await cancel(page);
   // The code renders date-of-calculation plus the following horizon days: 7+1, 14+1, 30+1.
   for(const horizon of [7,14,30]){
    await edit(page);await page.locator(S+'[data-setting="horizon"]').selectOption(String(horizon));await save(page);
