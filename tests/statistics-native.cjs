@@ -27,7 +27,29 @@ module.exports=async(page,out,root)=>{
  await page.locator(widget('participation')+' [data-drag="participation"]').dispatchEvent('dragend',{dataTransfer:transfer});await transfer.dispose();
  await page.keyboard.press('Escape');await page.waitForSelector(action('save-settings'),{state:'detached'});assert.equal(await page.locator(action('save-settings')).count(),0,'Escape outside a drag cancels the layout draft');assert.deepEqual((await preferences(page)).settings,before.settings);
  await showAllWidgets(page);assert.equal(await page.locator(S+'.pc-widget').count(),9,'Every existing widget remains available');
- await edit(page);await page.dragAndDrop(widget('participation')+' [data-drag="participation"]',widget('enterprises'));assert.notEqual((await page.locator(S+'.pc-widget').evaluateAll(nodes=>nodes.map(e=>e.dataset.widget)))[0],'participation','Dragging a visible block header reorders its preview');await cancel(page);
+ await edit(page);
+ // Keep the real pointer drag: capture trusted native events, handles and viewport geometry for either outcome.
+ await page.evaluate(()=>{
+  const mount=document.getElementById('statisticsMount'),events=[];
+  const describe=e=>{if(!e)return null;const r=e.getBoundingClientRect(),style=getComputedStyle(e);return {tag:e.tagName,draggable:e.draggable,disabled:!!e.disabled,pointerEvents:style.pointerEvents,visibility:style.visibility,display:style.display,rect:{x:r.x,y:r.y,width:r.width,height:r.height}}};
+  window.__statisticsDragSnapshot=()=>({viewport:{width:innerWidth,height:innerHeight,scrollX,scrollY},editing:mount.dataset.editing,order:[...mount.querySelectorAll('.pc-widget')].map(e=>e.dataset.widget),source:describe(mount.querySelector('.pc-widget[data-widget="participation"] [data-drag="participation"]')),target:describe(mount.querySelector('.pc-widget[data-widget="enterprises"]'))});
+  const record=phase=>e=>{if(events.length>=500)return;let data=null;try{data=e.dataTransfer?.getData('text/plain')??null}catch{}events.push({type:e.type,phase,trusted:e.isTrusted,defaultPrevented:e.defaultPrevented,tag:e.target.tagName,drag:e.target.closest?.('[data-drag]')?.dataset.drag,widget:e.target.closest?.('[data-drop-widget]')?.dataset.dropWidget,x:e.clientX,y:e.clientY,buttons:e.buttons,scrollX,scrollY,types:e.dataTransfer?[...e.dataTransfer.types]:[],data});};
+  const capture=record('capture'),bubble=record('bubble'),types=['pointerdown','mousedown','pointerup','mouseup','dragstart','dragenter','dragover','drop','dragend'];
+  for(const type of types){document.addEventListener(type,capture,true);document.addEventListener(type,bubble);}
+  window.__statisticsDragTrace={before:window.__statisticsDragSnapshot(),events};
+  window.__statisticsDragCleanup=()=>{for(const type of types){document.removeEventListener(type,capture,true);document.removeEventListener(type,bubble);}};
+ });
+ const dragBefore=await page.evaluate(()=>window.__statisticsDragTrace.before);assert.equal(dragBefore.source.draggable,true);assert.equal(dragBefore.source.disabled,false);
+ await page.screenshot({path:path.join(out,'native-statistics-drag-before.png')});let dragError,dragProof;
+ try{await page.dragAndDrop(widget('participation')+' [data-drag="participation"]',widget('enterprises'));}catch(error){dragError=error;}
+ finally{
+  dragProof=await page.evaluate(()=>{const proof={...window.__statisticsDragTrace,after:window.__statisticsDragSnapshot()};window.__statisticsDragCleanup();delete window.__statisticsDragCleanup;delete window.__statisticsDragSnapshot;delete window.__statisticsDragTrace;return proof;});
+  fs.writeFileSync(path.join(out,'native-statistics-drag.json'),JSON.stringify(dragProof,null,2));await page.screenshot({path:path.join(out,'native-statistics-drag-after.png')});
+ }
+ if(dragError)throw dragError;
+ assert.ok(dragProof.events.some(e=>e.type==='dragstart'&&e.trusted&&e.drag==='participation'),'Real dragstart missing; inspect native-statistics-drag.json');
+ assert.ok(dragProof.events.some(e=>e.type==='drop'&&e.phase==='bubble'&&e.trusted&&e.widget==='enterprises'&&e.defaultPrevented),'Real accepted drop missing; inspect native-statistics-drag.json');
+ assert.notEqual(dragProof.after.order[0],'participation','Dragging a visible block header reorders its preview; inspect native-statistics-drag.json');await cancel(page);
  await edit(page);await page.click(action('move-down','participation'));
  await page.evaluate(()=>window.__buttonDownloads=[]);await page.click(action('export-settings'));await page.waitForFunction(()=>window.__buttonDownloads.some(x=>x.name==='statistics-settings.json'));
  const exportedSettings=await page.evaluate(()=>JSON.parse(window.__buttonDownloads.find(x=>x.name==='statistics-settings.json').text.replace(/^\uFEFF/,'')));assert.equal(exportedSettings.version,2);assert.notEqual(exportedSettings.widgets[0].id,'participation');await save(page);
@@ -55,6 +77,40 @@ module.exports=async(page,out,root)=>{
  // Input rerenders must not lose the caret or focus after the first character.
  await setFilter(page,'executor','');const search=page.locator(S+'[data-filter="search"]');await search.fill('');await search.pressSequentially('STAT-QA',{delay:15});assert.equal(await search.inputValue(),'STAT-QA');assert.equal(await search.evaluate(e=>e===document.activeElement),true);await search.fill('');
  await edit(page);await page.locator(S+'[data-setting="font"]').focus();await page.locator(S+'[data-setting="font"]').selectOption('large');assert.equal(await page.locator(S+'[data-setting="font"]').evaluate(e=>e===document.activeElement),true);await save(page);
+ // CDP uses CSS pixels; this checks the Statistics component, independently of host chrome overflow.
+ const originalHorizon=(await expectSaved(page)).settings.horizon,calendarCoverage=[];let narrowEditorGeometry;
+ try{
+  await page.setViewportSize({width:320,height:900});await edit(page);
+  assert.equal(await page.locator('#statisticsMount').getAttribute('data-font'),'large');
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  narrowEditorGeometry=await page.locator('#statisticsMount').evaluate(mount=>{
+   const editor=mount.querySelector('.pc-layout-editor'),bounds=editor.getBoundingClientRect();
+   const controls=[...editor.querySelectorAll('button,input,select')].filter(e=>e.getClientRects().length);
+   return {viewport:innerWidth,mountWidth:mount.clientWidth,mountScrollWidth:mount.scrollWidth,editorWidth:bounds.width,
+    controls:controls.length,outside:controls.filter(e=>{const r=e.getBoundingClientRect();return r.width<=0||r.height<=0||r.left<bounds.left-1||r.right>bounds.right+1}).map(e=>e.getAttribute('aria-label')||e.dataset.action||e.dataset.setting||e.outerHTML),
+    layoutColumns:getComputedStyle(mount.querySelector('.pc-layout-workspace')).gridTemplateColumns};
+  });
+  assert.equal(narrowEditorGeometry.viewport,320);assert.ok(narrowEditorGeometry.mountWidth>0&&narrowEditorGeometry.mountWidth<=320);
+  assert.ok(narrowEditorGeometry.editorWidth>0&&narrowEditorGeometry.editorWidth<=320,'The actual editor is constrained to the narrow CSS viewport');
+  assert.ok(narrowEditorGeometry.mountScrollWidth<=narrowEditorGeometry.mountWidth+1,'Statistics itself has no horizontal overflow');
+  assert.ok(narrowEditorGeometry.controls>0);assert.deepEqual(narrowEditorGeometry.outside,[],'Every visible editor control stays within its editor');
+  assert.equal(narrowEditorGeometry.layoutColumns.trim().split(/\s+/).length,1,'Narrow editor and preview form one column');
+  await page.locator(S+'.pc-layout-editor').screenshot({path:path.join(out,'native-statistics-editor-320-large.png')});await cancel(page);
+  // The code renders date-of-calculation plus the following horizon days: 7+1, 14+1, 30+1.
+  for(const horizon of [7,14,30]){
+   await edit(page);await page.locator(S+'[data-setting="horizon"]').selectOption(String(horizon));await save(page);
+   assert.equal((await expectSaved(page)).settings.horizon,horizon);
+   const calendar=await page.locator(widget('calendar')+' .pc-calendar > [data-action="calendar-day"]').evaluateAll(nodes=>nodes.map(e=>({date:e.dataset.date,visible:!!(e.getBoundingClientRect().width&&e.getBoundingClientRect().height)})));
+   const calculationDate=await page.locator(S+'[data-filter="asOf"]').inputValue();
+   assert.equal(calendar.length,horizon+1,'The complete selected period remains in the calendar');assert.equal(calendar[0].date,calculationDate,'The first day is the calculation date');assert.ok(calendar.every(day=>day.visible));
+   const dates=calendar.map(day=>Date.parse(day.date+'T00:00:00Z'));assert.ok(dates.every((date,i)=>!i||date-dates[i-1]===86400000),'Calendar days remain consecutive across month boundaries');
+   calendarCoverage.push({horizon,days:calendar.length,first:calendar[0].date,last:calendar.at(-1).date});
+  }
+  await edit(page);await page.locator(S+'[data-setting="horizon"]').selectOption(String(originalHorizon));await save(page);
+ }finally{
+  if(await page.locator(action('save-settings')).count())await cancel(page).catch(()=>{});
+  await page.setViewportSize({width:1440,height:1000});
+ }
  await width(page,'participation','half');await setFilter(page,'orderNo',fixture.largeOrder);
  assert.equal(await previewRows.count(),3);await page.click(action('show-all','participation'));assert.equal(await page.locator(S+'.pc-participation-table tbody tr').count(),4,'All four performers are accessible beyond the three-card preview');await page.click(action('back-overview'));
  await page.click(action('show-all','risks'));assert.equal(await page.locator(widget('risks')+' tbody tr').count(),100,'All one hundred stage records are accessible in the full table');
@@ -79,6 +135,6 @@ module.exports=async(page,out,root)=>{
  assert.equal(page.isClosed(),false);assert.equal(await page.locator(action('save-settings')).count(),1,'Continue editing after native close retains the draft');assert.equal(await page.locator(S+'[data-widget-toggle="enterprises"]').isChecked(),false);assert.deepEqual((await preferences(page)).settings,beforeClose.settings,'Native close guard does not silently save the draft');await cancel(page);
  // Follow a real saved project link without replacing the current registry draft.
  await page.click(widget('portfolio')+' [data-action="detail"]');await page.click(action('open-host'));await page.waitForFunction(()=>document.getElementById('registryTab').getAttribute('aria-selected')==='true');
- const summary={source:'packaged EXE / real native IPC / local SQLite',seededProjects:6,seededStages:105,participationMembers:5,percentExample:{share:'1 / 5 * 100 = 20%',completion:'1 / 1 * 100 = 100%'},singleEditor:true,explicitCancelSave:true,reorder:true,dragReorder:true,escapeCancel:true,dragEscapeKeepsDraft:true,leaveContinue:true,nativeCloseContinue:true,boundaryMoveFocus:true,fullWidthCompleteBarTable:true,equalHalfCards:true,filtersRetainedOnRefresh:true,allOrdersNoAutoselection:true,csvFullScopeRows:100,settingsNativeWrite:true,fullTable100Rows:true,invalidExportsRejected:true,statisticsPDFFullScope:true,largeFontFocus:true,projectNavigation:true,tabReopenRetained:true,processRestart:'verified separately by statistics-preferences-native.cjs'};
+ const summary={source:'packaged EXE / real native IPC / local SQLite',seededProjects:6,seededStages:105,participationMembers:5,percentExample:{share:'1 / 5 * 100 = 20%',completion:'1 / 1 * 100 = 100%'},singleEditor:true,explicitCancelSave:true,reorder:true,dragReorder:true,escapeCancel:true,dragEscapeKeepsDraft:true,leaveContinue:true,nativeCloseContinue:true,boundaryMoveFocus:true,fullWidthCompleteBarTable:true,equalHalfCards:true,filtersRetainedOnRefresh:true,allOrdersNoAutoselection:true,csvFullScopeRows:100,settingsNativeWrite:true,fullTable100Rows:true,invalidExportsRejected:true,statisticsPDFFullScope:true,largeFontFocus:true,narrowEditorGeometry,calendarCoverage,projectNavigation:true,tabReopenRetained:true,processRestart:'verified separately by statistics-preferences-native.cjs'};
  fs.writeFileSync(path.join(out,'native-statistics.json'),JSON.stringify(summary,null,2));console.log('PASS native statistics',summary);return summary;
 };

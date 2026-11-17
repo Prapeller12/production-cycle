@@ -88,6 +88,8 @@ fn main(){
             let paths=app.state::<Paths>();
             let initialization=format!("window.ProductionDesktop={};window.ProductionShared={};{}",cfg!(feature="local-desktop"),network_enabled,infrastructure::startup::FRONTEND_GUARD);
             WebviewWindowBuilder::new(app,"main",WebviewUrl::CustomProtocol("production://localhost/index.html".parse()?))
+                // The native file-drop handler replaces WebView2 HTML5 drag/drop on Windows.
+                .disable_drag_drop_handler()
                 .title("Производственный цикл")
                 .visible(false)
                 .initialization_script(&initialization)
