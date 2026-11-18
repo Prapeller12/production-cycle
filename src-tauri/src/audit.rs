@@ -19,6 +19,8 @@ use crate::production::{
     DictionaryReplaceResult, ProductionDb, ProductionReport, ProductionSnapshot, StageStatus,
 };
 
+pub(crate) mod user_administration;
+
 const OFFICIAL_EVIDENCE_TYPES: [&str; 5] = [
     "Входящее письмо",
     "Инвойс",
@@ -53,6 +55,7 @@ pub fn initialize_audit_schema(conn: &Connection) -> std::result::Result<(), Str
         conn.execute_batch("ALTER TABLE audit_event ADD COLUMN changes_json TEXT NOT NULL DEFAULT '[]';").map_err(|e| e.to_string())?;
     }
     migrate_audit_user_roles(conn)?;
+    user_administration::initialize(conn)?;
     Ok(())
 }
 
@@ -836,8 +839,11 @@ impl ProductionDb {
             }
         }
         let chain_heads = previous_by_project.into_iter().map(|(pid,hash)|format!("Проект {pid}: {hash}")).collect::<Vec<_>>();
-        let invalid_events=events.len()-valid_events+errors.iter().filter(|value|value.starts_with("Проект ")).count();
-        Ok(AuditVerificationReport { checked_events: events.len(), valid_events, invalid_events, chain_heads, errors, verified_at: Local::now().to_rfc3339() })
+        let profile_log=user_administration::verify_registered_changes(&conn)?;
+        let invalid_events=events.len()-valid_events+errors.iter().filter(|value|value.starts_with("Проект ")).count()+profile_log.errors.len();
+        valid_events+=profile_log.valid;
+        errors.extend(profile_log.errors);
+        Ok(AuditVerificationReport { checked_events: events.len()+profile_log.checked, valid_events, invalid_events, chain_heads, errors, verified_at: Local::now().to_rfc3339() })
     }
 
     pub fn replace_dictionary_value_signed(

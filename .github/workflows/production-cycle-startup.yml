@@ -76,6 +76,13 @@ jobs:
         run: |
           node tests/statistics-preferences-native.cjs
           if($LASTEXITCODE -ne 0){throw 'Personal statistics settings restart regression'}
+      - name: Administrator user editing and private activity statistics
+        id: user_admin_ui
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          node tests/user-administration-native.cjs
+          if($LASTEXITCODE -ne 0){throw 'Administrator user management regression'}
       - name: Real SMB share, desktop shortcut and standard user
         id: network_shortcut
         continue-on-error: true
@@ -117,7 +124,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          $outcomes=@('${{ steps.native_ui.outcome }}','${{ steps.preferences_restart.outcome }}','${{ steps.network_shortcut.outcome }}','${{ steps.cmd_launcher.outcome }}','${{ steps.shared_preferences.outcome }}')
+          $outcomes=@('${{ steps.native_ui.outcome }}','${{ steps.preferences_restart.outcome }}','${{ steps.user_admin_ui.outcome }}','${{ steps.network_shortcut.outcome }}','${{ steps.cmd_launcher.outcome }}','${{ steps.shared_preferences.outcome }}')
           if($outcomes.Where({$_ -ne 'success'}).Count -gt 0){throw ('Native acceptance groups did not all pass: '+($outcomes -join ', '))}
           if('${{ matrix.os }}' -eq 'windows-2022' -and '${{ steps.offline_local.outcome }}' -ne 'success'){throw 'Offline launch acceptance did not pass'}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

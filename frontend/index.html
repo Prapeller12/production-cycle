@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="dashboards/assets/dashboard.css">
 <link rel="stylesheet" href="dashboards/assets/cycle-theme.css">
 <link rel="stylesheet" href="dashboards/integration.css">
+<link rel="stylesheet" href="styles/user-administration.css">
 </head>
 <body>
 <svg class="ui-icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
@@ -118,7 +119,7 @@
           <h3>Создайте профиль администратора</h3>
           <p>Укажите ФИО и придумайте PIN. Этот профиль станет единственным администратором программы. Позже администратора добавить нельзя.</p>
         </div>
-        <div id="existingUsersSection" class="existing-users"><h3>Созданные профили</h3><div id="auditUsers"></div></div>
+        <div id="existingUsersSection" class="existing-users"><h3>Созданные профили</h3><div id="auditUsers"></div><div id="adminUserManagement" hidden></div></div>
         <details id="createUserDetails" class="profile-create">
           <summary><span class="ui-icon ui-icon-chevron-right profile-chevron" aria-hidden="true"></span><span id="createUserSummary">Добавить пользователя</span><small>ФИО, роль и персональный PIN</small></summary>
           <div class="profile-form-card">
@@ -250,6 +251,7 @@
 <script defer src="dashboards/js/tauri-adapter.js"></script>
 <script defer src="dashboards/js/dashboard.js"></script>
 <script defer src="dashboards/integration.js"></script>
+<script defer src="ui/user-administration.js"></script>
 <script defer src="ui/app.js"></script>
 </body>
 </html>

@@ -15,6 +15,7 @@ Copy-Item "$source/config/portable.json" "$root/config/portable.json"
 Copy-Item "$runtime/*" "$root/runtime/webview2" -Recurse
 [IO.File]::WriteAllText("$root/Инструкция.txt",[IO.File]::ReadAllText("$source/docs/local/Инструкция.txt"),[Text.UTF8Encoding]::new($true))
 [IO.File]::WriteAllText("$root/ИНСТРУКЦИЯ СТАТИСТИКА.txt",[IO.File]::ReadAllText("$source/docs/statistics-dashboard.md"),[Text.UTF8Encoding]::new($true))
+[IO.File]::WriteAllText("$root/УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ.txt",[IO.File]::ReadAllText("$source/docs/user-administration.md"),[Text.UTF8Encoding]::new($true))
 $sample=Get-Content "$source/server/resources/project-import-template.json" -Raw | ConvertFrom-Json
 [IO.File]::WriteAllBytes((Join-Path "$root/samples" $sample.fileName),[Convert]::FromBase64String($sample.base64))
 [IO.File]::WriteAllText("$root/app/start.cmd","@echo off`r`nstart `"`" `"%~dp0..\production-cycle.exe`"`r`n",[Text.Encoding]::ASCII)
