@@ -1,0 +1,28 @@
+.audit-user-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
+.audit-user-status{font-size:12px;color:var(--muted);margin:4px 0;display:block}
+.profiles-only .audit-user-tools,.profiles-only #adminUserManagement{display:none!important}
+.user-admin-panel{margin-top:20px;padding:22px;border:1px solid var(--line);border-radius:18px;background:#fff;min-width:0}
+.user-admin-panel[hidden]{display:none}
+.user-admin-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px}
+.user-admin-head h3{margin:0;overflow-wrap:anywhere}
+.user-admin-note{font-size:13px;line-height:1.6;color:var(--muted);margin:12px 0}
+.user-admin-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.user-admin-form label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:14px}
+.user-admin-form input:not([type=checkbox]),.user-admin-form select,.user-admin-form textarea{width:100%;min-width:0;box-sizing:border-box;min-height:42px}
+.user-admin-form .user-admin-full{grid-column:1/-1}
+.user-admin-form .user-admin-check{display:flex;flex-direction:row;align-items:center;gap:9px}
+.user-admin-form textarea{min-height:86px;resize:vertical}
+.user-admin-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.user-admin-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
+.user-admin-metric{padding:16px;border-radius:14px;background:var(--bg,#f3f4f7);min-width:0}
+.user-admin-metric small{display:block;font-size:13px;line-height:1.5}
+.user-admin-metric strong{display:block;font-size:26px;margin-top:8px}
+.user-admin-table-wrap{width:100%;overflow:auto;margin:14px 0}
+.user-admin-table{width:100%;border-collapse:collapse;min-width:640px;font-size:14px}
+.user-admin-table th,.user-admin-table td{padding:10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line);overflow-wrap:anywhere;max-width:420px}
+.user-admin-table th{background:var(--bg,#f3f4f7)}
+.user-admin-pagination{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.user-admin-history article{padding:12px 0;border-bottom:1px solid var(--line);line-height:1.6;font-size:14px;overflow-wrap:anywhere}
+@media(max-width:900px){.audit-user{flex-wrap:wrap}.audit-user-tools{margin-left:0}.user-admin-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.user-admin-panel{padding:14px}.user-admin-form{grid-template-columns:minmax(0,1fr)}.user-admin-metrics{grid-template-columns:minmax(0,1fr)}.user-admin-head{align-items:flex-start}}
+@media print{.user-admin-panel{display:none!important}}

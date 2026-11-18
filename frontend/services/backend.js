@@ -63,6 +63,14 @@
     await invoke('audit_authorize_admin',{userId:Number(userId),pin});
     return true;
   }
+  async function updateAuditUser(input){
+    if(!native())throw Error('Управление пользователями доступно в Windows-приложении.');
+    return invoke('audit_admin_update_user',{input});
+  }
+  async function auditUserStatistics(targetUserId,adminUserId,adminPin,from=null,to=null,offset=0){
+    if(!native())throw Error('Статистика пользователя доступна в Windows-приложении.');
+    return invoke('audit_admin_user_statistics',{targetUserId:Number(targetUserId),adminUserId:Number(adminUserId),adminPin,from:from||null,to:to||null,offset:Number(offset)});
+  }
   async function saveSigned(state,confirmation){
     if(!native())throw Error('Подписанное сохранение доступно только в Windows-приложении.');
     return invoke('audit_save_snapshot',{snapshot:toSnapshot(state),userId:Number(confirmation.userId),pin:confirmation.pin,comment:confirmation.comment,evidence:confirmation.evidence||null});
@@ -180,5 +188,5 @@
   async function saveStatisticsPreferences(settings,expectedRevision,ownerToken){return invoke('statistics_preferences_save',{settings,expectedRevision,ownerToken});}
   async function saveStatisticsPreferencesDraft(settings,expectedRevision,ownerToken){return invoke('statistics_preferences_save_draft',{settings,expectedRevision,ownerToken});}
   async function clearStatisticsPreferencesDraft(ownerToken){return invoke('statistics_preferences_clear_draft',{ownerToken});}
-  Production.backend=Object.freeze({loadStatisticsPreferences,saveStatisticsPreferences,saveStatisticsPreferencesDraft,clearStatisticsPreferencesDraft,saveStatisticsFile,printStatistics,native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report,excelTemplate,importExcel,claimOnboarding});
+  Production.backend=Object.freeze({loadStatisticsPreferences,saveStatisticsPreferences,saveStatisticsPreferencesDraft,clearStatisticsPreferencesDraft,saveStatisticsFile,printStatistics,native,toSnapshot,fromSnapshot,validate,save,saveSigned,listAuditUsers,createAuditUser,authorizeAdmin,updateAuditUser,auditUserStatistics,listAuditEvents,verifyAuditLog,load,loadById,listProjects,listDeadlineControl,listBackups,createBackup,restoreBackup,networkStatus,networkLogin,networkLogout,networkSaveDraft,networkFinishEviction,listDictionary,replaceDictionaryValue,exportPair,report,excelTemplate,importExcel,claimOnboarding});
 })();

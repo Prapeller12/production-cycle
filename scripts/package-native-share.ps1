@@ -10,6 +10,7 @@ $sample=Get-Content "$PSScriptRoot/../server/resources/project-import-template.j
 [IO.File]::WriteAllText("$root/КАК ЗАПУСТИТЬ.txt",[IO.File]::ReadAllText("$PSScriptRoot/../docs/native-share-startup.txt"),[Text.UTF8Encoding]::new($true))
 Copy-Item -LiteralPath "$PSScriptRoot/../docs/statistics-dashboard.md" -Destination "$root/СТАТИСТИКА.md"
 [IO.File]::WriteAllText("$root/ИНСТРУКЦИЯ СТАТИСТИКА.txt",[IO.File]::ReadAllText("$PSScriptRoot/../docs/statistics-dashboard.md"),[Text.UTF8Encoding]::new($true))
+[IO.File]::WriteAllText("$root/УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ.txt",[IO.File]::ReadAllText("$PSScriptRoot/../docs/user-administration.md"),[Text.UTF8Encoding]::new($true))
 # Refresh the immutable executable payload after selecting the native UI.
 $entries=@(foreach($name in @('production-cycle.exe','frontend','runtime','config','app')){
  $item=Get-Item (Join-Path $root $name)

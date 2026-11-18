@@ -76,6 +76,7 @@ fn main(){
             production::production_export_txt,production::production_get_management_report,
             audit::audit_list_users,audit::audit_authorize_admin,audit::audit_create_user,audit::audit_save_snapshot,
             audit::audit_list_events,audit::audit_verify_log,audit::audit_replace_dictionary_value,
+            audit::user_administration::audit_admin_update_user,audit::user_administration::audit_admin_user_statistics,
             backup::backup_list,backup::backup_create,backup::backup_restore,
             infrastructure::network::network_status,infrastructure::network::network_login,infrastructure::network::network_logout,
             infrastructure::network::network_save_draft,infrastructure::network::network_finish_eviction,
