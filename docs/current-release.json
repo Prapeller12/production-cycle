@@ -1,22 +1,22 @@
 {
   "application": "ProductionCycle",
   "architecture": "native-exe-with-shared-folder",
-  "artifact": "ProductionCycle_Statistics_Personal_2026-11-17.zip",
-  "artifactSizeBytes": 389875897,
-  "artifactSHA256": "6c6f8f3f1ca904f2a8d1640d72e189ac88dba12ab077eb131db54be19a61fa6e",
-  "manifestVersion": "native-startup-ffa5ff3",
-  "nativeSourceCommit": "ffa5ff3abd3c0aab5b025bd7b29e789f8d7f7b64",
-  "packageSourceCommit": "ffa5ff3abd3c0aab5b025bd7b29e789f8d7f7b64",
-  "sourceHeadCommit": "f4f0222c0229f653edff0ee785ac6a0c2645d43b",
-  "integrationMergeCommit": "d100ec390beb6df87e5c68b23f076932a9ef3ece",
-  "integrationBaseCommit": "f60e9201387c049c1f9566d2377242ac6216f548",
+  "artifact": "ProductionCycle_2026-11-18.zip",
+  "artifactSizeBytes": 389925507,
+  "artifactSHA256": "da8272eecba089759cf58354337760430f4024b45d8f06638417ee6e00fd530a",
+  "manifestVersion": "native-startup-b3aa860",
+  "nativeSourceCommit": "b3aa8606f15e10b647f93c7d6f2c7eb06fa8065e",
+  "packageSourceCommit": "b3aa8606f15e10b647f93c7d6f2c7eb06fa8065e",
+  "sourceHeadCommit": "55a31f4ea4398a708cb169af13c56305cbffb9f7",
+  "integrationMergeCommit": "43dcee0ce10f602c60ca2db08047e96c94646fbb",
+  "integrationBaseCommit": "cf45880cac3fc03fe3e7b0a711ea9e51e0457303",
   "maxSharedSessions": 3,
-  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-ce079d4260f88191bb41826a6cfeb7b3_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
+  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-51464782b6b08191a294a698cf9ab415_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
   "artifactAccess": "Issued file in the owner's ChatGPT account; not a public GitHub release asset",
-  "passport": "passport/ProductionCycle_Statistics_Personal_Addendum_2026-11-17.md",
+  "passport": "passport/ProductionCycle_User_Administration_Addendum_2026-11-18.md",
   "dashboardGuide": "statistics-dashboard.md",
   "verifiedRuns": [
-    "https://github.com/Prapeller12/production-cycle/actions/runs/44089796999"
+    "https://github.com/Prapeller12/production-cycle/actions/runs/44294454442"
   ],
   "verifiedPlatforms": [
     "Windows Server 2022",
@@ -24,7 +24,7 @@
   ],
   "checks": {
     "jsTests": 75,
-    "rustTests": 82,
+    "rustTests": 88,
     "staticButtons": 63,
     "dynamicControls": 14,
     "mainUIScenarios": 19,
@@ -56,15 +56,35 @@
       31
     ],
     "csvFilteredRows": 100,
-    "largeFontComponentStressViewportCssPx": 320
+    "largeFontComponentStressViewportCssPx": 320,
+    "administratorUserEditing": true,
+    "administratorOnlyUserStatistics": true,
+    "soleAdministratorProtected": true,
+    "signedUserProfileHistory": true,
+    "staleProfileEditRejected": true,
+    "blockedUserLoginRejected": true,
+    "currentRoleEnforcedAfterDowngrade": true,
+    "originalUserPinAndKeyPreserved": true,
+    "userPinViewingOrResetAdded": false,
+    "personalDashboardSurvivesProfileChangesAndRestart": true,
+    "identityBasedUserStatistics": true,
+    "userStatisticsJournalEntries": 53,
+    "userStatisticsPageSizes": [
+      50,
+      3
+    ],
+    "userStatisticsDateFilter": true,
+    "lateUserStatisticsResponseDiscarded": true,
+    "sharedProfileChangesAcrossIndependentClientCaches": true
   },
   "packageVerification": {
-    "immutableFiles": 620,
-    "frontendFilesMatchRepositoryAfterWindowsCheckoutEOL": 66,
-    "checkoutLineEndingDifferences": 48,
-    "exeSHA256": "6123262513b3a0936c67af30cfcc0f0a9bed86458d9a164c0add24580cbcc687",
+    "immutableFiles": 622,
+    "frontendFilesMatchRepositoryAfterWindowsCheckoutEOL": 68,
+    "checkoutLineEndingDifferences": 50,
+    "exeSHA256": "19711c7a945c5d573d2636eb52e9a2adf977d9c46e612037a9013705783cdd8e",
     "userDatabaseIncluded": false,
-    "statisticsGuideIncluded": true
+    "statisticsGuideIncluded": true,
+    "userAdministrationGuideIncluded": true
   },
   "notVerified": [
     "Clean Windows 10/11 on owner hardware",
@@ -73,12 +93,13 @@
     "Two physical client computers on the owner network",
     "Physical Windows DPI configurations"
   ],
-  "previousReleaseRecord": "releases/ProductionCycle_Statistics_2026-11-15.json",
-  "documentationDate": "2026-11-17",
+  "previousReleaseRecord": "releases/ProductionCycle_Statistics_Personal_2026-11-17.json",
+  "documentationDate": "2026-11-18",
   "note": "The issued ZIP is an unchanged byte copy of the Windows Server 2022 artifact from the successful run. Tested PR checkout, source branch, local source and integration merge had the same source tree. Release metadata and documentation may be updated after packaging. Later rebuilds have their own identifiers and checksums. Dashboard reads are sequential saved-project reads, not an atomic historical snapshot.",
-  "sourceTree": "d9747d0c70ecf54ba9941ffddb046c3a50d1ab4c",
+  "sourceTree": "4044e1b109c3e95571e336168a59b6e97d4d8d1e",
   "testEnvironmentLimits": [
     "Two independent SMB client cache roots on one physical CI host per Windows version",
     "Windows CSS viewport stress test does not verify Windows DPI scaling or the entire host UI at 320px"
-  ]
+  ],
+  "userAdministrationGuide": "user-administration.md"
 }
