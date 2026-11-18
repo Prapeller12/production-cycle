@@ -14,7 +14,7 @@ pub(super) fn initialize(conn: &Connection) -> Result<(), String> {
       public_key TEXT NOT NULL, created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_audit_user_change_target ON audit_user_change(target_user_id,seq);
-    CREATE INDEX IF NOT EXISTS idx_audit_event_actor_seq ON audit_event(actor_user_id,seq);")
+    CREATE INDEX IF NOT EXISTS idx_audit_event_actor ON audit_event(actor_user_id);")
         .map_err(|e| e.to_string())
 }
 
