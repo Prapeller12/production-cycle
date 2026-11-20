@@ -5,6 +5,43 @@ const fs = require('node:fs');
 const {launch, stop, pristineRoot} = require('./native-packaged-fixture.cjs');
 const {login} = require('./statistics-native-helpers.cjs');
 
+async function checkCatalogLayout(page, evidenceDir) {
+  const dialog = page.locator('#projectsModal > .modal');
+  await page.evaluate(() => document.fonts.ready);
+  for (const width of [1440, 1101, 1024, 900, 850, 768, 520, 375, 320]) {
+    await page.setViewportSize({width, height:960});
+    const measurements = await dialog.evaluate(modal => {
+      const list = modal.querySelector('#projectsList');
+      const rows = [...list.querySelectorAll('.project-list-row')];
+      const rightEdge = list.getBoundingClientRect().left + list.clientLeft + list.clientWidth;
+      const head = list.querySelector('.project-list-head');
+      const headers = head.getClientRects().length ? [...head.children] : [];
+      const clipped = rows.flatMap(row => [...row.querySelectorAll('button')].filter(button => {
+        const box = button.getBoundingClientRect();
+        return box.right > Math.min(rightEdge, row.getBoundingClientRect().right) + 1 ||
+          box.left < row.getBoundingClientRect().left - 1 || button.scrollWidth > button.clientWidth + 1;
+      }).map(button => button.textContent));
+      const offsets = rows.flatMap(row => headers.map((header, i) =>
+        Math.abs(header.getBoundingClientRect().left - row.children[i].getBoundingClientRect().left)));
+      return {
+        rows:rows.length, buttons:rows.map(row => row.querySelectorAll('button').length),
+        overflow:[modal,list,...rows].map(el => el.scrollWidth - el.clientWidth),
+        clipped, alignment:Math.max(0, ...offsets)
+      };
+    });
+    assert.ok(measurements.rows > 1, 'Expected projects at width ' + width);
+    assert.ok(measurements.buttons.every(count => count === 3), 'Missing catalogue actions at ' + width);
+    assert.ok(measurements.overflow.every(px => px <= 1), 'Horizontal overflow at ' + width + ': ' + measurements.overflow);
+    assert.deepEqual(measurements.clipped, [], 'Clipped controls at ' + width);
+    assert.ok(measurements.alignment <= 1, 'Misaligned header at ' + width);
+  }
+  await page.setViewportSize({width:1440,height:960});
+  await page.fill('#catalogQuery','УЧ-');
+  assert.equal(await page.locator('.project-list-row').count(), 4);
+  await dialog.screenshot({path:path.join(evidenceDir,'saved-projects-columns.png')});
+  await page.fill('#catalogQuery','');
+}
+
 (async () => {
   const repo = path.resolve(__dirname, '..');
   const work = pristineRoot(repo);
@@ -17,17 +54,36 @@ const {login} = require('./statistics-native-helpers.cjs');
     const fixture = await page.evaluate(async () => {
       const b = Production.backend, admin = (await b.listAuditUsers()).find(u => u.role === 'admin');
       const project = {name:'Каталог исходный', orderNo:'CAT-001', initiator:'Инициатор', executor:'Координатор',
-        addressees:'Предприятие', start:'2026-08-01', deadline:'2026-12-01'};
+        addressees:'ПроизводственноеПредприятие'.repeat(3), start:'2026-08-01', deadline:'2026-12-01'};
       const stage = {uid:'parent',seq:1,sort:1,parentUid:null,title:'Первая операция',executor:'Исполнитель',
         addressees:'Цех',start:project.start,deadline:project.deadline,status:'done',comment:'Проверен материал'};
       const source = {project,stages:[stage,{...stage,uid:'child',seq:2,parentUid:'parent',title:'Вторая операция',status:'work'}],nextSeq:3};
       const result = await b.saveSigned(source,{userId:admin.id,pin:'739201',comment:'Исходный проект',
         evidence:{documentType:'Акт приёмки',documentReference:'К-1',comment:'Испытание исходника',stageUids:['parent']}});
+      const examples = [
+        ['Капитальный ремонт пресса','Ремонт оборудования','Механический завод',4,8],
+        ['Модернизация участка сборки','Модернизация','Сборочный завод',2,6],
+        ['Стенд для контроля размеров','Оснастка','Инструментальный завод',0,4],
+        ['Приспособление для сборки','Оснастка','Инструментальный завод',1,4]
+      ];
+      for (const [i, [name,topic,enterprise,done,total]] of examples.entries()) {
+        const stages = Array.from({length:total}, (_,j) => ({
+          ...stage, uid:'s'+j, seq:j+1, sort:j+1, title:'Операция '+(j+1), status:j<done?'done':'work'
+        }));
+        await b.saveSigned({
+          project:{...project,name,topic,orderNo:'УЧ-'+(231+i),addressees:enterprise,deadline:'2026-12-18'},
+          stages,nextSeq:total+1
+        }, {userId:admin.id,pin:'739201',comment:'Учебный проект',evidence:done ? {
+          documentType:'Акт приёмки',documentReference:'УЧ-12',comment:'Этапы приняты',stageUids:stages.slice(0,done).map(s=>s.uid)
+        } : null});
+      }
       return {admin:admin.id, id:result.projectId};
     });
     await login(page, fixture.admin);
     await page.fill('#projectName','Несохранённый черновик QA');
     await page.click('#loadJsonBtn');
+    await page.waitForSelector('[data-open-project-id="'+fixture.id+'"]');
+    await checkCatalogLayout(page, evidenceDir);
     const field = name => page.locator('#catalogEditor [name="'+name+'"]');
     const submit = () => page.click('#catalogEditor [type=submit]');
     const row = id => page.locator('.project-list-row').filter({has:page.locator('[data-open-project-id="'+id+'"]')});
@@ -52,6 +108,7 @@ const {login} = require('./statistics-native-helpers.cjs');
     await page.waitForSelector('#catalogNotice.err'); await field('pin').fill('739201'); await submit();
     await page.waitForSelector('#catalogEditor',{state:'hidden'});
     await page.waitForSelector('[data-copy-project-id="'+fixture.id+'"]');
+    await page.selectOption('#catalogTopic','topic:ремонт');
     await page.fill('#catalogQuery','ремОнТ');
     assert.equal(await page.locator('.project-list-row').count(),1);
     const copy = Number(await page.locator('[data-open-project-id]').getAttribute('data-open-project-id'));
