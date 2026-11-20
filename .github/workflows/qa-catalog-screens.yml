@@ -1,0 +1,40 @@
+name: Capture saved projects from the packaged Windows application
+on:
+  push:
+    branches: [qa/saved-projects-screens-20261120]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  screenshots:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ProductionCycle-native-startup-windows-2022
+          run-id: 44742225749
+          github-token: ${{ github.token }}
+          path: package-input
+      - name: Open released executable with its fixed WebView and isolated fixture data
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem package-input -Filter '*.zip' -Recurse | Select-Object -First 1
+          if ((Get-FileHash $zip.FullName).Hash -ne 'fecd1faee0791e6618b139f4386a468bd74b0b11fa2152b20db321d7ce9e2d46') {throw 'Package digest mismatch'}
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath "$env:RUNNER_TEMP/saved-catalog"
+          $root = Join-Path $env:RUNNER_TEMP 'saved-catalog/ProductionCycleNetwork'
+          Remove-Item -LiteralPath "$root/config/network.json","$root/launch-manifest.json"
+          New-Item -ItemType Directory -Path "$root/data","$root/temp","$root/exports" -Force | Out-Null
+          $env:CATALOG_FIXTURE_ROOT = $root
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
+          node tests/capture-project-catalog.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: saved-projects-screens
+          path: dist/catalog-screens/
