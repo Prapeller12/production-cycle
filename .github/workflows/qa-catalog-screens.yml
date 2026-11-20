@@ -32,9 +32,12 @@ jobs:
           $env:CATALOG_FIXTURE_ROOT = $root
           npm ci --ignore-scripts --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { throw 'Dependencies failed' }
-          node tests/capture-project-catalog.cjs
+          New-Item -ItemType Directory -Path 'dist/local' -Force | Out-Null
+          Move-Item -LiteralPath $root -Destination 'dist/local/ProductionCycle'
+          Copy-Item -LiteralPath frontend/styles/project-catalog.css -Destination dist/local/ProductionCycle/frontend/styles/project-catalog.css -Force
+          node tests/project-catalog-native.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: saved-projects-screens
-          path: dist/catalog-screens/
+          path: dist/local-window-qa/
