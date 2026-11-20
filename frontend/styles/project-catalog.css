@@ -8,17 +8,48 @@
 .catalog-form fieldset { border: 1px solid #c6cdd4; border-radius: 8px; padding: 10px; min-width: 0; }
 .catalog-form details { margin: 4px 0 12px; }
 .catalog-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-#projectsList .catalog-row-actions { display: grid; gap: 4px; justify-items: stretch; }
-#projectsList .project-list-title { min-width: 0; overflow-wrap: anywhere; }
 #catalogNotice:not(:empty) { margin: 8px 0; }
 @media (max-width: 760px) {
   .catalog-grid, .catalog-filters { grid-template-columns: 1fr; }
-  #projectsList .catalog-row-actions { display: flex; flex-wrap: wrap; }
 }
-@media (min-width: 1101px) {
-  #projectsList .project-list-row, #projectsList .project-list-head {
-    grid-template-columns: minmax(160px, 2fr) 95px minmax(110px, 1fr) 95px 112px 170px;
+
+#projectsListPane { container: project-catalog / inline-size; }
+#projectsList, #projectsList .project-list-row { grid-template-columns: minmax(0, 1fr); }
+#projectsList .project-list-row > [data-label] { min-width: 0; overflow-wrap: anywhere; }
+#projectsList .catalog-row-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+
+@container project-catalog (width < 840px) {
+  #projectsList .project-list-head { display: none; }
+  #projectsList .project-list-row > [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    color: #53606b;
+    font-size: 12px;
+    font-weight: 700;
   }
-  #projectsList .catalog-row-actions { grid-template-columns: 1fr 1fr; gap: 3px; }
+}
+@container project-catalog (520px <= width < 840px) {
+  #projectsList .project-list-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container project-catalog (min-width: 840px) {
+  #projectsList {
+    grid-template-columns: minmax(0, 1.65fr) max-content minmax(0, 1fr) max-content max-content max-content;
+    column-gap: 10px;
+  }
+  #projectsList .project-list-head, #projectsList .project-list-row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    column-gap: inherit;
+  }
+  #projectsList .project-list-head { padding-inline: 11px; }
+  #projectsList .project-list-row > [data-label]::before { content: none; }
+  #projectsList .projects-empty { grid-column: 1 / -1; }
+  #projectsList .catalog-row-actions {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    gap: 4px;
+  }
   #projectsList .catalog-row-actions [data-open-project-id] { grid-column: 1 / -1; }
 }
