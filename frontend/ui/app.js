@@ -310,7 +310,9 @@ const projectCatalog = window.ProductionProjectCatalog.create({
   currentUser: () => networkSessionUserId, epoch: () => networkEpoch,
   topicSaved: (source, topic, revision) => {
     if (state.databaseId !== source.databaseId || state.baseRevision !== source.baseRevision) return;
-    const baseline = { ...source, project: { ...source.project, topic } };
+    // Update only the saved topic, keeping any other edits in the open project dirty.
+    const baseline = savedSnapshot ? JSON.parse(savedSnapshot) : source;
+    baseline.project.topic = topic;
     state.project.topic = topic;
     state.baseRevision = revision;
     savedSnapshot = J.fingerprint(baseline);

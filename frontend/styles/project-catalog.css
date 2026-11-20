@@ -15,3 +15,10 @@
   .catalog-grid, .catalog-filters { grid-template-columns: 1fr; }
   #projectsList .catalog-row-actions { display: flex; flex-wrap: wrap; }
 }
+@media (min-width: 1101px) {
+  #projectsList .project-list-row, #projectsList .project-list-head {
+    grid-template-columns: minmax(160px, 2fr) 95px minmax(110px, 1fr) 95px 112px 170px;
+  }
+  #projectsList .catalog-row-actions { grid-template-columns: 1fr 1fr; gap: 3px; }
+  #projectsList .catalog-row-actions [data-open-project-id] { grid-column: 1 / -1; }
+}
