@@ -1,0 +1,105 @@
+{
+  "application": "ProductionCycle",
+  "architecture": "native-exe-with-shared-folder",
+  "artifact": "ProductionCycle_2026-11-18.zip",
+  "artifactSizeBytes": 389925507,
+  "artifactSHA256": "da8272eecba089759cf58354337760430f4024b45d8f06638417ee6e00fd530a",
+  "manifestVersion": "native-startup-b3aa860",
+  "nativeSourceCommit": "b3aa8606f15e10b647f93c7d6f2c7eb06fa8065e",
+  "packageSourceCommit": "b3aa8606f15e10b647f93c7d6f2c7eb06fa8065e",
+  "sourceHeadCommit": "55a31f4ea4398a708cb169af13c56305cbffb9f7",
+  "integrationMergeCommit": "43dcee0ce10f602c60ca2db08047e96c94646fbb",
+  "integrationBaseCommit": "cf45880cac3fc03fe3e7b0a711ea9e51e0457303",
+  "maxSharedSessions": 3,
+  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-51464782b6b08191a294a698cf9ab415_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
+  "artifactAccess": "Issued file in the owner's ChatGPT account; not a public GitHub release asset",
+  "passport": "passport/ProductionCycle_User_Administration_Addendum_2026-11-18.md",
+  "dashboardGuide": "statistics-dashboard.md",
+  "verifiedRuns": [
+    "https://github.com/Prapeller12/production-cycle/actions/runs/44294454442"
+  ],
+  "verifiedPlatforms": [
+    "Windows Server 2022",
+    "Windows Server 2025"
+  ],
+  "checks": {
+    "jsTests": 75,
+    "rustTests": 88,
+    "staticButtons": 63,
+    "dynamicControls": 14,
+    "mainUIScenarios": 19,
+    "pdfFormats": 8,
+    "nativeStatistics": true,
+    "excel": true,
+    "smbUNC": true,
+    "standardWindowsAccount": true,
+    "desktopShortcut": true,
+    "cmdLauncher": true,
+    "offlineLocalLaunchWindowsServer2022": true,
+    "personalStatisticsLayout": true,
+    "fullWidthLegacyTableAndBars": true,
+    "trustedPointerDragReorders": true,
+    "equalHalfCardGeometry": true,
+    "nativeCloseContinueAndShortcutExit": true,
+    "profileIsolationAfterFullProcessRestart": true,
+    "sharedPreferencesAcrossIndependentClientCaches": true,
+    "sharedPreferenceRevisionConflict": true,
+    "sharedFileReadAndReplacementDenial": true,
+    "calendarHorizons": [
+      7,
+      14,
+      30
+    ],
+    "calendarDaysIncludingCalculationDate": [
+      8,
+      15,
+      31
+    ],
+    "csvFilteredRows": 100,
+    "largeFontComponentStressViewportCssPx": 320,
+    "administratorUserEditing": true,
+    "administratorOnlyUserStatistics": true,
+    "soleAdministratorProtected": true,
+    "signedUserProfileHistory": true,
+    "staleProfileEditRejected": true,
+    "blockedUserLoginRejected": true,
+    "currentRoleEnforcedAfterDowngrade": true,
+    "originalUserPinAndKeyPreserved": true,
+    "userPinViewingOrResetAdded": false,
+    "personalDashboardSurvivesProfileChangesAndRestart": true,
+    "identityBasedUserStatistics": true,
+    "userStatisticsJournalEntries": 53,
+    "userStatisticsPageSizes": [
+      50,
+      3
+    ],
+    "userStatisticsDateFilter": true,
+    "lateUserStatisticsResponseDiscarded": true,
+    "sharedProfileChangesAcrossIndependentClientCaches": true
+  },
+  "packageVerification": {
+    "immutableFiles": 622,
+    "frontendFilesMatchRepositoryAfterWindowsCheckoutEOL": 68,
+    "checkoutLineEndingDifferences": 50,
+    "exeSHA256": "19711c7a945c5d573d2636eb52e9a2adf977d9c46e612037a9013705783cdd8e",
+    "userDatabaseIncluded": false,
+    "statisticsGuideIncluded": true,
+    "userAdministrationGuideIncluded": true
+  },
+  "notVerified": [
+    "Clean Windows 10/11 on owner hardware",
+    "Owner Windows Server 2019 and SMB environment",
+    "Physical printer",
+    "Two physical client computers on the owner network",
+    "Physical Windows DPI configurations"
+  ],
+  "previousReleaseRecord": "releases/ProductionCycle_Statistics_Personal_2026-11-17.json",
+  "documentationDate": "2026-11-18",
+  "note": "The issued ZIP is an unchanged byte copy of the Windows Server 2022 artifact from the successful run. Tested PR checkout, source branch, local source and integration merge had the same source tree. Release metadata and documentation may be updated after packaging. Later rebuilds have their own identifiers and checksums. Dashboard reads are sequential saved-project reads, not an atomic historical snapshot.",
+  "sourceTree": "4044e1b109c3e95571e336168a59b6e97d4d8d1e",
+  "testEnvironmentLimits": [
+    "Two independent SMB client cache roots on one physical CI host per Windows version",
+    "Windows CSS viewport stress test does not verify Windows DPI scaling or the entire host UI at 320px"
+  ],
+  "userAdministrationGuide": "user-administration.md"
+}
