@@ -9,6 +9,7 @@
       databaseId:Number.isSafeInteger(state.databaseId)?state.databaseId:null,
       baseRevision:typeof state.baseRevision==='string'?state.baseRevision:null,
       project:{
+        ...(state.project.topic ? {topic:state.project.topic} : {}),
         name:state.project.name,
         orderNo:state.project.orderNo,
         initiator:state.project.initiator,
@@ -27,6 +28,7 @@
       databaseId:Number.isSafeInteger(snapshot.databaseId)?snapshot.databaseId:null,
       baseRevision:typeof snapshot.baseRevision==='string'?snapshot.baseRevision:null,
       project:{
+        ...(snapshot.project.topic ? {topic:snapshot.project.topic} : {}),
         name:snapshot.project.name,
         orderNo:snapshot.project.orderNo,
         initiator:snapshot.project.initiator,

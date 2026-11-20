@@ -97,6 +97,7 @@ pub fn parse_bytes(bytes:&[u8])->Result<ImportResult,String>{
     }
     for name in PROJECT_FIELDS{if !fields.contains_key(name){return Err(format!("Лист «Проект»: отсутствует поле «{name}»."))}}
     let project=ProductionProjectInput{
+        topic: String::new(),
         name:text(&fields["наименование проекта"],"Наименование проекта")?,order_no:text(&fields["номер заказа"],"Номер заказа")?,
         initiator:text(&fields["инициатор"],"Инициатор")?,executor:text(&fields["исполнитель"],"Исполнитель")?,enterprise:text(&fields["предприятие"],"Предприятие")?,
         start:date(&fields["начало"],is_1904,"Начало проекта")?,deadline:date(&fields["срок исполнения"],is_1904,"Срок проекта")?,

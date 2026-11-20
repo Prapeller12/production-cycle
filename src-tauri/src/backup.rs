@@ -288,7 +288,7 @@ mod tests {
         ProductionSnapshot {
             database_id: None,
             base_revision: None,
-            project: ProductionProjectInput { name:name.into(),order_no:"BACKUP-1".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-30".into() },
+            project: ProductionProjectInput { topic:String::new(),name:name.into(),order_no:"BACKUP-1".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-30".into() },
             stages: vec![ProductionStageInput { uid:"stage-1".into(),seq:1,sort:1,parent_uid:None,title:"Контроль".into(),executor:"Исполнитель".into(),addressees:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-20".into(),status:StageStatus::Work,comment:String::new() }],
             next_seq: 2,
         }

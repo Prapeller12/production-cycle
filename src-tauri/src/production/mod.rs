@@ -9,7 +9,7 @@ use tauri::State;
 use crate::infrastructure::network::NetworkRuntime;
 
 const MIGRATION: &str = include_str!("../../migrations/001_production_cycle.sql");
-pub(crate) const SCHEMA_VERSION: i64 = 4;
+pub(crate) const SCHEMA_VERSION: i64 = 5;
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
 pub const OUT_HEADER: [&str; 9] = [
@@ -60,6 +60,9 @@ pub enum StageVisualStatus { New, Work, Hold, Done, Overdue }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductionProjectInput {
+    // Omit an unassigned topic so pre-migration project signatures remain valid.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub topic: String,
     pub name: String,
     pub order_no: String,
     pub initiator: String,
@@ -138,6 +141,8 @@ pub struct ProductionReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSummary {
+    #[serde(default)]
+    pub topic: String,
     pub project_id:i64,
     pub order_no:String,
     pub name:String,
@@ -204,6 +209,7 @@ fn schema_needs_migration(conn:&Connection)->Result<bool>{
     if !table_exists(conn,"production_cycle")?{return Ok(false)}
     let version:i64=conn.query_row("PRAGMA user_version",[],|row|row.get(0))?;
     Ok(version<SCHEMA_VERSION
+        || !table_has_column(conn,"production_cycle","topic")?
         || !table_has_column(conn,"production_stage","comment")?
         || !table_has_column(conn,"audit_event","changes_json")?
         || has_unique_order_index(conn)?)
@@ -222,6 +228,9 @@ pub(crate) fn initialize_schema(conn:&Connection)->Result<()> {
     drop(stmt);
     if !columns.iter().any(|name|name=="comment") {conn.execute_batch("ALTER TABLE production_stage ADD COLUMN comment TEXT NOT NULL DEFAULT '';")?;}
     allow_duplicate_orders(conn)?;
+    if !table_has_column(conn, "production_cycle", "topic")? {
+        conn.execute_batch("ALTER TABLE production_cycle ADD COLUMN topic TEXT NOT NULL DEFAULT ''")?;
+    }
     crate::audit::initialize_audit_schema(conn).map_err(ProductionError::Validation)?;
     conn.pragma_update(None,"user_version",SCHEMA_VERSION)?;
     Ok(())
@@ -280,14 +289,14 @@ impl ProductionDb {
     pub fn list_projects(&self) -> Result<Vec<ProjectSummary>> {
         let conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
         let mut stmt=conn.prepare(
-            "SELECT c.id,c.order_no,c.name,c.enterprise,c.deadline,c.updated_at,COUNT(s.id),COALESCE(SUM(CASE WHEN s.status='done' THEN 1 ELSE 0 END),0) \
+            "SELECT c.id,c.order_no,c.name,c.enterprise,c.deadline,c.updated_at,COUNT(s.id),COALESCE(SUM(CASE WHEN s.status='done' THEN 1 ELSE 0 END),0),c.topic \
              FROM production_cycle c LEFT JOIN production_stage s ON s.cycle_id=c.id \
              GROUP BY c.id ORDER BY c.updated_at DESC,c.order_no"
         )?;
         let rows=stmt.query_map([],|r|{
             let stage_count:i64=r.get(6)?;let done_count:i64=r.get(7)?;
             let done_percent=if stage_count>0{((done_count*100+stage_count/2)/stage_count) as u8}else{0};
-            Ok(ProjectSummary{project_id:r.get(0)?,order_no:r.get(1)?,name:r.get(2)?,enterprise:r.get(3)?,deadline:r.get(4)?,updated_at:r.get(5)?,stage_count:stage_count as usize,done_count:done_count as usize,done_percent})
+            Ok(ProjectSummary{topic:r.get(8)?,project_id:r.get(0)?,order_no:r.get(1)?,name:r.get(2)?,enterprise:r.get(3)?,deadline:r.get(4)?,updated_at:r.get(5)?,stage_count:stage_count as usize,done_count:done_count as usize,done_percent})
         })?;
         rows.collect::<std::result::Result<Vec<_>,_>>().map_err(ProductionError::from)
     }
@@ -349,6 +358,9 @@ fn issue(field:&str,code:&str,message:&str,entity:Option<&str>)->ValidationIssue
 pub fn validate_snapshot(snapshot:&ProductionSnapshot)->Result<ValidationResult>{
     let mut r=ValidationResult::default();
     let p=&snapshot.project;
+    if p.topic.chars().count() > 120 || p.topic.chars().any(char::is_control) {
+        r.errors.push(issue("Тематика", "INVALID_TOPIC", "Введите тематику одной строкой до 120 символов.", None));
+    }
     let fields=[("Название проекта",p.name.as_str()),("Номер заказа",p.order_no.as_str()),("Инициатор",p.initiator.as_str()),("Исполнитель",p.executor.as_str()),("Предприятие",p.enterprise.as_str()),("Начало",p.start.as_str()),("Срок исполнения",p.deadline.as_str())];
     for (name,v) in fields { if clean(v).is_empty(){r.errors.push(issue(name,"REQUIRED",&format!("Поле «{name}» обязательно."),None));} else if has_tsv_breaker(v){r.errors.push(issue(name,"TSV_BREAKER",&format!("Поле «{name}» содержит TAB/перенос строки."),None));} }
     if !p.start.is_empty()&&!p.deadline.is_empty(){match(parse_date(&p.start),parse_date(&p.deadline)){(Ok(a),Ok(b)) if a>b=>r.errors.push(issue("Срок исполнения","DATE_ORDER","Дата начала проекта не может быть позже срока исполнения.",None)),(Err(_),_)|(_,Err(_))=>r.errors.push(issue("Дата","DATE_FORMAT","Используйте формат YYYY-MM-DD.",None)),_=>{}}}
@@ -420,7 +432,7 @@ pub fn build_report(snapshot:&ProductionSnapshot,today:NaiveDate)->Result<Produc
 pub(crate) fn save_snapshot_tx(tx:&Transaction<'_>,snapshot:&ProductionSnapshot)->Result<i64> {
     validate_snapshot_revision(tx,snapshot)?;
     let now=Local::now().to_rfc3339();
-    let cycle_id=if let Some(id)=snapshot.database_id{let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM production_cycle WHERE id=?1)",[id],|r|r.get(0))?;if !exists{return Err(ProductionError::Validation("Сохраняемый проект больше не найден в базе данных.".into()))}tx.execute("UPDATE production_cycle SET order_no=?1,root_reg_number=?1,name=?2,initiator=?3,executor=?4,enterprise=?5,start_date=?6,deadline=?7,updated_at=?8 WHERE id=?9",params![clean(&snapshot.project.order_no),clean(&snapshot.project.name),clean(&snapshot.project.initiator),clean(&snapshot.project.executor),clean(&snapshot.project.enterprise),snapshot.project.start,snapshot.project.deadline,now,id])?;tx.execute("DELETE FROM production_stage WHERE cycle_id=?1",[id])?;id}else{tx.execute("INSERT INTO production_cycle(order_no,root_reg_number,name,initiator,executor,enterprise,start_date,deadline,created_at,updated_at) VALUES(?1,?1,?2,?3,?4,?5,?6,?7,?8,?8)",params![clean(&snapshot.project.order_no),clean(&snapshot.project.name),clean(&snapshot.project.initiator),clean(&snapshot.project.executor),clean(&snapshot.project.enterprise),snapshot.project.start,snapshot.project.deadline,now])?;tx.last_insert_rowid()};
+    let cycle_id=if let Some(id)=snapshot.database_id{let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM production_cycle WHERE id=?1)",[id],|r|r.get(0))?;if !exists{return Err(ProductionError::Validation("Сохраняемый проект больше не найден в базе данных.".into()))}tx.execute("UPDATE production_cycle SET order_no=?1,root_reg_number=?1,name=?2,initiator=?3,executor=?4,enterprise=?5,start_date=?6,deadline=?7,updated_at=?8,topic=?10 WHERE id=?9",params![clean(&snapshot.project.order_no),clean(&snapshot.project.name),clean(&snapshot.project.initiator),clean(&snapshot.project.executor),clean(&snapshot.project.enterprise),snapshot.project.start,snapshot.project.deadline,now,id,snapshot.project.topic.trim()])?;tx.execute("DELETE FROM production_stage WHERE cycle_id=?1",[id])?;id}else{tx.execute("INSERT INTO production_cycle(order_no,root_reg_number,name,initiator,executor,enterprise,start_date,deadline,created_at,updated_at,topic) VALUES(?1,?1,?2,?3,?4,?5,?6,?7,?8,?8,?9)",params![clean(&snapshot.project.order_no),clean(&snapshot.project.name),clean(&snapshot.project.initiator),clean(&snapshot.project.executor),clean(&snapshot.project.enterprise),snapshot.project.start,snapshot.project.deadline,now,snapshot.project.topic.trim()])?;tx.last_insert_rowid()};
     let mut id_by_uid=HashMap::<String,i64>::new();
     for (s,_) in preorder(&snapshot.stages){let parent_id=s.parent_uid.as_ref().and_then(|u|id_by_uid.get(u)).copied();tx.execute("INSERT INTO production_stage(cycle_id,uid,seq,reg_number,parent_stage_id,sort_order,title,executor,addressees,start_date,deadline,status,comment,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?14)",params![cycle_id,s.uid,s.seq,stage_reg(&snapshot.project.order_no,s.seq),parent_id,s.sort,clean(&s.title),clean(&s.executor),clean(&s.addressees),s.start,s.deadline,s.status.as_str(),clean(&s.comment),now])?;id_by_uid.insert(s.uid,tx.last_insert_rowid());}
     Ok(cycle_id)
@@ -430,7 +442,7 @@ fn load_snapshot_conn(conn:&Connection,order_no:&str)->Result<Option<ProductionS
     let id=conn.query_row("SELECT id FROM production_cycle WHERE order_no=?1 ORDER BY updated_at DESC,id DESC LIMIT 1",[clean(order_no)],|r|r.get(0)).optional()?;match id{Some(id)=>load_snapshot_by_id_conn(conn,id),None=>Ok(None)}
 }
 pub(crate) fn load_snapshot_by_id_conn(conn:&Connection,project_id:i64)->Result<Option<ProductionSnapshot>>{
-    let project=conn.query_row("SELECT id,name,order_no,initiator,executor,enterprise,start_date,deadline FROM production_cycle WHERE id=?1",[project_id],|r|Ok((r.get::<_,i64>(0)?,ProductionProjectInput{name:r.get(1)?,order_no:r.get(2)?,initiator:r.get(3)?,executor:r.get(4)?,enterprise:r.get(5)?,start:r.get(6)?,deadline:r.get(7)?}))).optional()?;let Some((cycle_id,project))=project else{return Ok(None)};
+    let project=conn.query_row("SELECT id,name,order_no,initiator,executor,enterprise,start_date,deadline,topic FROM production_cycle WHERE id=?1",[project_id],|r|Ok((r.get::<_,i64>(0)?,ProductionProjectInput{topic:r.get(8)?,name:r.get(1)?,order_no:r.get(2)?,initiator:r.get(3)?,executor:r.get(4)?,enterprise:r.get(5)?,start:r.get(6)?,deadline:r.get(7)?}))).optional()?;let Some((cycle_id,project))=project else{return Ok(None)};
     let mut stmt=conn.prepare("SELECT id,uid,seq,sort_order,parent_stage_id,title,executor,addressees,start_date,deadline,status,comment FROM production_stage WHERE cycle_id=?1 ORDER BY seq")?;let rows=stmt.query_map([cycle_id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?,r.get::<_,String>(10)?,r.get::<_,String>(11)?)))?;let mut raw=Vec::new();let mut uid_by_id=HashMap::new();for row in rows{let v=row?;uid_by_id.insert(v.0,v.1.clone());raw.push(v)}let mut stages=Vec::new();let mut max_seq=0;for (_id,uid,seq,sort,parent,title,executor,addressees,start,deadline,status,comment) in raw{if !(1..MAX_SAFE_INTEGER).contains(&seq){return Err(ProductionError::Validation("В базе обнаружен недопустимый порядковый номер этапа.".into()))}max_seq=max_seq.max(seq);stages.push(ProductionStageInput{uid,seq,sort,parent_uid:parent.and_then(|p|uid_by_id.get(&p).cloned()),title,executor,addressees,start,deadline,status:StageStatus::parse(&status)?,comment});}
     let mut snapshot=ProductionSnapshot{database_id:Some(cycle_id),base_revision:None,project,stages,next_seq:max_seq+1};
     snapshot.base_revision=Some(snapshot_revision(&snapshot)?);
@@ -491,7 +503,7 @@ pub fn production_get_management_report(snapshot:ProductionSnapshot,db:State<'_,
 #[cfg(test)]
 mod tests{
     use super::*;
-    fn sample()->ProductionSnapshot{ProductionSnapshot{database_id:None,base_revision:None,project:ProductionProjectInput{name:"Изделие".into(),order_no:"916".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-10-01".into()},stages:vec![ProductionStageInput{uid:"a".into(),seq:1,sort:1,parent_uid:None,title:"A".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-01".into(),deadline:"2026-09-20".into(),status:StageStatus::Work,comment:"Контрольный комментарий".into()},ProductionStageInput{uid:"b".into(),seq:2,sort:1,parent_uid:Some("a".into()),title:"B".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-02".into(),deadline:"2026-09-18".into(),status:StageStatus::Done,comment:String::new()}],next_seq:3}}
+    fn sample()->ProductionSnapshot{ProductionSnapshot{database_id:None,base_revision:None,project:ProductionProjectInput{topic:String::new(),name:"Изделие".into(),order_no:"916".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-10-01".into()},stages:vec![ProductionStageInput{uid:"a".into(),seq:1,sort:1,parent_uid:None,title:"A".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-01".into(),deadline:"2026-09-20".into(),status:StageStatus::Work,comment:"Контрольный комментарий".into()},ProductionStageInput{uid:"b".into(),seq:2,sort:1,parent_uid:Some("a".into()),title:"B".into(),executor:"E".into(),addressees:"A".into(),start:"2026-09-02".into(),deadline:"2026-09-18".into(),status:StageStatus::Done,comment:String::new()}],next_seq:3}}
     #[test]fn txt_contract_and_empty_link(){let b=build_txt_export(&sample()).unwrap();assert_eq!(OUT_HEADER.len(),9);assert_eq!(IN_HEADER.len(),8);let incoming:Vec<_>=b.incoming_text.split("\r\n").collect();assert!(incoming[1].ends_with('\t'));assert!(incoming[1].contains("A\t916-001"));assert!(incoming[2].contains("B\t916-002"));}
     #[test]fn sqlite_roundtrip(){let db=ProductionDb::memory().unwrap();let s=sample();db.save_snapshot(&s).unwrap();let loaded=db.load_snapshot("916").unwrap().unwrap();assert_eq!(loaded.project.enterprise,"Предприятие");assert_eq!(loaded.stages.len(),2);assert_eq!(loaded.stages[0].comment,"Контрольный комментарий");assert_eq!(loaded.stages[1].parent_uid.as_deref(),Some("a"));}
     #[test]fn existing_database_gets_comment_column(){let conn=Connection::open_in_memory().unwrap();conn.execute_batch("CREATE TABLE production_stage(id INTEGER PRIMARY KEY,cycle_id INTEGER,parent_stage_id INTEGER,sort_order INTEGER,comment_placeholder TEXT);").unwrap();initialize_schema(&conn).unwrap();let columns=conn.prepare("PRAGMA table_info(production_stage)").unwrap().query_map([],|row|row.get::<_,String>(1)).unwrap().collect::<std::result::Result<Vec<_>,_>>().unwrap();assert!(columns.iter().any(|name|name=="comment"));}

@@ -83,6 +83,8 @@ jobs:
         run: |
           node tests/user-administration-native.cjs
           if($LASTEXITCODE -ne 0){throw 'Administrator user management regression'}
+          node tests/project-catalog-native.cjs
+          if($LASTEXITCODE -ne 0){throw 'Saved project copy and topics regression'}
       - name: Real SMB share, desktop shortcut and standard user
         id: network_shortcut
         continue-on-error: true

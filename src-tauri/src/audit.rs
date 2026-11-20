@@ -323,6 +323,7 @@ fn snapshot_changes(previous: Option<&ProductionSnapshot>, current: &ProductionS
     let before_project = &previous.project;
     let after_project = &current.project;
     for (field, before, after) in [
+        ("Тематика", before_project.topic.as_str(), after_project.topic.as_str()),
         ("Название", before_project.name.as_str(), after_project.name.as_str()),
         ("Номер заказа", before_project.order_no.as_str(), after_project.order_no.as_str()),
         ("Инициатор / подписант", before_project.initiator.as_str(), after_project.initiator.as_str()),
@@ -1001,7 +1002,7 @@ mod tests {
         ProductionSnapshot {
             database_id: None,
             base_revision: None,
-            project: ProductionProjectInput { name:"Подписываемый проект".into(),order_no:"AUD-1".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-30".into() },
+            project: ProductionProjectInput { topic:String::new(),name:"Подписываемый проект".into(),order_no:"AUD-1".into(),initiator:"Инициатор".into(),executor:"Исполнитель".into(),enterprise:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-30".into() },
             stages: vec![ProductionStageInput { uid:"stage-1".into(),seq:1,sort:1,parent_uid:None,title:"Приёмка".into(),executor:"Исполнитель".into(),addressees:"Предприятие".into(),start:"2026-09-01".into(),deadline:"2026-09-20".into(),status,comment:String::new() }],
             next_seq: 2,
         }
@@ -1009,6 +1010,28 @@ mod tests {
 
     fn admin(db: &ProductionDb) -> AuditUserSummary {
         db.create_audit_user(CreateAuditUserInput { display_name:"Владелец".into(),pin:"739201".into(),is_admin:false,role:None,admin_user_id:None,admin_pin:None }).unwrap()
+    }
+
+    #[test]
+    fn old_project_signatures_survive_topic_migration_and_stale_topic_edits_fail() {
+        let db = ProductionDb::memory().unwrap();
+        let owner = admin(&db);
+        let saved = db.save_signed_snapshot(&sample(StageStatus::Work), owner.id, "739201", "Создание", None).unwrap();
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute_batch("ALTER TABLE production_cycle DROP COLUMN topic; PRAGMA user_version=4;").unwrap();
+            crate::production::initialize_schema(&conn).unwrap();
+        }
+        let mut model = db.load_snapshot_by_id(saved.project_id).unwrap().unwrap();
+        let stale = model.clone();
+        assert!(model.project.topic.is_empty());
+        assert!(serde_json::to_value(&model.project).unwrap().get("topic").is_none());
+        assert_eq!(db.verify_audit_log(owner.id, "739201", None).unwrap().invalid_events, 0);
+        model.project.topic = "Оснастка".into();
+        db.save_signed_snapshot(&model, owner.id, "739201", "Назначение тематики", None).unwrap();
+        assert!(db.save_signed_snapshot(&stale, owner.id, "739201", "Устаревшая форма", None).is_err());
+        assert_eq!(db.list_projects().unwrap()[0].topic, "Оснастка");
+        assert_eq!(db.verify_audit_log(owner.id, "739201", None).unwrap().invalid_events, 0);
     }
 
     #[test]
