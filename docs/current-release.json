@@ -1,22 +1,22 @@
 {
   "application": "ProductionCycle",
   "architecture": "native-exe-with-shared-folder",
-  "artifact": "ProductionCycle_2026-11-20.zip",
-  "artifactSizeBytes": 389944509,
-  "artifactSHA256": "fecd1faee0791e6618b139f4386a468bd74b0b11fa2152b20db321d7ce9e2d46",
-  "manifestVersion": "native-startup-4558687",
-  "nativeSourceCommit": "4558687e115c7bfdce89578f0342866fb643a4ea",
-  "packageSourceCommit": "4558687e115c7bfdce89578f0342866fb643a4ea",
-  "sourceHeadCommit": "d8616005c15838771ffeaec587ebc3eb2fa03ee4",
-  "integrationMergeCommit": "b92e12374f0b49755390eed9ac75acb3044c3e4e",
-  "integrationBaseCommit": "ecfb0a1294e2614580d6fa542db5bbc18ed31c0c",
+  "artifact": "ProductionCycle_2026-11-20_columns.zip",
+  "artifactSizeBytes": 389944698,
+  "artifactSHA256": "ad3231c1b779aeb9e4af404ef0a04350056cd3c1f86d890cc80a8d5735df2496",
+  "manifestVersion": "native-startup-cd81c73",
+  "nativeSourceCommit": "cd81c73bb348121b0de94103b71dcf082ecdae58",
+  "packageSourceCommit": "cd81c73bb348121b0de94103b71dcf082ecdae58",
+  "sourceHeadCommit": "00ec57311e56e231f010f1de958273f8b9d9c7eb",
+  "integrationMergeCommit": "f604a2eb93b9ad2179066550039d1ac495f6b6c9",
+  "integrationBaseCommit": "c0b7aec56b0079f3d31f0facf310726b17ade420",
   "maxSharedSessions": 3,
-  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-9708475ba1448191917c43450f39e5c2_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
+  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-e0bf3c469d6081919241120b037e6a58_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
   "artifactAccess": "Issued file in the owner's ChatGPT account; not a public GitHub release asset",
   "passport": "passport/ProductionCycle_User_Administration_Addendum_2026-11-18.md",
   "dashboardGuide": "statistics-dashboard.md",
   "verifiedRuns": [
-    "https://github.com/Prapeller12/production-cycle/actions/runs/44742225749"
+    "https://github.com/Prapeller12/production-cycle/actions/runs/44748061089"
   ],
   "verifiedPlatforms": [
     "Windows Server 2022",
@@ -81,13 +81,26 @@
     "topicAssignmentAndCombinedSearch": true,
     "catalogAccessAfterRestart": true,
     "sourceAndCopySignaturesVerified": true,
-    "priorTopiclessSchemaMigrationTest": true
+    "priorTopiclessSchemaMigrationTest": true,
+    "savedProjectCatalogWidthsCssPx": [
+      320,
+      375,
+      520,
+      768,
+      850,
+      900,
+      1024,
+      1101,
+      1440
+    ],
+    "savedProjectCatalogButtonsFit": true,
+    "savedProjectCatalogHeaderAlignment": true
   },
   "packageVerification": {
     "immutableFiles": 624,
     "frontendFilesMatchRepositoryAfterWindowsCheckoutEOL": 70,
     "checkoutLineEndingDifferences": 52,
-    "exeSHA256": "8106eef770c3aeeaed3769c1f9565e49553e94d713b8a9abc624ec0206da79dd",
+    "exeSHA256": "8c39c779d6bdfcfdf173305b0415db5d220de87f0767271110a128bea21f4367",
     "userDatabaseIncluded": false,
     "statisticsGuideIncluded": true,
     "userAdministrationGuideIncluded": true,
@@ -100,10 +113,10 @@
     "Two physical client computers on the owner network",
     "Physical Windows DPI configurations"
   ],
-  "previousReleaseRecord": "releases/ProductionCycle_User_Administration_2026-11-18.json",
+  "previousReleaseRecord": "releases/ProductionCycle_Project_Topics_2026-11-20.json",
   "documentationDate": "2026-11-20",
   "note": "The issued ZIP is an unchanged byte copy of the Windows Server 2022 artifact from the successful run. Tested PR checkout, source branch, local source and integration merge had the same source tree. Release metadata and documentation may be updated after packaging. Later rebuilds have their own identifiers and checksums. Dashboard reads are sequential saved-project reads, not an atomic historical snapshot.",
-  "sourceTree": "1f2eada54f3821ca8186f4b3b6b5e112d583d022",
+  "sourceTree": "fdf8220920cdcc2d1970ce52ba90e4b6abf27bba",
   "testEnvironmentLimits": [
     "Two independent SMB client cache roots on one physical CI host per Windows version",
     "Windows CSS viewport stress test does not verify Windows DPI scaling or the entire host UI at 320px"

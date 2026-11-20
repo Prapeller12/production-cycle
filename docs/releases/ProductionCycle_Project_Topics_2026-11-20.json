@@ -1,0 +1,113 @@
+{
+  "application": "ProductionCycle",
+  "architecture": "native-exe-with-shared-folder",
+  "artifact": "ProductionCycle_2026-11-20.zip",
+  "artifactSizeBytes": 389944509,
+  "artifactSHA256": "fecd1faee0791e6618b139f4386a468bd74b0b11fa2152b20db321d7ce9e2d46",
+  "manifestVersion": "native-startup-4558687",
+  "nativeSourceCommit": "4558687e115c7bfdce89578f0342866fb643a4ea",
+  "packageSourceCommit": "4558687e115c7bfdce89578f0342866fb643a4ea",
+  "sourceHeadCommit": "d8616005c15838771ffeaec587ebc3eb2fa03ee4",
+  "integrationMergeCommit": "b92e12374f0b49755390eed9ac75acb3044c3e4e",
+  "integrationBaseCommit": "ecfb0a1294e2614580d6fa542db5bbc18ed31c0c",
+  "maxSharedSessions": 3,
+  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-9708475ba1448191917c43450f39e5c2_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
+  "artifactAccess": "Issued file in the owner's ChatGPT account; not a public GitHub release asset",
+  "passport": "passport/ProductionCycle_User_Administration_Addendum_2026-11-18.md",
+  "dashboardGuide": "statistics-dashboard.md",
+  "verifiedRuns": [
+    "https://github.com/Prapeller12/production-cycle/actions/runs/44742225749"
+  ],
+  "verifiedPlatforms": [
+    "Windows Server 2022",
+    "Windows Server 2025"
+  ],
+  "checks": {
+    "jsTests": 75,
+    "rustTests": 89,
+    "staticButtons": 63,
+    "dynamicControls": 14,
+    "mainUIScenarios": 19,
+    "pdfFormats": 8,
+    "nativeStatistics": true,
+    "excel": true,
+    "smbUNC": true,
+    "standardWindowsAccount": true,
+    "desktopShortcut": true,
+    "cmdLauncher": true,
+    "offlineLocalLaunchWindowsServer2022": true,
+    "personalStatisticsLayout": true,
+    "fullWidthLegacyTableAndBars": true,
+    "trustedPointerDragReorders": true,
+    "equalHalfCardGeometry": true,
+    "nativeCloseContinueAndShortcutExit": true,
+    "profileIsolationAfterFullProcessRestart": true,
+    "sharedPreferencesAcrossIndependentClientCaches": true,
+    "sharedPreferenceRevisionConflict": true,
+    "sharedFileReadAndReplacementDenial": true,
+    "calendarHorizons": [
+      7,
+      14,
+      30
+    ],
+    "calendarDaysIncludingCalculationDate": [
+      8,
+      15,
+      31
+    ],
+    "csvFilteredRows": 100,
+    "largeFontComponentStressViewportCssPx": 320,
+    "administratorUserEditing": true,
+    "administratorOnlyUserStatistics": true,
+    "soleAdministratorProtected": true,
+    "signedUserProfileHistory": true,
+    "staleProfileEditRejected": true,
+    "blockedUserLoginRejected": true,
+    "currentRoleEnforcedAfterDowngrade": true,
+    "originalUserPinAndKeyPreserved": true,
+    "userPinViewingOrResetAdded": false,
+    "personalDashboardSurvivesProfileChangesAndRestart": true,
+    "identityBasedUserStatistics": true,
+    "userStatisticsJournalEntries": 53,
+    "userStatisticsPageSizes": [
+      50,
+      3
+    ],
+    "userStatisticsDateFilter": true,
+    "lateUserStatisticsResponseDiscarded": true,
+    "sharedProfileChangesAcrossIndependentClientCaches": true,
+    "savedProjectCopyThroughNativeUI": true,
+    "copiedStageTreeAndStatuses": true,
+    "topicAssignmentAndCombinedSearch": true,
+    "catalogAccessAfterRestart": true,
+    "sourceAndCopySignaturesVerified": true,
+    "priorTopiclessSchemaMigrationTest": true
+  },
+  "packageVerification": {
+    "immutableFiles": 624,
+    "frontendFilesMatchRepositoryAfterWindowsCheckoutEOL": 70,
+    "checkoutLineEndingDifferences": 52,
+    "exeSHA256": "8106eef770c3aeeaed3769c1f9565e49553e94d713b8a9abc624ec0206da79dd",
+    "userDatabaseIncluded": false,
+    "statisticsGuideIncluded": true,
+    "userAdministrationGuideIncluded": true,
+    "catalogGuideIncluded": true
+  },
+  "notVerified": [
+    "Clean Windows 10/11 on owner hardware",
+    "Owner Windows Server 2019 and SMB environment",
+    "Physical printer",
+    "Two physical client computers on the owner network",
+    "Physical Windows DPI configurations"
+  ],
+  "previousReleaseRecord": "releases/ProductionCycle_User_Administration_2026-11-18.json",
+  "documentationDate": "2026-11-20",
+  "note": "The issued ZIP is an unchanged byte copy of the Windows Server 2022 artifact from the successful run. Tested PR checkout, source branch, local source and integration merge had the same source tree. Release metadata and documentation may be updated after packaging. Later rebuilds have their own identifiers and checksums. Dashboard reads are sequential saved-project reads, not an atomic historical snapshot.",
+  "sourceTree": "1f2eada54f3821ca8186f4b3b6b5e112d583d022",
+  "testEnvironmentLimits": [
+    "Two independent SMB client cache roots on one physical CI host per Windows version",
+    "Windows CSS viewport stress test does not verify Windows DPI scaling or the entire host UI at 320px"
+  ],
+  "userAdministrationGuide": "user-administration.md",
+  "projectCatalogGuide": "native-share-startup.txt"
+}
