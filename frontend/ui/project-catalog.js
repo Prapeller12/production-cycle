@@ -1,18 +1,29 @@
 'use strict';
 (() => {
   const key = text => String(text || '').trim().toLocaleLowerCase('ru');
-  function copyProject(source, name, orderNo, topic, newUid) {
+  const {copiedClosedStageDays} = Production.config;
+  function copyProject(source, name, orderNo, topic, newUid, copyDate = Production.domain.today()) {
     const ids = new Map(source.stages.map(stage => [stage.uid, newUid()]));
+    // Start with the local calendar date of submission. UTC arithmetic avoids DST offsets.
+    const due = new Date(copyDate + 'T00:00:00Z');
+    due.setUTCDate(due.getUTCDate() + copiedClosedStageDays);
+    const deadline = due.toISOString().slice(0, 10);
     return {
       databaseId: null, baseRevision: null, nextSeq: source.nextSeq, collapsed: {},
       project: { ...source.project, name, orderNo, topic },
-      stages: source.stages.map(stage => ({
-        ...stage, uid: ids.get(stage.uid), parentUid: stage.parentUid == null ? null : ids.get(stage.parentUid)
-      }))
+      stages: source.stages.map(stage => {
+        const duplicate = {...stage, uid: ids.get(stage.uid), parentUid: stage.parentUid == null ? null : ids.get(stage.parentUid)};
+        if (stage.status === 'done') {
+          duplicate.status = 'new';
+          duplicate.deadline = deadline;
+          if (duplicate.start > deadline) duplicate.start = copyDate;
+        }
+        return duplicate;
+      })
     };
   }
 
-  function create({ $, backend, escapeHtml, renderRows, currentUser, epoch, newUid, topicSaved }) {
+  function create({ $, backend, renderRows, currentUser, epoch, newUid, topicSaved }) {
     const editor = $('catalogEditor'), list = $('projectsList'), filters = $('catalogFilters');
     const query = $('catalogQuery'), filter = $('catalogTopic'), notice = $('catalogNotice');
     let projects = [], topics = [], generation = 0, saving = false;
@@ -84,21 +95,17 @@
         const [source, users] = await Promise.all([backend.loadById(id), backend.listAuditUsers()]);
         if (!isCurrent(ticket, session)) return;
         if (!source) throw Error('Проект больше не найден.');
-        const completed = copying ? source.stages.filter(s => s.status === 'done') : [];
+        const resetsStages = copying && source.stages.some(stage => stage.status === 'done');
         const title = copying ? 'Копировать проект' : 'Изменить тематику';
         const field = (label, input) => '<label>' + label + input + '</label>';
         editor.innerHTML = '<form class="catalog-form"><h3 tabindex="-1">' + title + '</h3><p data-source></p><div class="catalog-grid">' +
           (copying ? field('Название копии', '<input name="name" required>') + field('Номер заказа', '<input name="order" required>') : '') +
           field('Тематика', '<input name="topic" list="catalogKnownTopics" maxlength="120" placeholder="Выберите или введите новую">') +
           '<datalist id="catalogKnownTopics"></datalist></div>' +
-          (completed.length ? '<fieldset><legend>Подтверждение выполненных этапов в копии</legend><details><summary>Список этапов (' + completed.length + ')</summary><ul>' +
-            completed.map(s => '<li>' + escapeHtml(s.title) + '</li>').join('') + '</ul></details><div class="catalog-grid">' +
-            field('Официальный документ', '<select name="document" required></select>') +
-            field('Номер и дата документа', '<input name="reference" required>') +
-            field('Комментарий к выполнению', '<input name="evidenceComment" required>') + '</div></fieldset>' : '') +
+          (resetsStages ? '<p>В копии выполненные этапы получат статус «Не начато». Срок исполнения — через ' + copiedClosedStageDays + ' календарных дней со дня копирования.</p>' : '') +
           '<div class="catalog-grid">' + field('Подписывает', '<select name="signer" required></select>') +
           field('ПИН подписывающего', '<input name="pin" type="password" autocomplete="off" required>') +
-          '</div>' + field('Комментарий к записи в журнале', '<input name="reason" required>') +
+          '</div>' + field('Комментарий к записи в журнале (необязательно)', '<input name="reason" maxlength="2000">') +
           '<div class="catalog-actions"><button type="submit" class="btn primary">' +
           (copying ? 'Подписать и создать копию' : 'Подписать и сохранить тематику') +
           '</button><button type="button" class="btn" data-cancel>Отмена</button></div></form>';
@@ -112,8 +119,6 @@
         for (const topic of topics) $('catalogKnownTopics').append(new Option(topic, topic));
         for (const u of users.filter(u => u.active)) fields.signer.add(new Option(u.displayName, String(u.id)));
         if ([...fields.signer.options].some(o => o.value === String(currentUser()))) fields.signer.value = String(currentUser());
-        if (completed.length) fields.document.replaceChildren(...[...$('evidenceType').options].map(o => o.cloneNode(true)));
-        fields.reason.value = copying ? 'Копирование проекта № ' + id + ' «' + source.project.name + '»' : '';
         filters.hidden = list.hidden = true;
         editor.hidden = false;
         notify('');
@@ -127,11 +132,9 @@
           const model = copying
             ? copyProject(source, fields.namedItem('name').value.trim(), fields.order.value.trim(), topic, newUid)
             : { ...source, project: { ...source.project, topic } };
-          const evidence = completed.length ? {
-            documentType: fields.document.value, documentReference: fields.reference.value.trim(),
-            comment: fields.evidenceComment.value.trim(), stageUids: model.stages.filter(s => s.status === 'done').map(s => s.uid)
-          } : null;
-          const confirmation = {userId: Number(fields.signer.value), pin: fields.pin.value, comment: fields.reason.value.trim(), evidence};
+          const action = copying ? 'Копирование проекта № ' : 'Изменение тематики проекта № ';
+          const comment = fields.reason.value.trim() || 'Автоматическая запись. ' + action + id;
+          const confirmation = {userId: Number(fields.signer.value), pin: fields.pin.value, comment, evidence: null};
           saving = true;
           for (const el of fields) el.disabled = true;
           let saved;

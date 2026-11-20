@@ -5,7 +5,7 @@ const vm=require('node:vm');
 const path=require('node:path');
 const root=path.resolve(__dirname,'../frontend');
 const context=vm.createContext({console,Date,Set,Map,JSON});context.window=context;
-for(const f of ['config/contracts.js','domain/cycle.js','services/project-file.js','services/exchange.js','services/backend.js'])vm.runInContext(fs.readFileSync(path.join(root,f),'utf8'),context,{filename:f});
+for(const f of ['config/contracts.js','domain/cycle.js','services/project-file.js','services/exchange.js','services/backend.js','ui/project-catalog.js'])vm.runInContext(fs.readFileSync(path.join(root,f),'utf8'),context,{filename:f});
 const {domain:D,projectFile:J,exchange:X,backend:B}=context.Production;
 const plain=x=>JSON.parse(JSON.stringify(x));
 function stage(seq,parentUid=null,status='work'){return {uid:'s'+seq,seq,sort:seq,parentUid,title:'Этап '+seq,executor:'Исполнитель',addressees:'Предприятие',start:'2026-09-01',deadline:'2026-09-15',status,comment:'Комментарий '+seq}}
@@ -78,4 +78,29 @@ test('native adapter preserves the loaded revision in edits and signed saves',as
   assert.equal(B.toSnapshot(fixture()).baseRevision,null);
   const portable=J.stringify(loaded);assert.doesNotMatch(portable,/baseRevision|databaseId/);
  }finally{delete context.__TAURI__}
+});
+
+test('copying a saved project resets only completed stages using calendar dates', () => {
+  const source = fixture([stage(1,null,'done'), stage(2,'s1','work'), stage(3,null,'hold'), stage(4,null,'new')]);
+  source.stages[0].start = '2020-01-01';
+  const before = plain(source);
+  for (const [day, deadline] of [['2026-11-20','2026-12-20'], ['2026-12-15','2027-01-14'], ['2028-01-31','2028-03-01']]) {
+    let next = 0;
+    const copy = context.ProductionProjectCatalog.copyProject(source,'Копия','102','Оснастка',() => 'copy-' + ++next, day);
+    assert.equal(copy.stages[0].status,'new');
+    assert.equal(copy.stages[0].deadline,deadline);
+    assert.equal(copy.stages[0].start,source.stages[0].start);
+    assert.equal(copy.stages[1].parentUid,copy.stages[0].uid);
+    for (const [i,s] of copy.stages.entries()) {
+      assert.notEqual(s.uid,source.stages[i].uid);
+      if (i) for (const field of ['status','start','deadline']) assert.equal(s[field],source.stages[i][field]);
+    }
+  }
+  assert.deepEqual(plain(source),before);
+  source.stages[0].start = '2027-01-01';
+  source.stages[0].deadline = '2027-02-01';
+  let next = 0;
+  const future = context.ProductionProjectCatalog.copyProject(source,'Копия','102','',() => 'future-' + ++next,'2026-11-20');
+  assert.equal(future.stages[0].start,'2026-11-20');
+  assert.equal(future.stages[0].deadline,'2026-12-20');
 });
