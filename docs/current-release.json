@@ -1,29 +1,29 @@
 {
   "application": "ProductionCycle",
   "architecture": "native-exe-with-shared-folder",
-  "artifact": "ProductionCycle_2026-11-20_columns.zip",
-  "artifactSizeBytes": 389944698,
-  "artifactSHA256": "ad3231c1b779aeb9e4af404ef0a04350056cd3c1f86d890cc80a8d5735df2496",
-  "manifestVersion": "native-startup-cd81c73",
-  "nativeSourceCommit": "cd81c73bb348121b0de94103b71dcf082ecdae58",
-  "packageSourceCommit": "cd81c73bb348121b0de94103b71dcf082ecdae58",
-  "sourceHeadCommit": "00ec57311e56e231f010f1de958273f8b9d9c7eb",
-  "integrationMergeCommit": "f604a2eb93b9ad2179066550039d1ac495f6b6c9",
-  "integrationBaseCommit": "c0b7aec56b0079f3d31f0facf310726b17ade420",
+  "artifact": "ProductionCycle_2026-11-20_copy.zip",
+  "artifactSizeBytes": 389944857,
+  "artifactSHA256": "50ad505e8946f1115dbf042cb78c49f106516ebfcc2f8a0d48a3917728b5fb0f",
+  "manifestVersion": "native-startup-c89f72b",
+  "nativeSourceCommit": "c89f72be2d747271e3fb4206645d1e2f824d29b1",
+  "packageSourceCommit": "c89f72be2d747271e3fb4206645d1e2f824d29b1",
+  "sourceHeadCommit": "ee027fd9db71ac1aea383a0e05efbd4208b60346",
+  "integrationMergeCommit": "2d621730b60025dba69ef5c7c6c74b3aa4dcff26",
+  "integrationBaseCommit": "f4ab02b3ab4fea450df08766357b084f1f208473",
   "maxSharedSessions": 3,
-  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-e0bf3c469d6081919241120b037e6a58_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
+  "artifactUrl": "https://chatgpt.com/library?file_id=libfile_fde3_f-05766c51b6848191a2efc1e1cbfc9d47_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal",
   "artifactAccess": "Issued file in the owner's ChatGPT account; not a public GitHub release asset",
   "passport": "passport/ProductionCycle_User_Administration_Addendum_2026-11-18.md",
   "dashboardGuide": "statistics-dashboard.md",
   "verifiedRuns": [
-    "https://github.com/Prapeller12/production-cycle/actions/runs/44748061089"
+    "https://github.com/Prapeller12/production-cycle/actions/runs/44777349379"
   ],
   "verifiedPlatforms": [
     "Windows Server 2022",
     "Windows Server 2025"
   ],
   "checks": {
-    "jsTests": 75,
+    "jsTests": 76,
     "rustTests": 89,
     "staticButtons": 63,
     "dynamicControls": 14,
@@ -77,7 +77,6 @@
     "lateUserStatisticsResponseDiscarded": true,
     "sharedProfileChangesAcrossIndependentClientCaches": true,
     "savedProjectCopyThroughNativeUI": true,
-    "copiedStageTreeAndStatuses": true,
     "topicAssignmentAndCombinedSearch": true,
     "catalogAccessAfterRestart": true,
     "sourceAndCopySignaturesVerified": true,
@@ -94,13 +93,18 @@
       1440
     ],
     "savedProjectCatalogButtonsFit": true,
-    "savedProjectCatalogHeaderAlignment": true
+    "savedProjectCatalogHeaderAlignment": true,
+    "reopenedCopiedCompletedStages": true,
+    "calendarDaysForReopenedStageDeadline": 30,
+    "preservedOpenStageDatesAndStatuses": true,
+    "optionalCopyAndTopicComments": true,
+    "automaticJournalDescriptionWhenBlank": true
   },
   "packageVerification": {
     "immutableFiles": 624,
     "frontendFilesMatchRepositoryAfterWindowsCheckoutEOL": 70,
     "checkoutLineEndingDifferences": 52,
-    "exeSHA256": "8c39c779d6bdfcfdf173305b0415db5d220de87f0767271110a128bea21f4367",
+    "exeSHA256": "2dc1c5fcdb486898b06cb8a324855bca799c1d012f67490b8962ab6fd3b86ab8",
     "userDatabaseIncluded": false,
     "statisticsGuideIncluded": true,
     "userAdministrationGuideIncluded": true,
@@ -113,10 +117,10 @@
     "Two physical client computers on the owner network",
     "Physical Windows DPI configurations"
   ],
-  "previousReleaseRecord": "releases/ProductionCycle_Project_Topics_2026-11-20.json",
+  "previousReleaseRecord": "releases/ProductionCycle_Catalog_Columns_2026-11-20.json",
   "documentationDate": "2026-11-20",
   "note": "The issued ZIP is an unchanged byte copy of the Windows Server 2022 artifact from the successful run. Tested PR checkout, source branch, local source and integration merge had the same source tree. Release metadata and documentation may be updated after packaging. Later rebuilds have their own identifiers and checksums. Dashboard reads are sequential saved-project reads, not an atomic historical snapshot.",
-  "sourceTree": "fdf8220920cdcc2d1970ce52ba90e4b6abf27bba",
+  "sourceTree": "c40417fb53cc7a7727f1fc02e8deb4fb4d955066",
   "testEnvironmentLimits": [
     "Two independent SMB client cache roots on one physical CI host per Windows version",
     "Windows CSS viewport stress test does not verify Windows DPI scaling or the entire host UI at 320px"

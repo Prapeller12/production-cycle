@@ -8,29 +8,29 @@
 
 ## Готовый проверенный комплект
 
-В «Сохранённых проектах» доступны копирование проекта со всеми этапами, назначение тематики и фильтр по тематике. Шаги описаны в [инструкции](docs/native-share-startup.txt).
+В «Сохранённых проектах» можно скопировать проект и отфильтровать список по тематике. При копировании выполненные этапы получают статус «Не начато» и срок через 30 календарных дней. При копировании и смене тематики комментарий необязателен. Шаги описаны в [инструкции](docs/native-share-startup.txt).
 
-[Скачать ProductionCycle_2026-11-20_columns.zip](https://chatgpt.com/library?file_id=libfile_fde3_f-e0bf3c469d6081919241120b037e6a58_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal)
+[Скачать ProductionCycle_2026-11-20_copy.zip](https://chatgpt.com/library?file_id=libfile_fde3_f-05766c51b6848191a2efc1e1cbfc9d47_59099aa13dac8191ba8c2848bee8e9cc&account_id=personal)
 
 Полный автономный комплект с EXE и Fixed WebView2, личным экраном **«Статистика»** рядом с **«Диаграмма Ганта»**, редактированием пользователей и их статистикой в интерфейсе администратора. PIN пользователя недоступен для просмотра и не меняется при редактировании профиля. Ссылка открывает выданный владельцу файл в ChatGPT и требует доступа к его аккаунту. GitHub **Code → Download ZIP** скачивает исходники без EXE и runtime.
 
 | Параметр | Значение |
 | --- | --- |
-| Код адаптивного списка сохранённых проектов | [`00ec573`](https://github.com/Prapeller12/production-cycle/commit/00ec57311e56e231f010f1de958273f8b9d9c7eb) |
-| Проверенное дерево сборки PR | [`cd81c73`](https://github.com/Prapeller12/production-cycle/commit/cd81c73bb348121b0de94103b71dcf082ecdae58) |
-| Версия манифеста ZIP | `native-startup-cd81c73` |
-| Размер ZIP | 389 944 698 байт |
+| Код копирования с новым сроком выполненных этапов | [`ee027fd`](https://github.com/Prapeller12/production-cycle/commit/ee027fd9db71ac1aea383a0e05efbd4208b60346) |
+| Проверенное дерево сборки PR | [`c89f72b`](https://github.com/Prapeller12/production-cycle/commit/c89f72be2d747271e3fb4206645d1e2f824d29b1) |
+| Версия манифеста ZIP | `native-startup-c89f72b` |
+| Размер ZIP | 389 944 857 байт |
 | Общие сеансы | Не более трёх одновременно |
 
 SHA256 этого ZIP:
 
 ```text
-ad3231c1b779aeb9e4af404ef0a04350056cd3c1f86d890cc80a8d5735df2496
+50ad505e8946f1115dbf042cb78c49f106516ebfcc2f8a0d48a3917728b5fb0f
 ```
 
 Точные сведения: [docs/current-release.json](docs/current-release.json). Комплект собран в указанном прогоне CI; переименование скачанного ZIP не меняет его байты. Код приложения в `main` соответствует проверенному дереву; сведения о выпуске обновляются после упаковки. Более поздние сборки получают собственные идентификаторы и контрольные суммы.
 
-[Предыдущий комплект от 20.11.2026](docs/releases/ProductionCycle_Project_Topics_2026-11-20.json) · [Сведения о выпуске от 18.11.2026](docs/releases/ProductionCycle_User_Administration_2026-11-18.json).
+[Предыдущий комплект с исправлением столбцов](docs/releases/ProductionCycle_Catalog_Columns_2026-11-20.json) · [Комплект с тематиками от 20.11.2026](docs/releases/ProductionCycle_Project_Topics_2026-11-20.json) · [Сведения о выпуске от 18.11.2026](docs/releases/ProductionCycle_User_Administration_2026-11-18.json).
 
 ## Запуск и перенос данных
 
@@ -119,6 +119,8 @@ Frontend этой сборки состоит из HTML, CSS и JavaScript.
 [integration/production-frame](integration/production-frame/README.md).
 
 ## Подтверждённые проверки
+
+[Обновление копирования от 20.11.2026](https://github.com/Prapeller12/production-cycle/actions/runs/44777349379). Проверены сброс выполненных этапов, расчёт срока от даты копирования, сохранение открытых этапов, запись в журнал с пустым комментарием и сохранение собственного комментария.
 
 [Исправление столбцов от 20.11.2026](https://github.com/Prapeller12/production-cycle/actions/runs/44748061089). В окне сохранённых проектов проверены границы кнопок и отсутствие горизонтальной прокрутки на девяти ширинах от 320 до 1440 CSS-пикселей.
 
