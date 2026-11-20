@@ -89,7 +89,8 @@ async function checkCatalogLayout(page, evidenceDir) {
     const row = id => page.locator('.project-list-row').filter({has:page.locator('[data-open-project-id="'+id+'"]')});
     await page.click('[data-topic-project-id="'+fixture.id+'"]');
     await field('topic').fill('Оснастка');
-    await field('reason').fill('Объединение по тематике');
+    assert.equal(await field('reason').inputValue(), '');
+    assert.equal(await field('reason').evaluate(el => el.required), false);
     await field('pin').fill('739201');
     await submit();
     await page.waitForSelector('#catalogEditor', {state:'hidden'});
@@ -102,10 +103,15 @@ async function checkCatalogLayout(page, evidenceDir) {
     await page.click('[data-copy-project-id="'+fixture.id+'"]');
     await field('name').fill('Каталог копия'); await field('order').fill('CAT-002');
     assert.equal(await field('topic').inputValue(),'Оснастка');
-    await field('topic').fill('Ремонт'); await field('document').selectOption('Акт приёмки');
-    await field('reference').fill('К-2'); await field('evidenceComment').fill('Подтверждено для копии');
+    await field('topic').fill('Ремонт');
+    assert.equal(await page.locator('#catalogEditor fieldset, #catalogEditor [name="document"], #catalogEditor [name="reference"], #catalogEditor [name="evidenceComment"]').count(), 0);
+    assert.equal(await field('reason').inputValue(), '');
+    assert.equal(await field('reason').evaluate(el => el.required), false);
+    await field('reason').fill('   ');
     await field('pin').fill('неверный'); await submit();
-    await page.waitForSelector('#catalogNotice.err'); await field('pin').fill('739201'); await submit();
+    await page.waitForSelector('#catalogNotice.err'); await field('pin').fill('739201');
+    const beforeCopy = await page.evaluate(() => Production.domain.today());
+    await submit();
     await page.waitForSelector('#catalogEditor',{state:'hidden'});
     await page.waitForSelector('[data-copy-project-id="'+fixture.id+'"]');
     await page.selectOption('#catalogTopic','topic:ремонт');
@@ -121,12 +127,21 @@ async function checkCatalogLayout(page, evidenceDir) {
     assert.equal(check.a.project.topic,'Оснастка');assert.equal(check.b.project.topic,'Ремонт');
     assert.equal(check.b.project.orderNo,'CAT-002');assert.equal(check.b.project.name,'Каталог копия');
     assert.equal(check.b.stages[1].parentUid, check.b.stages[0].uid);
+    const afterCopy = await page.evaluate(() => Production.domain.today());
+    const closed = check.a.stages[0], reopened = check.b.stages[0];
+    assert.equal(closed.status, 'done'); assert.equal(closed.deadline,'2026-12-01');
+    assert.equal(reopened.status,'new');
+    assert.ok([beforeCopy,afterCopy].some(day => Date.parse(reopened.deadline) - Date.parse(day) === 30 * 86400000));
+    assert.equal(check.b.stages[1].status, 'work'); assert.equal(check.b.stages[1].deadline, check.a.stages[1].deadline);
     for(const [i, original] of check.a.stages.entries()){
       const duplicate = check.b.stages[i];assert.notEqual(duplicate.uid, original.uid);
-      for(const key of ['seq','sort','title','start','deadline','executor','addressees','comment','status'])assert.equal(duplicate[key],original[key],key);
+      for(const key of ['seq','sort','title','start','executor','addressees','comment'])assert.equal(duplicate[key],original[key],key);
     }
     assert.equal(check.verification.invalidEvents,0);
-    assert.deepEqual(check.events.map(e=>e.eventType).sort(),['project_created','stage_completed']);
+    assert.deepEqual(check.events.map(e=>e.eventType), ['project_created']);
+    assert.equal(check.events[0].comment, 'Автоматическая запись. Копирование проекта № ' + fixture.id);
+    assert.ok(check.sourceEvents.some(e => e.eventType === 'stage_completed'));
+    assert.ok(check.sourceEvents.some(e => e.comment === 'Автоматическая запись. Изменение тематики проекта № ' + fixture.id));
     assert.ok(check.sourceEvents.some(e=>e.changes.some(c=>c.field==='Тематика')));
     await page.click('[data-topic-project-id="'+copy+'"]');await field('topic').fill('Отмена');
     await page.click('#catalogEditor [data-cancel]');assert.equal(await page.locator('#catalogEditor input[type=password]').count(),0);
@@ -135,8 +150,16 @@ async function checkCatalogLayout(page, evidenceDir) {
     await run.page.waitForSelector('[data-open-project-id="'+copy+'"]');
     await run.page.selectOption('#catalogTopic','topic:ремонт');assert.equal(await run.page.locator('[data-open-project-id]').count(),1);
     assert.equal(await run.page.locator('[data-open-project-id]').getAttribute('data-open-project-id'),String(copy));
+    await run.page.click('[data-topic-project-id="'+copy+'"]');
+    await run.page.locator('#catalogEditor [name="topic"]').fill('Оснастка');
+    await run.page.locator('#catalogEditor [name="reason"]').fill('Перенос в другую тематику');
+    await run.page.locator('#catalogEditor [name="pin"]').fill('739201');
+    await run.page.click('#catalogEditor [type=submit]');
+    await run.page.waitForSelector('#catalogEditor', {state:'hidden'});
+    const events = await run.page.evaluate(id => Production.backend.listAuditEvents(id), copy);
+    assert.ok(events.some(e => e.comment === 'Перенос в другую тематику'));
     assert.deepEqual(errors,[]);
-    fs.writeFileSync(path.join(evidenceDir,'project-catalog-native.json'),JSON.stringify({ok:true,copyIndependent:true,treeAndStatuses:true,topicAudit:true,filterPersistsDataAfterRestart:true,openDraftPreserved:true},null,2));
+    fs.writeFileSync(path.join(evidenceDir,'project-catalog-native.json'),JSON.stringify({ok:true,copyIndependent:true,treeAndOpenStageStatuses:true,closedStagesReset:true,deadlinePlus30CalendarDays:true,optionalOperationComments:true,topicAudit:true,filterPersistsDataAfterRestart:true,openDraftPreserved:true},null,2));
     console.log('PASS saved project copy, signed topics, independent history, search and restart');
   } catch (error) {
     await run?.page?.screenshot({path:path.join(evidenceDir,'project-catalog-failure.png')}).catch(()=>{});
