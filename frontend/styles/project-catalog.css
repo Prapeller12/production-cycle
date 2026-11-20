@@ -1,0 +1,17 @@
+#projectsListPane [hidden] { display: none !important; }
+.catalog-filters, .catalog-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.catalog-filters { margin-bottom: 14px; }
+.catalog-filters label, .catalog-form label { display: grid; align-content: start; gap: 4px; min-width: 0; }
+.catalog-filters input, .catalog-filters select, .catalog-form input, .catalog-form select { width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 9px; }
+.catalog-form { display: grid; gap: 12px; }
+.catalog-form h3, .catalog-form p { margin: 0; }
+.catalog-form fieldset { border: 1px solid #c6cdd4; border-radius: 8px; padding: 10px; min-width: 0; }
+.catalog-form details { margin: 4px 0 12px; }
+.catalog-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+#projectsList .catalog-row-actions { display: grid; gap: 4px; justify-items: stretch; }
+#projectsList .project-list-title { min-width: 0; overflow-wrap: anywhere; }
+#catalogNotice:not(:empty) { margin: 8px 0; }
+@media (max-width: 760px) {
+  .catalog-grid, .catalog-filters { grid-template-columns: 1fr; }
+  #projectsList .catalog-row-actions { display: flex; flex-wrap: wrap; }
+}

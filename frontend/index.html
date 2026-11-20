@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="dashboards/assets/cycle-theme.css">
 <link rel="stylesheet" href="dashboards/integration.css">
 <link rel="stylesheet" href="styles/user-administration.css">
+<link rel="stylesheet" href="styles/project-catalog.css">
 </head>
 <body>
 <svg class="ui-icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
@@ -178,7 +179,14 @@
 
 <div class="modal-backdrop" id="projectsModal" role="dialog" aria-modal="true" aria-labelledby="projectsModalTitle">
   <div class="modal modal-wide" tabindex="-1"><div class="modal-head"><h2 id="projectsModalTitle">Сохранённые проекты</h2><span class="spacer"></span><button class="btn icon" data-close="projectsModal" aria-label="Закрыть сохранённые проекты"><span class="ui-icon ui-icon-close" aria-hidden="true"></span></button></div><div class="modal-body">
-    <section id="projectsListPane"><div id="projectsList" class="projects-list"></div></section>
+    <section id="projectsListPane">
+      <div id="catalogFilters" class="catalog-filters">
+        <label>Поиск<input type="search" id="catalogQuery" placeholder="Название, заказ, предприятие или тематика"></label>
+        <label>Тематика<select id="catalogTopic"></select></label>
+      </div>
+      <div id="catalogNotice" role="status" aria-live="polite"></div>
+      <div id="catalogEditor" hidden></div>
+      <div id="projectsList" class="projects-list"></div></section>
   </div><div class="modal-foot"><button class="btn" data-close="projectsModal"><span class="ui-icon ui-icon-close" aria-hidden="true"></span>Закрыть</button></div></div>
 </div>
 
@@ -252,6 +260,7 @@
 <script defer src="dashboards/js/dashboard.js"></script>
 <script defer src="dashboards/integration.js"></script>
 <script defer src="ui/user-administration.js"></script>
+<script defer src="ui/project-catalog.js"></script>
 <script defer src="ui/app.js"></script>
 </body>
 </html>

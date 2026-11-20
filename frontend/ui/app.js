@@ -4,7 +4,7 @@
 const {STATUS}=Production.config;
 const D=Production.domain, J=Production.projectFile, B=Production.backend;
 let state={databaseId:null,project:{name:'',orderNo:'',initiator:'',executor:'',addressees:'',start:'',deadline:''},stages:[],nextSeq:1,collapsed:{}};
-let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',ganttScale='quarter',structureCollapsed=true,importFile=null,importCandidate=null,importReadVersion=0,dictionaryEntries=[],projectListItems=[],deadlineControlItems=[],auditUsers=[],pendingSignatureAction=null,persistedStatuses=new Map(),adminSession=null,onboardingStep=0;
+let editStageUid=null, previewKind='out', exportCache=null,completionFilter='active',activeView='registry',ganttScale='quarter',structureCollapsed=true,importFile=null,importCandidate=null,importReadVersion=0,dictionaryEntries=[],deadlineControlItems=[],auditUsers=[],pendingSignatureAction=null,persistedStatuses=new Map(),adminSession=null,onboardingStep=0;
 let networkMode=false,networkSessionActive=false,networkSessionUserId=null,networkSessionRole=null,networkTimer=null,networkDraftTimer=null,lastNetworkDraftFingerprint='',networkEvictionStarted=false,networkTransition=false,networkPollPending=null,networkDraftPending=null,networkEpoch=0;
 const modalReturnFocus=new Map();
 let statisticsController=null;
@@ -305,10 +305,24 @@ function loadJsonFile(f){const epoch=networkEpoch,r=new FileReader();r.onerror=(
 async function openProject(){const epoch=networkEpoch;if(!B.native()){$('jsonFile').click();return}const orderNo=clean(prompt('Введите номер ранее сохранённого заказа:',state.project.orderNo||''));if(!orderNo)return;try{const candidate=await B.load(orderNo);if(epoch!==networkEpoch)return;if(!candidate){message('err','Проект с таким номером заказа не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;savedSnapshot=J.fingerprint(state);rememberPersistedStatuses();syncForm();render();await refreshAutocomplete();message('ok','Проект загружен из локальной базы данных.')}catch(e){message('err','Не удалось открыть проект: '+e)}}
 
 async function loadProjectById(projectId,stageUid=null){const epoch=networkEpoch;try{const candidate=await B.loadById(projectId);if(epoch!==networkEpoch)return;if(!candidate){message('err','Проект не найден.');return}if(J.fingerprint(state)!==savedSnapshot&&(state.project.name||state.stages.length)&&!confirm('Заменить текущий проект данными из локальной базы?'))return;state=candidate;if(stageUid){state.collapsed.__root=false;let current=byUid(stageUid);while(current&&current.parentUid){state.collapsed[current.parentUid]=false;current=byUid(current.parentUid)}completionFilter='active';$('completionFilter').value='active';$('ganttCompletionFilter').value='active'}savedSnapshot=J.fingerprint(state);rememberPersistedStatuses();syncForm();closeModal('projectsModal');setWorkspace('registry');render();await refreshAutocomplete();if(stageUid){requestAnimationFrame(()=>{const row=Array.from(document.querySelectorAll('[data-stage-uid]')).find(element=>element.getAttribute('data-stage-uid')===String(stageUid));if(row){row.classList.add('deadline-focus');if(document.documentMode)row.scrollIntoView(true);else row.scrollIntoView({block:'center',behavior:'smooth'})}})}message('ok',`Открыт проект «${state.project.name}», заказ № ${state.project.orderNo}.`)}catch(e){message('err','Не удалось открыть проект: '+e)}}
-function renderProjectList(){
- const query=clean($('projectsSearch').value).toLocaleLowerCase('ru'),items=projectListItems.filter(p=>[p.orderNo,p.name,p.enterprise].some(v=>String(v||'').toLocaleLowerCase('ru').includes(query)));
- if(!items.length){$('projectsList').innerHTML=`<div class="projects-empty">${projectListItems.length?'Проекты по запросу не найдены.':'Сохранённых проектов пока нет.'}</div>`;return}
- $('projectsList').innerHTML=`<div class="project-list-head"><span>Проект</span><span>Выполнение</span><span>Предприятие</span><span>Срок</span><span>Изменён</span><span></span></div>`+items.map(p=>`<div class="project-list-row"><div class="project-list-title" data-label="Проект"><strong>${escapeHtml(p.name)}</strong><span>Заказ № ${escapeHtml(p.orderNo)} · проект в базе № ${p.projectId}</span></div><div data-label="Выполнение"><b>${p.donePercent}%</b><div class="progress-track"><div class="progress-fill" style="width:${p.donePercent}%"></div></div><div class="project-list-meta">${p.doneCount} из ${p.stageCount}</div></div><div data-label="Предприятие">${escapeHtml(p.enterprise)}</div><div data-label="Срок">до ${escapeHtml(fullDate(p.deadline)||'—')}</div><div data-label="Изменён" class="project-list-meta">${escapeHtml(String(p.updatedAt||'').replace('T',' ').slice(0,16))}</div><button class="btn primary small" data-open-project-id="${p.projectId}">${icon('folder')}Открыть</button></div>`).join('');
+const projectCatalog = window.ProductionProjectCatalog.create({
+  $, backend: B, escapeHtml, renderRows: renderProjectList, newUid: uid,
+  currentUser: () => networkSessionUserId, epoch: () => networkEpoch,
+  topicSaved: (source, topic, revision) => {
+    if (state.databaseId !== source.databaseId || state.baseRevision !== source.baseRevision) return;
+    const baseline = { ...source, project: { ...source.project, topic } };
+    state.project.topic = topic;
+    state.baseRevision = revision;
+    savedSnapshot = J.fingerprint(baseline);
+    updateSavedState();
+  }
+});
+function renderProjectList(items, total){
+ if(!items.length){
+   $('projectsList').innerHTML='<div class="projects-empty">'+(total?'Проекты по запросу не найдены.':'Сохранённых проектов пока нет.')+'</div>';
+   return;
+ }
+ $('projectsList').innerHTML=`<div class="project-list-head"><span>Проект</span><span>Выполнение</span><span>Предприятие</span><span>Срок</span><span>Изменён</span><span></span></div>`+items.map(p=>`<div class="project-list-row"><div class="project-list-title" data-label="Проект"><strong>${escapeHtml(p.name)}</strong><span>Заказ № ${escapeHtml(p.orderNo)} · проект в базе № ${p.projectId}</span><span>${escapeHtml(p.topic || 'Без тематики')}</span></div><div data-label="Выполнение"><b>${p.donePercent}%</b><div class="progress-track"><div class="progress-fill" style="width:${p.donePercent}%"></div></div><div class="project-list-meta">${p.doneCount} из ${p.stageCount}</div></div><div data-label="Предприятие">${escapeHtml(p.enterprise)}</div><div data-label="Срок">до ${escapeHtml(fullDate(p.deadline)||'—')}</div><div data-label="Изменён" class="project-list-meta">${escapeHtml(String(p.updatedAt||'').replace('T',' ').slice(0,16))}</div><div class="catalog-row-actions"><button class="btn primary small" data-open-project-id="${p.projectId}">${icon('folder')}Открыть</button><button class="btn small" data-copy-project-id="${p.projectId}">Копировать</button><button class="btn small" data-topic-project-id="${p.projectId}">Тематика</button></div></div>`).join('');
  $('projectsList').querySelectorAll('[data-open-project-id]').forEach(b=>b.onclick=()=>loadProjectById(Number(b.dataset.openProjectId)));
 }
 function deadlineDaysText(item){return item.daysRemaining<0?`просрочено на ${Math.abs(item.daysRemaining)} дн.`:item.daysRemaining===0?'срок сегодня':`${item.daysRemaining} дн.`}
@@ -321,9 +335,8 @@ function renderDeadlineControl(){
 }
 async function showProjects(){
  if(!B.native()){$('jsonFile').click();return}
- openModal('projectsModal');$('projectsList').innerHTML='<div class="projects-empty">Загрузка…</div>';
- try{projectListItems=await B.listProjects();renderProjectList();
- }catch(e){$('projectsList').innerHTML=`<div class="notice err">Не удалось получить список: ${escapeHtml(e)}</div>`}
+ openModal('projectsModal');
+ await projectCatalog.show($('projectsSearch').value);
 }
 async function showDeadlineControl(){if(!B.native()){$('deadlineControlList').innerHTML='<div class="projects-empty">Контроль сроков доступен в Windows-приложении после сохранения проектов.</div>';return}$('deadlineControlList').innerHTML='<div class="projects-empty">Загрузка…</div>';try{deadlineControlItems=await B.listDeadlineControl();renderDeadlineControl()}catch(e){$('deadlineControlList').innerHTML=`<div class="notice err">Не удалось получить контроль сроков: ${escapeHtml(e)}</div>`}}
 
@@ -394,6 +407,7 @@ function lockNetworkWorkspace(locked){
  $('networkLogoutBtn').hidden=!networkMode||!networkSessionActive;
 }
 function clearNetworkIdentity(){
+ projectCatalog.clear();
  resetStatistics();
  networkSessionUserId=null;networkSessionRole=null;adminSession=null;pendingSignatureAction=null;importCandidate=null;importFile=null;importReadVersion++;dictionaryEntries=[];updateUserActions();
  document.querySelectorAll('input[type="password"]').forEach(input=>input.value='');document.querySelectorAll('.modal-backdrop.open').forEach(modal=>modal.classList.remove('open'));
@@ -464,7 +478,7 @@ function loadDemo(){if((state.project.name||state.stages.length)&&!confirm('За
 {uid:'d8',seq:8,sort:6,parentUid:null,title:'Привода',executor:'Исполнитель А',addressees:'Производственная дирекция',start:'2026-07-15',deadline:'2026-11-30',status:'new'}]};savedSnapshot=null;persistedStatuses=new Map();syncForm();render();refreshAutocomplete();message('ok','Загружен демонстрационный производственный цикл.')}
 function focusable(container){return [...container.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(element=>element.offsetParent!==null)}
 function openModal(id){const backdrop=$(id);modalReturnFocus.set(id,document.activeElement);backdrop.classList.add('open');requestAnimationFrame(()=>{const controls=focusable(backdrop),preferred=controls.find(element=>element.matches('input:not([type="hidden"]),select,textarea'));(preferred||controls[0]||backdrop.querySelector('.modal')).focus()})}
-function closeModal(id,force=false){if(id==='networkLoginModal'&&!networkSessionActive)return;if(id==='saveConfirmationModal'&&!force&&$('confirmSignedSaveBtn').disabled)return;const backdrop=$(id);if(!backdrop?.classList.contains('open'))return;if(id==='onboardingModal')markOnboardingSeen();if(id==='importModal'){importReadVersion++;importFile=null;}backdrop.classList.remove('open');if(id==='saveConfirmationModal')pendingSignatureAction=null;const target=modalReturnFocus.get(id);modalReturnFocus.delete(id);if(target?.isConnected)target.focus()}
+function closeModal(id,force=false){if(id==='networkLoginModal'&&!networkSessionActive)return;if(id==='saveConfirmationModal'&&!force&&$('confirmSignedSaveBtn').disabled)return;const backdrop=$(id);if(!backdrop?.classList.contains('open'))return;if(id==='projectsModal'){if(projectCatalog.isSaving())return;projectCatalog.clear()}if(id==='onboardingModal')markOnboardingSeen();if(id==='importModal'){importReadVersion++;importFile=null;}backdrop.classList.remove('open');if(id==='saveConfirmationModal')pendingSignatureAction=null;const target=modalReturnFocus.get(id);modalReturnFocus.delete(id);if(target?.isConnected)target.focus()}
 function topOpenModal(){return [...document.querySelectorAll('.modal-backdrop.open')].at(-1)||null}
 function trapModalFocus(event,modal){const controls=focusable(modal);if(!controls.length)return;const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}
 function enhanceAccessibility(){document.querySelectorAll('.modal-backdrop').forEach((backdrop,index)=>{backdrop.setAttribute('role','dialog');backdrop.setAttribute('aria-modal','true');const heading=backdrop.querySelector('h2');if(heading){if(!heading.id)heading.id=`modalTitle${index+1}`;backdrop.setAttribute('aria-labelledby',heading.id)}const close=backdrop.querySelector('[data-close]');if(close&&!close.getAttribute('aria-label'))close.setAttribute('aria-label','Закрыть окно')});document.querySelectorAll('label:not([for])').forEach((label,index)=>{const control=label.querySelector('input,select,textarea')||label.nextElementSibling;if(control?.matches?.('input,select,textarea')){if(!control.id)control.id=`field${index+1}`;label.htmlFor=control.id}})}
@@ -528,7 +542,7 @@ document.querySelector('.more-actions-menu').addEventListener('click',event=>{if
 $('stageStatus').onchange=updateCompletionScope;$('completionScope').onchange=updateCompletionScope;
 $('refreshBackupsBtn').onclick=loadBackups;$('createBackupBtn').onclick=createBackup;
 $('dictionaryKind').onchange=loadDictionary;$('dictionarySearch').oninput=renderDictionary;
-$('projectsSearch').oninput=renderProjectList;$('deadlineSearch').oninput=renderDeadlineControl;$('refreshDeadlinesBtn').onclick=showDeadlineControl;
+$('deadlineSearch').oninput=renderDeadlineControl;$('refreshDeadlinesBtn').onclick=showDeadlineControl;
 $('completionFilter').onchange=e=>{completionFilter=e.target.value;$('ganttCompletionFilter').value=completionFilter;render()};$('ganttCompletionFilter').onchange=e=>{completionFilter=e.target.value;$('completionFilter').value=completionFilter;render()};
 $('toggleStructureBtn').onclick=toggleStructure;$('printStructureBtn').onclick=printStructure;$('ganttScale').onchange=e=>{ganttScale=e.target.value;renderGantt()};$('printGanttA4Btn').onclick=()=>printGantt('A4');$('printGanttA3Btn').onclick=()=>printGantt('A3');
 $('importExcelFile').onchange=e=>{importFile=e.target.files[0]||null;$('importExcelName').textContent=importFile?importFile.name:'Выберите файл .xlsx';updateImportPreview()};$('confirmImportBtn').onclick=confirmImport;$('downloadImportTemplateBtn').onclick=downloadImportTemplate;$('hintsBtn').onclick=()=>openOnboarding(0);$('projectSearchForm').onsubmit=event=>{event.preventDefault();showProjects()};
