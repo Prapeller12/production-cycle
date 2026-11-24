@@ -12,3 +12,4 @@ CREATE TABLE IF NOT EXISTS exchange_mapping(source TEXT NOT NULL,remote_id TEXT 
 CREATE TABLE IF NOT EXISTS exchange_files(id TEXT PRIMARY KEY,digest TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS exchange_issued(project_id INTEGER NOT NULL REFERENCES production_cycle(id), digest TEXT NOT NULL, PRIMARY KEY(project_id,digest));
 CREATE TABLE IF NOT EXISTS exchange_delivery(packet TEXT NOT NULL,guid TEXT NOT NULL,project_id INTEGER NOT NULL REFERENCES production_cycle(id),report TEXT NOT NULL,PRIMARY KEY(packet,guid));
+CREATE TABLE IF NOT EXISTS exchange_note(op TEXT PRIMARY KEY,project_id INTEGER NOT NULL REFERENCES production_cycle(id) ON DELETE CASCADE,stage TEXT NOT NULL,body TEXT NOT NULL);

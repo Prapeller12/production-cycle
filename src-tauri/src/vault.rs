@@ -24,35 +24,14 @@ fn secret() -> Result<Option<&'static str>> {
     }
 }
 #[cfg(windows)]
-pub fn unlock() -> Result<()> {
-    // The static UI script receives no secret on the command line or filesystem.
-    use std::os::windows::process::CommandExt;
-    let sys = std::env::var_os("SystemRoot").ok_or("Windows недоступна.")?;
-    let exe = Path::new(&sys).join("System32/WindowsPowerShell/v1.0/powershell.exe");
-    let out = std::process::Command::new(exe)
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-STA",
-            "-Command",
-            include_str!("unlock.ps1"),
-        ])
-        .creation_flags(0x08000000)
-        .output()
-        .map_err(|_| "Не удалось открыть окно разблокировки хранилища.")?;
-    if !out.status.success() {
-        return Err("Открытие хранилища отменено.".into());
-    }
-    let phrase = Zeroizing::new(
-        String::from_utf8(out.stdout).map_err(|_| "Не удалось прочитать парольную фразу.")?,
-    );
-    validate_phrase(&phrase)?;
+pub fn unlock(confirm_new: bool) -> Result<()> {
+    let phrase = crate::key_dialog::prompt(confirm_new)?;
     SECRET
         .set(phrase)
         .map_err(|_| "Хранилище уже открыто.".into())
 }
 #[cfg(not(windows))]
-pub fn unlock() -> Result<()> {
+pub fn unlock(_confirm_new: bool) -> Result<()> {
     Err("Нативный комплект предназначен для Windows.".into())
 }
 
@@ -179,11 +158,45 @@ pub fn plaintext(path: &Path) -> bool {
         && &bytes == b"SQLite format 3\0"
 }
 // Convert only a verified, quiescent old production file on local disk; replace it after verification.
+pub fn check_store_marker(path: &Path) -> Result<()> {
+    if secret()?.is_some()
+        && path
+            .with_extension("cipher-v1")
+            .try_exists()
+            .map_err(|e| e.to_string())?
+        && (!path.try_exists().map_err(|e| e.to_string())? || plaintext(path))
+    {
+        return Err("Ранее зашифрованная база исчезла или заменена открытым файлом. Работа остановлена. Сверьте источник и восстановите проверенную копию.".into());
+    }
+    Ok(())
+}
+pub fn mark_store(path: &Path) -> Result<()> {
+    if secret()?.is_none() {
+        return Ok(());
+    }
+    let marker = path.with_extension("cipher-v1");
+    if !marker.try_exists().map_err(|e| e.to_string())? {
+        crate::infrastructure::network::atomic_write(&marker, b"production-cycle-sqlcipher-v1")?
+    }
+    Ok(())
+}
 pub fn migrate_plain(path: &Path) -> Result<()> {
     let Some(pass) = secret()? else { return Ok(()) };
     migrate_with(path, pass)
 }
 fn migrate_with(path: &Path, pass: &str) -> Result<()> {
+    if !plaintext(path) {
+        return Ok(());
+    }
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .read(true)
+        .open(path.with_extension("upgrade.lock"))
+        .map_err(|e| e.to_string())?;
+    fs2::FileExt::try_lock_exclusive(&lock)
+        .map_err(|_| "Эту базу уже обновляет другой процесс.")?;
     if !plaintext(path) {
         return Ok(());
     }
@@ -211,7 +224,7 @@ fn migrate_with(path: &Path, pass: &str) -> Result<()> {
         drop(source);
         let c = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
             .map_err(|e| e.to_string())?;
-        c.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA temp_store=MEMORY;")
+        c.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA temp_store=MEMORY; PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT;")
             .map_err(|e| e.to_string())?;
         fs::OpenOptions::new()
             .write(true)

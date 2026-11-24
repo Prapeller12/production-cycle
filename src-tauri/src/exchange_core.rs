@@ -59,6 +59,8 @@ pub struct Part {
     pub base: Option<ProductionSnapshot>,
     pub current: ProductionSnapshot,
     pub ops: Vec<Signed>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Signed>,
     pub results: Vec<Outcome>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]

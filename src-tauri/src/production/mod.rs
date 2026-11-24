@@ -243,6 +243,8 @@ impl ProductionDb {
     }
     pub fn open_with_backup_dir(path:&Path,backup_dir_override:Option<PathBuf>) -> Result<Self> {
         let existed=path.is_file()&&std::fs::metadata(path).map(|value|value.len()>0).unwrap_or(false);
+        #[cfg(not(feature="server"))]
+        crate::vault::check_store_marker(path).map_err(ProductionError::Validation)?;
         crate::vault::migrate_plain(path).map_err(ProductionError::Validation)?;
         let conn=crate::vault::open(path, OpenFlags::default()).map_err(ProductionError::Validation)?;
         ensure_supported_schema(&conn)?;
@@ -253,6 +255,8 @@ impl ProductionDb {
             if let Some(dir)=backup_dir.as_deref(){crate::backup::create_backup_from_connection(&conn,dir,"before-migration",true).map_err(ProductionError::Validation)?;}
         }
         initialize_schema(&conn)?;
+        #[cfg(not(feature="server"))]
+        crate::vault::mark_store(path).map_err(ProductionError::Validation)?;
         Ok(Self{conn:Mutex::new(conn),backup_dir})
     }
     pub(crate) fn export_database(&self,path:&Path)->Result<()> {

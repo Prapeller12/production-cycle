@@ -15,7 +15,7 @@ impl Default for Status {
 fn status()->&'static Mutex<Status>{STATUS.get_or_init(||Mutex::new(Status::default()))}
 fn publish(){let Ok(_signal)=SIGNAL.lock()else{return;};if is_ready(){return;}super::launch::signal_status(serde_json::json!({"state":"starting","processId":std::process::id(),"stage":current_message(),"diagnostics":diagnostics()}));}
 pub fn update(message:&str){
-    if let Ok(mut state)=status().lock(){if state.stage!=message{state.phase_started=Instant::now();}state.stage=message.to_string();}
+    if let Ok(mut state)=status().lock(){if state.stage!=message{if state.stage.contains("Ожидание парольной фразы"){let paused=state.phase_started.elapsed();state.started+=paused;}state.phase_started=Instant::now();}state.stage=message.to_string();}
     publish();
 }
 pub fn detail(label:&str,value:&str){
@@ -63,6 +63,7 @@ pub const FRONTEND_GUARD:&str=r#"
 "#;
 fn window_phase(stage:&str)->bool{["Создание рабочего окна","Загрузка интерфейса","Ожидание готовности"].iter().any(|prefix|stage.starts_with(prefix))}
 fn timeout(state:&Status)->bool{
+    if state.stage.contains("Ожидание парольной фразы"){return false}
     // File copying has a separate overall budget; a blank WebView has 45 seconds.
     let phase_budget=if std::env::args().any(|arg|arg=="--smoke-test"){
         std::env::var("PRODUCTION_CYCLE_TEST_STARTUP_TIMEOUT_MS").ok().and_then(|s|s.parse::<u64>().ok()).map(|ms|Duration::from_millis(ms.clamp(100,90_000))).unwrap_or(Duration::from_secs(45))

@@ -100,7 +100,18 @@ fn make_packet(
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(err)?;
         }
+        let mut notes = vec![];
+        if kind != "changes" {
+            for item in rows(
+                tx,
+                "SELECT body FROM exchange_note WHERE project_id=? ORDER BY rowid",
+                id,
+            )? {
+                notes.push(serde_json::from_str(&item).map_err(err)?);
+            }
+        }
         parts.push(Part {
+            notes,
             guid,
             authority: auth,
             epoch: generation,
@@ -209,7 +220,7 @@ fn keys(c: &Connection, p: &Packet) -> R<Vec<Value>> {
         all.insert(p.key.clone(), p.exporter.clone());
     }
     for part in &p.parts {
-        for signed in &part.ops {
+        for signed in part.ops.iter().chain(&part.notes) {
             all.insert(signed.key.clone(), signed.change.author.clone());
         }
     }
@@ -266,7 +277,9 @@ fn classify(
         );
     }
     let server = field(snap, op)?;
-    let (state, reason) = if blocked.contains(&field_key) {
+    let (state, reason) = if op.field == "$note" {
+        add_note(tx, project, snap, signed)?
+    } else if blocked.contains(&field_key) {
         (
             "needs_review",
             "Предыдущая правка этого поля ожидает решения.".into(),
@@ -475,7 +488,15 @@ fn transfer(
             // Snapshot-only legacy records have no trustworthy base. Exact repeats are mapped by file digest.
             let mut proposals = part.ops.clone();
             if p.kind == "legacy" || proposals.is_empty() && part.base.is_none() {
-                proposals = synthetic(part, old.as_ref(), &part.current, &p.store)?;
+                let source = if p.kind == "legacy" {
+                    format!("old-to-{id}-{}", part.guid)
+                } else {
+                    p.store.clone()
+                };
+                proposals = synthetic(part, old.as_ref(), &part.current, &source)?;
+                if p.kind == "legacy" {
+                    proposals.retain(|s| s.change.field != "$delete");
+                }
             }
             if p.kind == "changes" && is_new && !part.ops.is_empty() && part.base.is_none() {
                 let covered: BTreeSet<_> = proposals
@@ -508,6 +529,12 @@ fn transfer(
             params![p.store, part.guid, id],
         )
         .map_err(err)?;
+        for note in &part.notes {
+            if !is_reply || note.change.field != "$note" {
+                return Err("Некорректная коллекция примечаний.".into());
+            }
+            report.push(classify(tx, id, &mut snap, note, false, &mut blocked)?);
+        }
         let changed = old.as_ref().map(|r| bytes(&clean(r.clone()))).transpose()?
             != Some(bytes(&clean(snap.clone()))?);
         let fresh = is_new || report.iter().any(|x| x["repeat"] == false);
@@ -642,6 +669,143 @@ pub fn exchange_commit(
         Ok(result)
     })
 }
+fn add_note(
+    tx: &Transaction,
+    id: i64,
+    snap: &ProductionSnapshot,
+    signed: &Signed,
+) -> R<(&'static str, String)> {
+    let stage = signed
+        .change
+        .stage
+        .as_ref()
+        .ok_or("Не указан этап примечания.")?;
+    let body = signed
+        .change
+        .after
+        .as_str()
+        .ok_or("Не указан текст примечания.")?;
+    if body.trim().is_empty() || body.len() > 16000 {
+        return Err("Примечание пустое или слишком длинное.".into());
+    }
+    if !snap.stages.iter().any(|s| &s.uid == stage) {
+        return Ok(("needs_review", "Этап примечания отсутствует.".into()));
+    }
+    let payload = serde_json::to_string(signed).map_err(err)?;
+    if let Some(existing) = tx
+        .query_row(
+            "SELECT body FROM exchange_note WHERE op=?",
+            [&signed.change.id],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(err)?
+    {
+        if existing != payload {
+            return Err("Код примечания использован для другого содержимого.".into());
+        }
+        return Ok(("already_accounted", "Примечание уже есть.".into()));
+    }
+    tx.execute(
+        "INSERT INTO exchange_note VALUES(?,?,?,?)",
+        params![signed.change.id, id, stage, payload],
+    )
+    .map_err(err)?;
+    Ok(("applied", "Примечание добавлено отдельной записью.".into()))
+}
+#[tauri::command]
+pub fn exchange_notes(
+    project: i64,
+    stage: String,
+    db: State<ProductionDb>,
+    session: State<LocalSession>,
+    network: State<NetworkRuntime>,
+) -> R<Vec<Change>> {
+    let guard = session.exchange_identity()?;
+    let user = guard.as_ref().ok_or("Войдите под своим профилем.")?;
+    network.with_read(&db, || {
+        let c = db.conn.lock().map_err(err)?;
+        active(&c, user)?;
+        let mut s = c
+            .prepare("SELECT body FROM exchange_note WHERE project_id=? AND stage=? ORDER BY rowid")
+            .map_err(err)?;
+        let it = s
+            .query_map(params![project, stage], |r| r.get::<_, String>(0))
+            .map_err(err)?;
+        it.map(|v| {
+            Ok(serde_json::from_str::<Signed>(&v.map_err(err)?)
+                .map_err(err)?
+                .change)
+        })
+        .collect()
+    })
+}
+#[tauri::command]
+pub fn exchange_add_note(
+    project: i64,
+    stage: String,
+    text: String,
+    pin: String,
+    db: State<ProductionDb>,
+    session: State<LocalSession>,
+    network: State<NetworkRuntime>,
+) -> R<()> {
+    let guard = session.exchange_identity()?;
+    let user = guard.as_ref().ok_or("Войдите под своим профилем.")?;
+    network.with_write(&db, || {
+        let mut c = db.conn.lock().map_err(err)?;
+        let tx = c.transaction().map_err(err)?;
+        active(&tx, user)?;
+        let key = audit::exchange_signer(&tx, user.id, &pin)?;
+        let snap = loaded(&tx, project)?;
+        let guid = tx
+            .query_row(
+                "SELECT guid FROM exchange_project WHERE project_id=?",
+                [project],
+                |r| r.get::<_, String>(0),
+            )
+            .map_err(err)?;
+        let op = Change {
+            id: uid(),
+            project: guid,
+            stage: Some(stage),
+            field: "$note".into(),
+            before: Value::Null,
+            after: json!(text.trim()),
+            author: user.display_name.clone(),
+            at: chrono::Utc::now().to_rfc3339(),
+        };
+        let signed = Signed {
+            key: pubkey(&key),
+            signature: sign(&key, &op)?,
+            change: op,
+        };
+        let (state, msg) = add_note(&tx, project, &snap, &signed)?;
+        if state != "applied" {
+            return Err(msg);
+        }
+        tx.execute(
+            "INSERT INTO exchange_outbox(project_id,op,body) VALUES(?,?,?)",
+            params![
+                project,
+                signed.change.id,
+                serde_json::to_string(&signed).map_err(err)?
+            ],
+        )
+        .map_err(err)?;
+        audit::record_exchange(
+            &tx,
+            user.id,
+            &pin,
+            project,
+            &format!("Добавлено примечание {}", signed.change.id),
+            Some(&snap),
+            &snap,
+        )?;
+        tx.commit().map_err(err)?;
+        Ok(())
+    })
+}
 #[tauri::command]
 pub fn exchange_reviews(
     db: State<ProductionDb>,
@@ -697,7 +861,11 @@ pub fn exchange_resolve(
         }
         let mut next = old.clone();
         let status = if accept {
-            let (state, reason) = apply(&mut next, &signed.change, true)?;
+            let (state, reason) = if signed.change.field == "$note" {
+                add_note(&tx, id, &next, &signed)?
+            } else {
+                apply(&mut next, &signed.change, true)?
+            };
             if state == "needs_review" {
                 return Err(reason);
             }

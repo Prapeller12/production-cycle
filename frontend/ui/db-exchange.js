@@ -3,7 +3,7 @@
   const $ = id => document.getElementById('xdb' + id);
   const invoke = (name,args={})=>window.__TAURI__.core.invoke(name,args);
   const labels={applied:'Применено',already_accounted:'Уже учтено',needs_review:'Требуется решение',rejected:'Отклонено'};
-  const fields={title:'Название',executor:'Исполнитель',start:'Начало',deadline:'Срок',comment:'Комментарий',addressees:'Адресаты',status:'Статус',parentUid:'Вышестоящий этап',sort:'Порядок','$create':'Новый этап','$delete':'Удаление',name:'Проект',orderNo:'Заказ',topic:'Тематика'};
+  const fields={title:'Название',executor:'Исполнитель',start:'Начало',deadline:'Срок',comment:'Комментарий',addressees:'Адресаты',status:'Статус',parentUid:'Вышестоящий этап',sort:'Порядок','$create':'Новый этап','$delete':'Удаление','$note':'Отдельное примечание',name:'Проект',orderNo:'Заказ',topic:'Тематика'};
   let mode='export', catalog=[], encoded='', plan=null, session=0, busy=false;
   function el(tag,text){const n=document.createElement(tag);if(text!=null)n.textContent=text;return n}
   function status(t){$('Status').textContent=t}
@@ -62,5 +62,11 @@
     for(const r of list){const d=el('details');d.append(el('summary',r.project+' · '+(fields[r.op.field]||r.op.field)),el('p',r.reason),el('pre','Было: '+fmt(r.op.before)+'\nСейчас: '+fmt(r.server)+'\nПрислано: '+fmt(r.op.after)));
       for(const [accept,t] of [[true,'Принять предложенное'],[false,'Оставить действующее']]){const b=el('button',t);b.className='btn';b.onclick=guarded(async valid=>{await invoke('exchange_resolve',{op:r.op.id,revision:r.revision,accept,pin:$('Pin').value,comment:$('Comment').value});if(valid()){d.remove();$('Pin').value='';status('Решение записано.')}});d.append(b)}box.append(d)}
   });
-  window.ProductionDbExchange={open,reset};
+  let noteEpoch=0, noteProject=null,noteStage=null;
+  function stageNotes(project,stage){noteEpoch++;noteProject=project;noteStage=stage;$('StageNotes').hidden=!window.ProductionDesktop||!project||!stage;$('StageNotes').open=false;$('NoteText').value='';$('NotePin').value='';$('NoteResult').textContent='';$('NoteList').replaceChildren();}
+  async function showNotes(){const epoch=noteEpoch;const notes=await invoke('exchange_notes',{project:noteProject,stage:noteStage});if(epoch!==noteEpoch)return;
+    $('NoteList').replaceChildren(...notes.map(n=>el('p',n.author+' · '+n.at.slice(0,10)+' — '+n.after)));}
+  $('StageNotes').ontoggle=()=>{if($('StageNotes').open)showNotes().catch(e=>{$('NoteResult').textContent=String(e)})};
+  $('NoteSave').onclick=async()=>{const epoch=noteEpoch;$('NoteSave').disabled=true;try{await invoke('exchange_add_note',{project:noteProject,stage:noteStage,text:$('NoteText').value,pin:$('NotePin').value});if(epoch!==noteEpoch)return;$('NotePin').value='';$('NoteText').value='';$('NoteResult').textContent='Примечание подписано.';await showNotes()}catch(e){if(epoch===noteEpoch)$('NoteResult').textContent=String(e)}finally{$('NoteSave').disabled=false}};
+  window.ProductionDbExchange={open,reset,stageNotes};
 })();

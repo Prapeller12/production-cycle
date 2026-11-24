@@ -71,6 +71,7 @@ fn legacy(c: &Connection, id: String) -> R<Packet> {
             base: None,
             current: clean(snapshot),
             ops: vec![],
+            notes: vec![],
             results: vec![],
         })
     }
@@ -163,7 +164,7 @@ pub fn read(raw: &[u8], pass: &str) -> R<Packet> {
         if let Some(b) = &part.base {
             check(b)?
         }
-        for s in &part.ops {
+        for s in part.ops.iter().chain(&part.notes) {
             if s.change.project != part.guid || !seen.insert(s.change.id.clone()) {
                 return Err("Неверная привязка или повтор кода операции.".into());
             }

@@ -7,7 +7,8 @@ async function port(){const server=net.createServer();await new Promise(r=>serve
 const [root,mode,work]=process.argv.slice(2),isShared=mode==='shared',pin='729418',pass='QAFileTransfer729418';
 const run=async()=>{
  const p=await port();const secret='AQPrivateStore'+Math.random().toString(36).slice(2);
- const child=spawn(path.join(root,'production-cycle.exe'),isShared?[]:['--offline-workstation'],{cwd:os.tmpdir(),env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port='+p}});
+ const report=path.join(work,mode+'-startup.json');
+ const child=spawn(path.join(root,'production-cycle.exe'),isShared?[]:['--offline-workstation'],{cwd:os.tmpdir(),env:{...process.env,PRODUCTION_CYCLE_LAUNCH_STATUS:report,PRODUCTION_CYCLE_STARTUP_REPORT:report,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port='+p}});
  const unlock=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'unlock-test-window.ps1')],{env:{...process.env,PC_TEST_WINDOW_PHRASE:secret},stdio:'inherit'});
  const unlockExit=new Promise(r=>unlock.on('exit',r));
  let browser,page;
@@ -48,6 +49,9 @@ const run=async()=>{
     assert.notEqual(fs.readFileSync(path.join(root,'shared/database/production-cycle.db')).subarray(0,16).toString(),'SQLite format 3\0');
   }
   console.log('Packaged Windows UI passed: '+mode);
+ }catch(e){
+  if(fs.existsSync(report))console.error(fs.readFileSync(report,'utf8'));
+  if(page)console.error(await page.evaluate(()=>({status:document.querySelector('#xdbStatus')?.textContent,modal:[...document.querySelectorAll('.modal.open')].map(x=>x.id),page:location.href})).catch(()=>null));throw e;
  }finally{
   if(page){try{await page.evaluate(()=>window.__TAURI__.core.invoke('local_logout'))}catch{}}
   if(browser)await browser.close();

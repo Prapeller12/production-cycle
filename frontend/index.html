@@ -170,6 +170,7 @@
           <div id="completionScopeHelp" class="help"></div>
         </div>
         <div class="wide"><label for="stageComment">Комментарий</label><textarea id="stageComment" rows="3" placeholder="Дополнительные сведения по этапу"></textarea></div>
+        <details class="wide" id="xdbStageNotes" hidden><summary>Отдельные подписанные примечания</summary><div id="xdbNoteList"></div><label for="xdbNoteText">Новое примечание</label><textarea id="xdbNoteText" rows="2" maxlength="3500"></textarea><label for="xdbNotePin">Ваш ПИН для подписи примечания</label><input id="xdbNotePin" type="password" autocomplete="off"><button type="button" class="btn" id="xdbNoteSave">Подписать примечание</button><output id="xdbNoteResult" role="status"></output></details>
       </div>
       <div class="required-hint">Все поля со знаком * обязательны. Количество непосредственно зависимых этапов рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
     </div>

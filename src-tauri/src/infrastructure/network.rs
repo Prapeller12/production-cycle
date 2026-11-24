@@ -189,10 +189,15 @@ impl NetworkRuntime {
             &serde_json::to_vec_pretty(&serde_json::json!({"format":"production-cycle-shared-store-v1","initializedAt":Local::now().to_rfc3339()})).map_err(|e|e.to_string())?)
     }
 
+    pub fn needs_key_setup(&self,local:&Path)->Result<bool,String>{
+        let p=if self.enabled{self.shared_database()?}else{local.to_path_buf()};
+        Ok(!p.try_exists().map_err(|e|e.to_string())? || crate::vault::plaintext(&p))
+    }
     pub fn prepare_local_database(&self,local_db:&Path)->Result<(),String>{
         if !self.enabled{return Ok(())}
         let lock=self.acquire_store_lock()?;
         let shared=self.shared_database()?;
+        crate::vault::check_store_marker(&shared)?;
         if !shared.is_file(){
             if self.store_was_initialized()?{return Err("Ранее созданная общая база недоступна или удалена. Автоматическое создание пустой базы запрещено; восстановите общий снимок из резервной копии.".into())}
             let legacy=self.root()?.join("data/production-cycle.db");
@@ -214,6 +219,7 @@ impl NetworkRuntime {
     fn prepare_snapshot(&self,source:&Path,local:&Path)->Result<bool,String>{
         if !crate::vault::plaintext(source) || cfg!(test){copy_checked_database(source,local)?;return Ok(false)}
         if self.occupied_count()?>0{return Err("Для обновления защиты завершите все сеансы прежнего выпуска.".into())}
+        for suffix in ["-wal","-journal","-shm"]{let mut s=source.as_os_str().to_owned();s.push(suffix);if Path::new(&s).exists(){return Err("Старая общая база содержит активный журнал. Завершите старые сеансы и подготовьте согласованную копию.".into())}}
         let staging=local.with_extension(format!("migration-{}",Uuid::new_v4()));
         let result=(|| {
             fs::copy(source,&staging).map_err(|e|e.to_string())?;
@@ -233,6 +239,7 @@ impl NetworkRuntime {
             self.publish_locked(db)?;
         }else{let check=self.local_data.join(format!("check-{}.db",Uuid::new_v4()));let result=copy_checked_database(&self.shared_database()?,&check);let _=fs::remove_file(check);result?;}
         self.mark_store_initialized()?;
+        crate::vault::mark_store(&self.shared_database()?)?;
         FileExt::unlock(&lock).map_err(|e|e.to_string())?;
         Ok(())
     }
@@ -280,6 +287,7 @@ impl NetworkRuntime {
 
     fn refresh_locked(&self,db:&ProductionDb)->Result<(),String>{
         let shared=self.shared_database()?;
+        crate::vault::check_store_marker(&shared)?;
         if !shared.is_file(){return Err("Общий снимок базы недоступен или удалён. Сохранение остановлено: восстановите общую базу или соединение с сетевой папкой.".into())}
         let temp=self.local_data.join(format!("network-incoming-{}.db",Uuid::new_v4()));
         copy_checked_database(&shared,&temp)?;
