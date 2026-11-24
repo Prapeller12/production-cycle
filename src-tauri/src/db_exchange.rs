@@ -184,6 +184,8 @@ pub fn exchange_export(
 pub struct Choice {
     guid: String,
     target: i64,
+    #[serde(default, rename = "stageLinks")]
+    stage_links: BTreeMap<String, Option<String>>,
 } // -1 skip, 0 new, positive explicit existing id
 fn parse(encoded: &str, pass: &str) -> R<Packet> {
     if encoded.len() > exchange_file::MAX * 4 / 3 + 8 {
@@ -237,7 +239,16 @@ fn keys(c: &Connection, p: &Packet) -> R<Vec<Value>> {
 fn discover(c: &Connection, p: &Packet) -> R<Value> {
     let mut projects = vec![];
     for part in &p.parts {
-        projects.push(json!({"guid":part.guid,"name":part.current.project.name,"order":part.current.project.order_no,"stages":part.current.stages.len(),"target":target(c,p,part)?}));
+        let stage_refs: Vec<_> = if p.kind == "legacy" {
+            part.current
+                .stages
+                .iter()
+                .map(|s| json!({"uid":s.uid,"seq":s.seq,"title":s.title}))
+                .collect()
+        } else {
+            vec![]
+        };
+        projects.push(json!({"stageRefs":stage_refs,"guid":part.guid,"name":part.current.project.name,"order":part.current.project.order_no,"stages":part.current.stages.len(),"target":target(c,p,part)?}));
     }
     Ok(
         json!({"projects":projects,"kind":p.kind,"sender":p.exporter,"keys":keys(c,p)?,"legacy":p.kind=="legacy"}),
@@ -310,6 +321,62 @@ fn classify(
     Ok(
         json!({"id":op.id,"field":op.field,"stage":op.stage,"author":op.author,"before":op.before,"server":server,"incoming":op.after,"state":state,"reason":reason,"repeat":false}),
     )
+}
+/// An unsigned old database has no shared stage namespace, even if local codes look alike.
+fn map_legacy_stages(
+    selection: &Choice,
+    packet: &Packet,
+    part: &Part,
+    existing: &ProductionSnapshot,
+) -> R<ProductionSnapshot> {
+    if selection.stage_links.len() != part.current.stages.len() {
+        return Err("Укажите назначение каждого этапа старой базы.".into());
+    }
+    let targets: BTreeSet<_> = existing.stages.iter().map(|s| s.uid.as_str()).collect();
+    let mut chosen = BTreeSet::new();
+    let mut linked = BTreeMap::new();
+    for s in &part.current.stages {
+        let decision = selection
+            .stage_links
+            .get(&s.uid)
+            .ok_or("Укажите соответствие для каждого этапа.")?;
+        let uid = match decision {
+            Some(uid) if targets.contains(uid.as_str()) => uid.clone(),
+            Some(_) => return Err("Связанный этап изменился. Обновите список.".into()),
+            None => {
+                let uid = format!(
+                    "legacy-{}",
+                    hash(&bytes(&json!([
+                        packet.id,
+                        part.guid,
+                        selection.target,
+                        s.uid
+                    ]))?)
+                );
+                if targets.contains(uid.as_str()) {
+                    return Err("Этап уже создан. Выберите его в списке.".into());
+                }
+                uid
+            }
+        };
+        if !chosen.insert(uid.clone()) {
+            return Err("Два разных этапа нельзя связать с одним этапом проекта.".into());
+        }
+        linked.insert(s.uid.clone(), uid);
+    }
+    let mut snapshot = part.current.clone();
+    for stage in &mut snapshot.stages {
+        stage.uid = linked.get(&stage.uid).ok_or("Неизвестный этап.")?.clone();
+        if let Some(parent) = &stage.parent_uid {
+            stage.parent_uid = Some(
+                linked
+                    .get(parent)
+                    .ok_or("Неизвестный вышестоящий этап.")?
+                    .clone(),
+            )
+        }
+    }
+    Ok(snapshot)
 }
 fn transfer(
     tx: &Transaction,
@@ -493,7 +560,14 @@ fn transfer(
                 } else {
                     p.store.clone()
                 };
-                proposals = synthetic(part, old.as_ref(), &part.current, &source)?;
+                let remapped;
+                let current = if let Some(existing) = old.as_ref().filter(|_| p.kind == "legacy") {
+                    remapped = map_legacy_stages(selection, p, part, existing)?;
+                    &remapped
+                } else {
+                    &part.current
+                };
+                proposals = synthetic(part, old.as_ref(), current, &source)?;
                 if p.kind == "legacy" {
                     proposals.retain(|s| s.change.field != "$delete");
                 }
@@ -556,7 +630,7 @@ fn transfer(
                 )?;
             }
         }
-        let result = json!({"project":part.current.project.name,"target":id,"guid":part.guid,"priorRevision":old.as_ref().and_then(|s|s.base_revision.clone()),"changed":changed,"rows":report,"receipt":part.results});
+        let result = json!({"stageLinks":selection.stage_links,"project":part.current.project.name,"target":id,"guid":part.guid,"priorRevision":old.as_ref().and_then(|s|s.base_revision.clone()),"changed":changed,"rows":report,"receipt":part.results});
         tx.execute(
             "INSERT INTO exchange_delivery VALUES(?,?,?,?)",
             params![
@@ -938,10 +1012,50 @@ mod exchange_tests {
         let choices = [Choice {
             guid: p.parts[0].guid.clone(),
             target,
+            stage_links: BTreeMap::new(),
         }];
         let v = transfer(&tx, p, &choices, u, Some((PIN, "Испытание"))).unwrap();
         tx.commit().unwrap();
         v
+    }
+    #[test]
+    fn unsigned_database_explicitly_maps_stages_and_preserves_unrelated_data() {
+        let central = ProductionDb::memory().unwrap();
+        let user = operator(&central, "Испытатель", "admin", None);
+        let base = sample();
+        let number = central
+            .save_signed_snapshot(&base, user.id, PIN, "Основание", None)
+            .unwrap()
+            .project_id;
+        let source = ProductionDb::memory().unwrap();
+        let mut imported = base.clone();
+        imported.stages[0].uid = "other-local-code".into();
+        imported.stages[0].executor = "Новый цех".into();
+        source.save_snapshot(&imported).unwrap();
+        let conn = source.conn.lock().unwrap();
+        let raw = conn.serialize(rusqlite::DatabaseName::Main).unwrap();
+        let p = exchange_file::read(&raw, "").unwrap();
+        assert_eq!(p.kind, "legacy");
+        let mut c = central.conn.lock().unwrap();
+        let tx = c.transaction().unwrap();
+        let mut choice = Choice {
+            guid: p.parts[0].guid.clone(),
+            target: number,
+            stage_links: BTreeMap::new(),
+        };
+        assert!(transfer(&tx, &p, std::slice::from_ref(&choice), &user, None).is_err());
+        choice
+            .stage_links
+            .insert("other-local-code".into(), Some("S1".into()));
+        let plan = transfer(&tx, &p, &[choice], &user, Some((PIN, "Сверил этапы"))).unwrap();
+        let rows = plan["projects"][0]["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["stage"], "S1");
+        assert_eq!(rows[0]["state"], "needs_review");
+        assert_eq!(
+            loaded(&tx, number).unwrap().stages[0].executor,
+            base.stages[0].executor
+        );
     }
     #[test]
     fn field_roundtrip_parallel_change_replay_receipt_and_all_roles() {

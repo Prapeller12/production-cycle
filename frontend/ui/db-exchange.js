@@ -23,7 +23,27 @@
       for(const p of items){const l=el('label');l.className='checkline';const ch=el('input');ch.type='checkbox';ch.value=p.projectId;l.append(ch,document.createTextNode(p.name+' · заказ '+p.orderNo));$('Projects').append(l)}
       if(!items.length)$('Projects').textContent='Сохранённых проектов пока нет. Для получения проекта выберите импорт.';
     }catch(e){if(epoch===session)status(String(e))}}
-  function choices(){return Array.from($('Mapping').querySelectorAll('select'),n=>({guid:n.dataset.guid,target:Number(n.value)}))}
+  function choices(){return Array.from($('Mapping').querySelectorAll('select[data-guid]'),n=>{
+    const links=Object.create(null);
+    for(const stage of n.parentElement.nextElementSibling?.querySelectorAll('select[data-stage]')||[]){
+      if(stage.value==='')throw Error('Укажите назначение каждого этапа старой базы.');
+      links[stage.dataset.stage]=stage.value==='new'?null:stage.value.slice(2);
+    }
+    return {guid:n.dataset.guid,target:Number(n.value),stageLinks:links};
+  })}
+  async function legacyStages(project,select,box){
+    const target=Number(select.value);box.replaceChildren();invalidate();
+    if(target<=0 || project.target!=null)return;
+    const label=el('p','Для каждого этапа из файла выберите соответствующий этап проекта или создайте новый.');box.append(label);
+    const local=await invoke('production_load_snapshot_by_id',{projectId:target});
+    if(!box.isConnected || Number(select.value)!==target)return;
+    for(const st of project.stageRefs){
+      const row=el('label','Из файла · № '+st.seq+' · '+st.title), input=el('select');
+      input.dataset.stage=st.uid;input.append(new Option('Выберите назначение',''),new Option('Создать новый этап','new'));
+      for(const v of local.stages)input.append(new Option('№ '+v.seq+' · '+v.title,'e:'+v.uid));
+      input.onchange=invalidate;row.append(input);box.append(row);
+    }
+  }
   const args=()=>({data:encoded,passphrase:$('Pass').value});
   const fmt=v=>v==null?'—':typeof v==='string'?v:JSON.stringify(v);
   function details(list,container){container.replaceChildren();for(const p of list){const h=el('h3',p.project);container.append(h);
@@ -46,7 +66,7 @@
     for(const p of res.projects){const l=el('label',p.name+' · заказ '+p.order+' · этапов '+p.stages);const s=el('select');s.dataset.guid=p.guid;
       s.append(new Option('Пропустить',-1));if(p.target==null){s.append(new Option('Создать самостоятельный проект',0));for(const a of catalog)s.append(new Option(a.name+' · '+a.orderNo+' · № '+a.projectId,a.projectId));s.value='-1'}
       else{s.append(new Option('Обновить связанный проект № '+p.target,p.target));s.value=String(p.target)}
-      s.onchange=invalidate;l.append(s);box.append(l)}
+      const stages=el('div');s.onchange=()=>{invalidate();if(res.legacy)legacyStages(p,s,stages).catch(e=>status(String(e)))};l.append(s);box.append(l,stages)}
     $('Plan').hidden=false;
   });
   $('Plan').onclick=guarded(async live=>{invalidate();const res=await invoke('exchange_preview',{...args(),choices:choices()});if(!live())return;plan=res;details(res.plan.projects,$('PlanRows'));$('Go').disabled=false;status('Проверьте изменения. Для записи введите ПИН и комментарий.')});
