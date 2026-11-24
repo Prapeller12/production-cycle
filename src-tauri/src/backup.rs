@@ -111,7 +111,7 @@ fn inspect_backup(path: &Path) -> BackupSummary {
         valid: false,
         validation_error: None,
     };
-    let result = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+    let result = crate::vault::read(path)
         .map_err(|error| error.to_string())
         .and_then(|conn| validate_connection(&conn));
     match result {
@@ -165,7 +165,7 @@ pub(crate) fn create_backup_from_connection(
     let suffix = &Uuid::new_v4().simple().to_string()[..8];
     let file_name = format!("{BACKUP_PREFIX}{safe_kind}_{stamp}_{suffix}.db");
     let path = dir.join(&file_name);
-    conn.backup(DatabaseName::Main, &path, None).map_err(|error| error.to_string())?;
+    crate::vault::backup(conn, &path).map_err(|error| error.to_string())?;
     let summary = inspect_backup(&path);
     if !summary.valid {
         let _ = fs::remove_file(&path);
@@ -228,14 +228,16 @@ impl ProductionDb {
         crate::audit::authenticate_admin(&conn, admin_user_id, admin_pin)?;
         let safety = create_backup_from_connection(&conn, dir, "before-restore", false)?;
         let restore_result = (|| -> Result<(usize, usize, i64, String), String> {
-            conn.restore(DatabaseName::Main, &source, None::<fn(Progress)>).map_err(|error| error.to_string())?;
+            crate::vault::restore(&mut conn, &source).map_err(|error| error.to_string())?;
             initialize_schema(&conn).map_err(|error| error.to_string())?;
+            #[cfg(not(feature="server"))]
+            conn.execute("UPDATE exchange_store SET generation=lower(hex(randomblob(16))) WHERE singleton=1",[]).map_err(|e|e.to_string())?;
             validate_connection(&conn)
         })();
         let (projects, events, version, integrity) = match restore_result {
             Ok(value) => value,
             Err(error) => {
-                let rollback = conn.restore(DatabaseName::Main, dir.join(&safety.file_name), None::<fn(Progress)>)
+                let rollback = crate::vault::restore(&mut conn, &dir.join(&safety.file_name))
                     .map_err(|value| value.to_string())
                     .and_then(|_| initialize_schema(&conn).map_err(|value| value.to_string()));
                 return Err(match rollback {

@@ -32,7 +32,7 @@ impl LocalSession {
         result["state"] = json!("active");
         Ok(result)
     }
-    fn user(&self) -> Result<AuditUserSummary, String> {
+    pub(crate) fn user(&self) -> Result<AuditUserSummary, String> {
         self.0.lock().map_err(|_| "Сеанс занят")?.clone().ok_or_else(|| "Войдите под своим профилем.".into())
     }
 }
@@ -123,7 +123,7 @@ pub fn local_save_draft(snapshot: crate::production::ProductionSnapshot, paths: 
     std::fs::create_dir_all(&folder).map_err(|e|e.to_string())?;
     let saved_at = chrono::Utc::now().to_rfc3339();
     let value = json!({"format":"production-cycle-local-draft-v1","savedAt":saved_at,"userId":user.id,"snapshot":snapshot});
-    crate::infrastructure::network::atomic_write(&folder.join(format!("user-{}.json",user.id)), &serde_json::to_vec_pretty(&value).map_err(|e|e.to_string())?)?;
+    crate::infrastructure::network::atomic_write(&folder.join(format!("user-{}.json",user.id)), &crate::vault::seal_draft(&serde_json::to_vec_pretty(&value).map_err(|e|e.to_string())?)?)?;
     Ok(json!({"location":"local","savedAt":saved_at}))
 }
 

@@ -9,7 +9,7 @@ use tauri::State;
 use crate::infrastructure::network::NetworkRuntime;
 
 const MIGRATION: &str = include_str!("../../migrations/001_production_cycle.sql");
-pub(crate) const SCHEMA_VERSION: i64 = 5;
+pub(crate) const SCHEMA_VERSION: i64 = 6;
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
 pub const OUT_HEADER: [&str; 9] = [
@@ -232,6 +232,8 @@ pub(crate) fn initialize_schema(conn:&Connection)->Result<()> {
         conn.execute_batch("ALTER TABLE production_cycle ADD COLUMN topic TEXT NOT NULL DEFAULT ''")?;
     }
     crate::audit::initialize_audit_schema(conn).map_err(ProductionError::Validation)?;
+    #[cfg(not(feature="server"))]
+    conn.execute_batch(include_str!("../../migrations/006_db_exchange.sql"))?;
     conn.pragma_update(None,"user_version",SCHEMA_VERSION)?;
     Ok(())
 }
@@ -241,7 +243,8 @@ impl ProductionDb {
     }
     pub fn open_with_backup_dir(path:&Path,backup_dir_override:Option<PathBuf>) -> Result<Self> {
         let existed=path.is_file()&&std::fs::metadata(path).map(|value|value.len()>0).unwrap_or(false);
-        let conn=Connection::open(path)?;
+        crate::vault::migrate_plain(path).map_err(ProductionError::Validation)?;
+        let conn=crate::vault::open(path, OpenFlags::default()).map_err(ProductionError::Validation)?;
         ensure_supported_schema(&conn)?;
         let backup_dir=backup_dir_override.or_else(||path.parent().map(|parent|parent.join("backups")));
         if existed&&schema_needs_migration(&conn)?{
@@ -253,14 +256,14 @@ impl ProductionDb {
     pub(crate) fn export_database(&self,path:&Path)->Result<()> {
         if path.exists(){std::fs::remove_file(path).map_err(|e|ProductionError::Validation(e.to_string()))?;}
         let conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
-        conn.backup(rusqlite::DatabaseName::Main,path,None)?;
+        crate::vault::backup(&conn,path).map_err(ProductionError::Validation)?;
         Ok(())
     }
     pub(crate) fn restore_database(&self,path:&Path)->Result<()> {
-        let source=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let source=crate::vault::read(path).map_err(ProductionError::Validation)?;
         ensure_supported_schema(&source)?;drop(source);
         let mut conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
-        conn.restore(rusqlite::DatabaseName::Main,path,None::<fn(rusqlite::backup::Progress)>)?;
+        crate::vault::restore(&mut conn,path).map_err(ProductionError::Validation)?;
         initialize_schema(&conn)?;
         Ok(())
     }

@@ -19,6 +19,7 @@ use crate::production::{
     DictionaryReplaceResult, ProductionDb, ProductionReport, ProductionSnapshot, StageStatus,
 };
 
+#[path="audit/user_administration.rs"]
 pub(crate) mod user_administration;
 
 const OFFICIAL_EVIDENCE_TYPES: [&str; 5] = [
@@ -492,6 +493,18 @@ pub(crate) fn authenticate_admin(conn: &Connection, user_id: i64, pin: &str) -> 
     authenticate(conn, user_id, pin, RoleRequirement::Admin).map(|_| ())
 }
 
+#[cfg(not(feature="server"))]
+pub(crate) fn exchange_signer(conn:&Connection,id:i64,pin:&str)->Result<SigningKey,String>{
+    authenticate(conn,id,pin,RoleRequirement::AnySigner).map(|(_,key)|key)
+}
+#[cfg(not(feature="server"))]
+pub(crate) fn record_exchange(tx:&Transaction,id:i64,pin:&str,project:i64,comment:&str,before:Option<&ProductionSnapshot>,after:&ProductionSnapshot)->Result<(),String>{
+    let (user,key)=authenticate(tx,id,pin,RoleRequirement::AnySigner)?;
+    let message=validate_comment(comment,"Комментарий к обмену")?;
+    let changes=snapshot_changes(before,after);
+    append_event(tx,&user,&key,project,None,None,"database_exchange",&message,None,None,&changes,&snapshot_hash(after)?)?;
+    Ok(())
+}
 fn snapshot_hash(snapshot: &ProductionSnapshot) -> std::result::Result<String, String> {
     // Concurrency metadata is not part of the historically signed domain data.
     let mut content = snapshot.clone();
@@ -760,6 +773,8 @@ impl ProductionDb {
                 )?);
             }
         }
+        #[cfg(not(feature="server"))]
+        crate::db_exchange::capture(&tx, project_id, previous.as_ref(), &persisted, &user.display_name, &signing_key)?;
         tx.commit().map_err(|e| e.to_string())?;
         drop(conn);
         let (backup, backup_warning) = match self.create_backup("auto-save") {
