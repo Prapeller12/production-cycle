@@ -2,6 +2,12 @@
 mod commands;
 mod audit;
 mod backup;
+mod vault;
+#[cfg(windows)]
+mod key_dialog;
+mod db_exchange;
+mod exchange_core;
+mod exchange_file;
 mod smoke;
 mod infrastructure;
 mod production;
@@ -44,6 +50,10 @@ fn main(){
     infrastructure::startup::update("Открытие локальной базы…");
     let network=match NetworkRuntime::from_environment(paths.data.clone(),paths.recovery.clone()){Ok(value)=>value,Err(e)=>startup_failure(&e)};
     let local_db=paths.data.join("production-cycle.db");
+    infrastructure::startup::update("Ожидание парольной фразы хранилища");
+    let setup=match network.needs_key_setup(&local_db){Ok(value)=>value,Err(e)=>startup_failure(&e)};
+    if let Err(e)=vault::unlock(setup){startup_failure(&e)}
+    infrastructure::startup::update("Проверка ключа и целостности базы…");
     if let Err(e)=network.prepare_local_database(&local_db){startup_failure(&e)}
     let db=match ProductionDb::open_with_backup_dir(&local_db,network.shared_backups()){Ok(db)=>db,Err(e)=>startup_failure(&e.to_string())};
     if let Err(e)=network.ensure_shared_database(&db){startup_failure(&e)}
@@ -52,6 +62,7 @@ fn main(){
     let network_enabled=network.enabled();
     let frontend=paths.frontend.clone();
     let smoke=std::env::args().any(|arg|arg=="--smoke-test");
+    let run_embedded_smoke=smoke && !std::env::args().any(|a|a=="--external-ui-test");
     infrastructure::startup::update("Создание рабочего окна WebView2…");
     let result=tauri::Builder::default()
         .manage(paths)
@@ -81,7 +92,7 @@ fn main(){
             infrastructure::network::network_status,infrastructure::network::network_login,infrastructure::network::network_logout,
             infrastructure::network::network_save_draft,infrastructure::network::network_finish_eviction,
             local_desktop::local_status,local_desktop::local_login,local_desktop::local_logout,local_desktop::local_finish_eviction,local_desktop::local_save_draft,
-            local_desktop::production_import_excel,local_desktop::ui_claim_onboarding,local_desktop::save_excel_template,
+            db_exchange::exchange_export,db_exchange::exchange_preview,db_exchange::exchange_commit,db_exchange::exchange_notes,db_exchange::exchange_add_note,db_exchange::exchange_reviews,db_exchange::exchange_resolve,local_desktop::ui_claim_onboarding,local_desktop::save_excel_template,
             local_desktop::statistics_preferences_load,local_desktop::statistics_preferences_save,
             local_desktop::statistics_preferences_save_draft,local_desktop::statistics_preferences_clear_draft
         ])
@@ -97,7 +108,7 @@ fn main(){
                 .inner_size(1440.0,900.0).min_inner_size(700.0,500.0)
                 .data_directory(infrastructure::launch::native_local_path(&paths.webview))
                 .additional_browser_args(&if smoke {std::env::var("PRODUCTION_CYCLE_SMOKE_BROWSER_ARGS").unwrap_or_default()}else{String::new()})
-                .on_page_load(move |window,payload|{if !infrastructure::startup::is_ready(){infrastructure::startup::update(if payload.event()==tauri::webview::PageLoadEvent::Started{"Загрузка интерфейса программы…"}else{"Ожидание готовности интерфейса…"});}if smoke && payload.event()==tauri::webview::PageLoadEvent::Finished {if cfg!(feature="local-desktop"){let _=window.eval(smoke::LOCAL_TRACE);}
+                .on_page_load(move |window,payload|{if !infrastructure::startup::is_ready(){infrastructure::startup::update(if payload.event()==tauri::webview::PageLoadEvent::Started{"Загрузка интерфейса программы…"}else{"Ожидание готовности интерфейса…"});}if run_embedded_smoke && payload.event()==tauri::webview::PageLoadEvent::Finished {if cfg!(feature="local-desktop"){let _=window.eval(smoke::LOCAL_TRACE);}
                     let _=window.eval(if cfg!(feature="local-desktop"){smoke::LOCAL_SCRIPT}else if network_enabled{smoke::NETWORK_SCRIPT}else{smoke::SCRIPT});}})
                 .on_navigation(|url|matches!(url.scheme(),"production") || url.host_str()==Some("production.localhost"))
                 .build().map_err(|error|format!("Не удалось создать рабочее окно: {error}\nRuntime: {}\nПрофиль: {}\n{}",paths.runtime.display(),paths.webview.display(),paths.runtime_warning.as_deref().unwrap_or("")))?;

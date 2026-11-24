@@ -19,10 +19,9 @@ jobs:
           node-version: '22'
       - run: node --test tests/domain.test.cjs tests/statistics-domain.test.cjs tests/statistics-integration.test.cjs
       - run: git diff --check
-  # Exercise the packaged EXE and its actual IPC, Excel, print and SMB paths.
-  # tests/browser.cjs belongs to the historical prototype with paired TXT import.
+  # Current Windows release uses signed database exchange and the native key dialog.
   native:
     needs: contracts
-    uses: ./.github/workflows/production-cycle-startup.yml
+    uses: ./.github/workflows/secure-exchange.yml
     permissions:
       contents: read

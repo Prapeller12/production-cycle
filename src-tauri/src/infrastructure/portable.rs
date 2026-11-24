@@ -61,7 +61,7 @@ impl Paths {
         for path in [&result.webview,&result.data,&result.recovery,&result.exports,&result.process_temp]{super::launch::probe_directory(path)?;}
         if !result.runtime.join("msedgewebview2.exe").is_file() { return Err("Missing bundled Fixed WebView2 Runtime. Extract the complete portable ZIP.".into()); }
         if [&result.runtime,&result.webview,&result.data,&result.recovery].iter().any(|path|!super::network::is_local_disk(path)) {return Err("WebView2, профиль или рабочая SQLite оказались на сетевом диске. Запуск остановлен до создания окна: нужна локальная копия клиента.".into());}
-        for relative in ["index.html","compat/browser-entry.js","services/browser-transport.js","config/contracts.js","config/import-template.js","domain/cycle.js","services/exchange.js","services/backend.js","services/project-file.js","ui/app.js","styles/app.css","styles/reference-theme.css","styles/report-print.css"]{
+        for relative in ["index.html","compat/browser-entry.js","services/browser-transport.js","config/contracts.js","config/import-template.js","domain/cycle.js","services/exchange.js","services/backend.js","services/project-file.js","ui/app.js","ui/db-exchange.js","styles/app.css","styles/reference-theme.css","styles/report-print.css"]{
             let path=result.frontend.join(relative);
             std::fs::File::open(&path).map_err(|e|super::launch::io_error("Недоступен обязательный файл интерфейса",&path,e))?;
         }

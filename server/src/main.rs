@@ -6,6 +6,7 @@ mod http;
 mod service;
 mod launcher;
 mod excel_import;
+mod vault;
 mod ui_preferences;
 #[path = "../../src-tauri/src/production/mod.rs"]
 mod production;

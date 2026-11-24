@@ -50,7 +50,7 @@
     <h1 id="workspaceTitle">Новый проект</h1>
     <div class="toolbar-group" aria-label="Основные действия"><button class="btn" id="newBtn"><span class="ui-icon ui-icon-plus" aria-hidden="true"></span>Новый проект</button><button class="btn" id="loadJsonBtn"><span class="ui-icon ui-icon-folder" aria-hidden="true"></span>Сохранённые проекты</button><button class="btn primary" id="saveJsonBtn"><span class="ui-icon ui-icon-save" aria-hidden="true"></span>Подписать и сохранить</button></div>
     <input type="file" id="jsonFile" class="hidden-file" accept="application/json,.json" />
-    <details class="more-actions"><summary class="btn"><span class="ui-icon ui-icon-settings" aria-hidden="true"></span>Ещё<span class="ui-icon ui-icon-chevron-down more-chevron" aria-hidden="true"></span></summary><div class="more-actions-menu"><button class="btn" id="importBtn"><span class="ui-icon ui-icon-upload" aria-hidden="true"></span>Импорт проекта</button><button class="btn" id="downloadImportTemplateBtn"><span class="ui-icon ui-icon-download" aria-hidden="true"></span>Скачать образец отчёта</button><button class="btn" id="hintsBtn"><span class="ui-icon ui-icon-document" aria-hidden="true"></span>Подсказки</button><button class="btn" id="exportBtn" hidden><span class="ui-icon ui-icon-download" aria-hidden="true"></span>Экспорт для Реестра</button><button class="btn" id="pdfReportBtn"><span class="ui-icon ui-icon-print" aria-hidden="true"></span>Печать отчёта / PDF</button><button class="btn" id="validateBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Проверить заполнение</button><button class="btn secondary" id="demoBtn"><span class="ui-icon ui-icon-document" aria-hidden="true"></span>Учебный пример</button><button class="btn danger-outline" id="completeProjectBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Завершить весь проект…</button></div></details>
+    <details class="more-actions"><summary class="btn"><span class="ui-icon ui-icon-settings" aria-hidden="true"></span>Ещё<span class="ui-icon ui-icon-chevron-down more-chevron" aria-hidden="true"></span></summary><div class="more-actions-menu"><button class="btn" id="importBtn"><span class="ui-icon ui-icon-upload" aria-hidden="true"></span>Экспорт/импорт</button><button class="btn" id="downloadImportTemplateBtn" hidden><span class="ui-icon ui-icon-download" aria-hidden="true"></span>Скачать образец отчёта</button><button class="btn" id="hintsBtn"><span class="ui-icon ui-icon-document" aria-hidden="true"></span>Подсказки</button><button class="btn" id="exportBtn" hidden><span class="ui-icon ui-icon-download" aria-hidden="true"></span>Экспорт для Реестра</button><button class="btn" id="pdfReportBtn"><span class="ui-icon ui-icon-print" aria-hidden="true"></span>Печать отчёта / PDF</button><button class="btn" id="validateBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Проверить заполнение</button><button class="btn secondary" id="demoBtn"><span class="ui-icon ui-icon-document" aria-hidden="true"></span>Учебный пример</button><button class="btn danger-outline" id="completeProjectBtn"><span class="ui-icon ui-icon-check" aria-hidden="true"></span>Завершить весь проект…</button></div></details>
   </div>
 
   <form id="projectSearchForm" class="project-search-main" role="search"><label for="projectsSearch">поиск проектов</label><input id="projectsSearch" placeholder="Номер заказа, название или предприятие" autocomplete="off" /><button class="btn" id="searchProjectsBtn" type="submit"><span class="ui-icon ui-icon-folder" aria-hidden="true"></span>Найти</button></form>
@@ -170,6 +170,7 @@
           <div id="completionScopeHelp" class="help"></div>
         </div>
         <div class="wide"><label for="stageComment">Комментарий</label><textarea id="stageComment" rows="3" placeholder="Дополнительные сведения по этапу"></textarea></div>
+        <details class="wide" id="xdbStageNotes" hidden><summary>Отдельные подписанные примечания</summary><div id="xdbNoteList"></div><label for="xdbNoteText">Новое примечание</label><textarea id="xdbNoteText" rows="2" maxlength="3500"></textarea><label for="xdbNotePin">Ваш ПИН для подписи примечания</label><input id="xdbNotePin" type="password" autocomplete="off"><button type="button" class="btn" id="xdbNoteSave">Подписать примечание</button><output id="xdbNoteResult" role="status"></output></details>
       </div>
       <div class="required-hint">Все поля со знаком * обязательны. Количество непосредственно зависимых этапов рассчитывается автоматически. Поле «Ссылка» остаётся пустым.</div>
     </div>
@@ -192,6 +193,29 @@
 
 <datalist id="projectNameOptions"></datalist><datalist id="initiatorOptions"></datalist><datalist id="executorOptions"></datalist><datalist id="enterpriseOptions"></datalist><datalist id="stageTitleOptions"></datalist>
 
+<div class="modal-backdrop" id="exchangeDbModal">
+  <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="xdbTitle">
+    <div class="modal-head"><h2 id="xdbTitle">Экспорт/импорт базы</h2><span class="spacer"></span><button class="btn icon" data-close="exchangeDbModal" aria-label="Закрыть"><span class="ui-icon ui-icon-close" aria-hidden="true"></span></button></div>
+    <div class="modal-body db-exchange">
+      <div class="preview-tabs"><button type="button" class="preview-tab" id="xdbExportTab">Экспортировать базу</button><button type="button" class="preview-tab" id="xdbImportTab">Импортировать базу</button></div>
+      <div id="xdbExportPane">
+        <label>Что передать<select id="xdbKind"><option value="changes">Изменения автономного компьютера</option><option value="assignment">Проекты для работы без связи</option><option value="receipt">Квитанция и актуальные проекты</option></select></label>
+        <fieldset><legend>Проекты для передачи</legend><div id="xdbProjects"></div></fieldset>
+      </div>
+      <div id="xdbImportPane" hidden>
+        <label>Файл обмена или прежняя база<input type="file" id="xdbFile" accept=".pcdb,.db,.sqlite,.sqlite3"></label>
+      </div>
+      <label>Парольная фраза файла обмена<input id="xdbPass" type="password" autocomplete="off" maxlength="1024"><small id="xdbPassHint">Укажите отдельную фразу от 12 символов. Передайте её получателю другим способом.</small></label>
+      <div id="xdbImportActions" hidden><button type="button" class="btn" id="xdbInspect">Распознать файл</button><div id="xdbMapping"></div><button type="button" class="btn" id="xdbPlan" hidden>Проверить изменения</button><div id="xdbPlanRows"></div></div>
+      <label>Ваш персональный ПИН<input id="xdbPin" type="password" inputmode="numeric" autocomplete="off"></label>
+      <label id="xdbCommentLabel" hidden>Комментарий к приёму или решению<input id="xdbComment" type="text" maxlength="1000"></label>
+      <div><button type="button" class="btn primary" id="xdbGo">Сохранить файл базы</button></div>
+      <output id="xdbStatus" role="status" aria-live="polite"></output>
+      <details id="xdbReviewPane"><summary>Изменения на согласовании</summary><button type="button" class="btn" id="xdbRefresh">Показать список</button><div id="xdbReviews"></div></details>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close="exchangeDbModal">Закрыть</button></div>
+  </section>
+</div>
 <div class="modal-backdrop" id="importModal">
   <div class="modal modal-wide"><div class="modal-head"><h2>Импорт производственного цикла</h2><span class="spacer"></span><button class="btn icon" data-close="importModal" aria-label="Закрыть импорт"><span class="ui-icon ui-icon-close" aria-hidden="true"></span></button></div>
     <div class="modal-body"><p>Выберите заполненный файл .xlsx с листами «Проект» и «Этапы». Образец доступен в меню «Ещё».</p><div class="import-files import-excel-file">
@@ -261,6 +285,7 @@
 <script defer src="dashboards/integration.js"></script>
 <script defer src="ui/user-administration.js"></script>
 <script defer src="ui/project-catalog.js"></script>
+<script defer src="ui/db-exchange.js"></script>
 <script defer src="ui/app.js"></script>
 </body>
 </html>

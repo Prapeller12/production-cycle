@@ -123,3 +123,16 @@ html,body{font-family:"Segoe UI",Arial,sans-serif;font-size:15px}
   .import-preview-table th{background:#f1f5f9;font-weight:700}
   .legacy-ie .project-search-main input{flex:1 1 auto;width:50%}
 }
+
+.db-exchange {display:grid;gap:14px}
+.db-exchange [hidden] {display:none!important}
+.db-exchange label:not(.checkline) {display:grid;gap:5px;margin:6px 0}
+.db-exchange small {color:var(--muted,#52616d)}
+.db-exchange fieldset {border:1px solid #d5dadc;border-radius:8px;padding:10px 14px}
+.db-exchange .checkline {display:flex;align-items:center;gap:8px;margin:5px 0}
+.db-exchange .checkline input {width:auto}
+.db-exchange #xdbStatus,.db-exchange pre {white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit}
+.db-exchange #xdbStatus {font-weight:600}
+.db-exchange details {padding:8px 0}
+.db-exchange summary {cursor:pointer}
+.db-exchange button {margin:3px}

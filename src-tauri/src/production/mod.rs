@@ -9,7 +9,7 @@ use tauri::State;
 use crate::infrastructure::network::NetworkRuntime;
 
 const MIGRATION: &str = include_str!("../../migrations/001_production_cycle.sql");
-pub(crate) const SCHEMA_VERSION: i64 = 5;
+pub(crate) const SCHEMA_VERSION: i64 = if cfg!(feature="server"){5}else{6};
 const MAX_SAFE_INTEGER: i64 = 9_007_199_254_740_991;
 
 pub const OUT_HEADER: [&str; 9] = [
@@ -232,6 +232,8 @@ pub(crate) fn initialize_schema(conn:&Connection)->Result<()> {
         conn.execute_batch("ALTER TABLE production_cycle ADD COLUMN topic TEXT NOT NULL DEFAULT ''")?;
     }
     crate::audit::initialize_audit_schema(conn).map_err(ProductionError::Validation)?;
+    #[cfg(not(feature="server"))]
+    conn.execute_batch(include_str!("../../migrations/006_db_exchange.sql"))?;
     conn.pragma_update(None,"user_version",SCHEMA_VERSION)?;
     Ok(())
 }
@@ -241,26 +243,33 @@ impl ProductionDb {
     }
     pub fn open_with_backup_dir(path:&Path,backup_dir_override:Option<PathBuf>) -> Result<Self> {
         let existed=path.is_file()&&std::fs::metadata(path).map(|value|value.len()>0).unwrap_or(false);
-        let conn=Connection::open(path)?;
+        #[cfg(not(feature="server"))]
+        crate::vault::check_store_marker(path).map_err(ProductionError::Validation)?;
+        crate::vault::migrate_plain(path).map_err(ProductionError::Validation)?;
+        let conn=crate::vault::open(path, OpenFlags::default()).map_err(ProductionError::Validation)?;
         ensure_supported_schema(&conn)?;
+        #[cfg(not(feature="server"))]
+        if backup_dir_override.is_none(){if let Some(parent)=path.parent(){crate::vault::protect_backup_history(&parent.join("backups")).map_err(ProductionError::Validation)?;}}
         let backup_dir=backup_dir_override.or_else(||path.parent().map(|parent|parent.join("backups")));
         if existed&&schema_needs_migration(&conn)?{
             if let Some(dir)=backup_dir.as_deref(){crate::backup::create_backup_from_connection(&conn,dir,"before-migration",true).map_err(ProductionError::Validation)?;}
         }
         initialize_schema(&conn)?;
+        #[cfg(not(feature="server"))]
+        crate::vault::mark_store(path).map_err(ProductionError::Validation)?;
         Ok(Self{conn:Mutex::new(conn),backup_dir})
     }
     pub(crate) fn export_database(&self,path:&Path)->Result<()> {
         if path.exists(){std::fs::remove_file(path).map_err(|e|ProductionError::Validation(e.to_string()))?;}
         let conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
-        conn.backup(rusqlite::DatabaseName::Main,path,None)?;
+        crate::vault::backup(&conn,path).map_err(ProductionError::Validation)?;
         Ok(())
     }
     pub(crate) fn restore_database(&self,path:&Path)->Result<()> {
-        let source=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let source=crate::vault::read(path).map_err(ProductionError::Validation)?;
         ensure_supported_schema(&source)?;drop(source);
         let mut conn=self.conn.lock().map_err(|_|ProductionError::Validation("База данных занята".into()))?;
-        conn.restore(rusqlite::DatabaseName::Main,path,None::<fn(rusqlite::backup::Progress)>)?;
+        crate::vault::restore(&mut conn,path).map_err(ProductionError::Validation)?;
         initialize_schema(&conn)?;
         Ok(())
     }
@@ -442,8 +451,10 @@ fn load_snapshot_conn(conn:&Connection,order_no:&str)->Result<Option<ProductionS
     let id=conn.query_row("SELECT id FROM production_cycle WHERE order_no=?1 ORDER BY updated_at DESC,id DESC LIMIT 1",[clean(order_no)],|r|r.get(0)).optional()?;match id{Some(id)=>load_snapshot_by_id_conn(conn,id),None=>Ok(None)}
 }
 pub(crate) fn load_snapshot_by_id_conn(conn:&Connection,project_id:i64)->Result<Option<ProductionSnapshot>>{
-    let project=conn.query_row("SELECT id,name,order_no,initiator,executor,enterprise,start_date,deadline,topic FROM production_cycle WHERE id=?1",[project_id],|r|Ok((r.get::<_,i64>(0)?,ProductionProjectInput{topic:r.get(8)?,name:r.get(1)?,order_no:r.get(2)?,initiator:r.get(3)?,executor:r.get(4)?,enterprise:r.get(5)?,start:r.get(6)?,deadline:r.get(7)?}))).optional()?;let Some((cycle_id,project))=project else{return Ok(None)};
-    let mut stmt=conn.prepare("SELECT id,uid,seq,sort_order,parent_stage_id,title,executor,addressees,start_date,deadline,status,comment FROM production_stage WHERE cycle_id=?1 ORDER BY seq")?;let rows=stmt.query_map([cycle_id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?,r.get::<_,String>(10)?,r.get::<_,String>(11)?)))?;let mut raw=Vec::new();let mut uid_by_id=HashMap::new();for row in rows{let v=row?;uid_by_id.insert(v.0,v.1.clone());raw.push(v)}let mut stages=Vec::new();let mut max_seq=0;for (_id,uid,seq,sort,parent,title,executor,addressees,start,deadline,status,comment) in raw{if !(1..MAX_SAFE_INTEGER).contains(&seq){return Err(ProductionError::Validation("В базе обнаружен недопустимый порядковый номер этапа.".into()))}max_seq=max_seq.max(seq);stages.push(ProductionStageInput{uid,seq,sort,parent_uid:parent.and_then(|p|uid_by_id.get(&p).cloned()),title,executor,addressees,start,deadline,status:StageStatus::parse(&status)?,comment});}
+    let project_sql=if table_has_column(conn,"production_cycle","topic")?{"SELECT id,name,order_no,initiator,executor,enterprise,start_date,deadline,topic FROM production_cycle WHERE id=?1"}else{"SELECT id,name,order_no,initiator,executor,enterprise,start_date,deadline,'' FROM production_cycle WHERE id=?1"};
+    let project=conn.query_row(project_sql,[project_id],|r|Ok((r.get::<_,i64>(0)?,ProductionProjectInput{topic:r.get(8)?,name:r.get(1)?,order_no:r.get(2)?,initiator:r.get(3)?,executor:r.get(4)?,enterprise:r.get(5)?,start:r.get(6)?,deadline:r.get(7)?}))).optional()?;let Some((cycle_id,project))=project else{return Ok(None)};
+    let stage_sql=if table_has_column(conn,"production_stage","comment")?{"SELECT id,uid,seq,sort_order,parent_stage_id,title,executor,addressees,start_date,deadline,status,comment FROM production_stage WHERE cycle_id=?1 ORDER BY seq"}else{"SELECT id,uid,seq,sort_order,parent_stage_id,title,executor,addressees,start_date,deadline,status,'' FROM production_stage WHERE cycle_id=?1 ORDER BY seq"};
+    let mut stmt=conn.prepare(stage_sql)?;let rows=stmt.query_map([cycle_id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?,r.get::<_,String>(8)?,r.get::<_,String>(9)?,r.get::<_,String>(10)?,r.get::<_,String>(11)?)))?;let mut raw=Vec::new();let mut uid_by_id=HashMap::new();for row in rows{let v=row?;uid_by_id.insert(v.0,v.1.clone());raw.push(v)}let mut stages=Vec::new();let mut max_seq=0;for (_id,uid,seq,sort,parent,title,executor,addressees,start,deadline,status,comment) in raw{if !(1..MAX_SAFE_INTEGER).contains(&seq){return Err(ProductionError::Validation("В базе обнаружен недопустимый порядковый номер этапа.".into()))}max_seq=max_seq.max(seq);stages.push(ProductionStageInput{uid,seq,sort,parent_uid:parent.and_then(|p|uid_by_id.get(&p).cloned()),title,executor,addressees,start,deadline,status:StageStatus::parse(&status)?,comment});}
     let mut snapshot=ProductionSnapshot{database_id:Some(cycle_id),base_revision:None,project,stages,next_seq:max_seq+1};
     snapshot.base_revision=Some(snapshot_revision(&snapshot)?);
     Ok(Some(snapshot))

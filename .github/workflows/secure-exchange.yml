@@ -1,0 +1,48 @@
+name: Build native database exchange
+on:
+  push:
+    branches: [feature/offline-db-exchange-20261124]
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: db-exchange-windows-2022-${{ hashFiles('src-tauri/Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            db-exchange-windows-2022-
+            startup-native-windows-2022-
+            local-rust-windows-2022-
+      - name: Test and build executable
+        shell: pwsh
+        run: |
+          node --test tests/domain.test.cjs tests/statistics-domain.test.cjs tests/statistics-integration.test.cjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo build --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Package verified build
+        if: ${{ hashFiles('docs/database-encryption.json') != '' }}
+        shell: pwsh
+        run: ./scripts/package-exchange.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ hashFiles('docs/database-encryption.json') != '' }}
+        with:
+          name: ProductionCycle-Windows-x64
+          path: dist/exchange/*.zip
+          compression-level: 0
+          if-no-files-found: error
+      - name: Verify shipped Windows application offline and over SMB
+        shell: pwsh
+        run: ./scripts/test-exchange-release.ps1

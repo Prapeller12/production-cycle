@@ -189,20 +189,47 @@ impl NetworkRuntime {
             &serde_json::to_vec_pretty(&serde_json::json!({"format":"production-cycle-shared-store-v1","initializedAt":Local::now().to_rfc3339()})).map_err(|e|e.to_string())?)
     }
 
+    pub fn needs_key_setup(&self,local:&Path)->Result<bool,String>{
+        let p=if self.enabled{self.shared_database()?}else{local.to_path_buf()};
+        Ok(!p.try_exists().map_err(|e|e.to_string())? || crate::vault::plaintext(&p))
+    }
     pub fn prepare_local_database(&self,local_db:&Path)->Result<(),String>{
         if !self.enabled{return Ok(())}
         let lock=self.acquire_store_lock()?;
         let shared=self.shared_database()?;
+        crate::vault::check_store_marker(&shared)?;
         if !shared.is_file(){
             if self.store_was_initialized()?{return Err("Ранее созданная общая база недоступна или удалена. Автоматическое создание пустой базы запрещено; восстановите общий снимок из резервной копии.".into())}
             let legacy=self.root()?.join("data/production-cycle.db");
-            if legacy.is_file(){copy_checked_database(&legacy,&shared)?;}
+            if legacy.is_file(){
+                self.prepare_snapshot(&legacy,local_db)?;
+                copy_checked_database(local_db,&shared)?;
+            }
         }
-        if shared.is_file(){copy_checked_database(&shared,local_db)?;self.mark_store_initialized()?;}
+        crate::vault::protect_backup_history(&self.root()?.join("shared/backups"))?;
+        if shared.is_file(){
+            let converted=self.prepare_snapshot(&shared,local_db)?;
+            if converted {copy_checked_database(local_db,&shared)?;}
+            self.mark_store_initialized()?;
+        }
         FileExt::unlock(&lock).map_err(|e|e.to_string())?;
         Ok(())
     }
 
+    fn prepare_snapshot(&self,source:&Path,local:&Path)->Result<bool,String>{
+        if !crate::vault::plaintext(source) || cfg!(test){copy_checked_database(source,local)?;return Ok(false)}
+        if self.occupied_count()?>0{return Err("Для обновления защиты завершите все сеансы прежнего выпуска.".into())}
+        for suffix in ["-wal","-journal","-shm"]{let mut s=source.as_os_str().to_owned();s.push(suffix);if Path::new(&s).exists(){return Err("Старая общая база содержит активный журнал. Завершите старые сеансы и подготовьте согласованную копию.".into())}}
+        let staging=local.with_extension(format!("migration-{}",Uuid::new_v4()));
+        let result=(|| {
+            fs::copy(source,&staging).map_err(|e|e.to_string())?;
+            crate::vault::migrate_plain(&staging)?;
+            validate_database(&staging)?;
+            atomic_replace(&staging,local)
+        })();
+        let _=fs::remove_file(staging);
+        result.map(|_|true)
+    }
     pub fn ensure_shared_database(&self,db:&ProductionDb)->Result<(),String>{
         if !self.enabled{return Ok(())}
         let lock=self.acquire_store_lock()?;
@@ -210,8 +237,9 @@ impl NetworkRuntime {
             if self.store_was_initialized()?{return Err("Ранее созданная общая база недоступна или удалена. Восстановите общий снимок из резервной копии.".into())}
             if self.occupied_count()?>0{return Err("Общий снимок базы отсутствует, хотя другие сетевые сеансы ещё активны. Восстановите общую базу из резервной копии.".into())}
             self.publish_locked(db)?;
-        }else{validate_database(&self.shared_database()?)?;}
+        }else{let check=self.local_data.join(format!("check-{}.db",Uuid::new_v4()));let result=copy_checked_database(&self.shared_database()?,&check);let _=fs::remove_file(check);result?;}
         self.mark_store_initialized()?;
+        crate::vault::mark_store(&self.shared_database()?)?;
         FileExt::unlock(&lock).map_err(|e|e.to_string())?;
         Ok(())
     }
@@ -259,6 +287,7 @@ impl NetworkRuntime {
 
     fn refresh_locked(&self,db:&ProductionDb)->Result<(),String>{
         let shared=self.shared_database()?;
+        crate::vault::check_store_marker(&shared)?;
         if !shared.is_file(){return Err("Общий снимок базы недоступен или удалён. Сохранение остановлено: восстановите общую базу или соединение с сетевой папкой.".into())}
         let temp=self.local_data.join(format!("network-incoming-{}.db",Uuid::new_v4()));
         copy_checked_database(&shared,&temp)?;
@@ -513,7 +542,7 @@ impl NetworkRuntime {
         let snapshot_bytes=serde_json::to_vec(snapshot).map_err(|e|e.to_string())?;
         let content_sha256=format!("{:x}",Sha256::digest(&snapshot_bytes));
         let envelope=DraftEnvelope{format:"production-cycle-network-draft-v1",saved_at:saved_at.clone(),session_id:&active.metadata.session_id,user_id:active.metadata.user_id,content_sha256,snapshot};
-        let bytes=serde_json::to_vec_pretty(&envelope).map_err(|e|e.to_string())?;
+        let bytes=crate::vault::seal_draft(&serde_json::to_vec_pretty(&envelope).map_err(|e|e.to_string())?)?;
         let key=draft_key(snapshot);
         let user=active.metadata.user_id.map(|id|format!("user-{id}")).unwrap_or_else(||"bootstrap".into());
         let shared_dir=self.root()?.join("shared/drafts").join(user);
@@ -540,7 +569,8 @@ impl NetworkRuntime {
             let Ok(file)=File::open(&path) else{continue};let mut bytes=Vec::new();
             if file.take(MAX_PENDING_DRAFT_BYTES+1).read_to_end(&mut bytes).is_err()
                 || bytes.len() as u64>MAX_PENDING_DRAFT_BYTES{continue}
-            let Ok(envelope)=serde_json::from_slice::<PendingDraftEnvelope>(&bytes) else{continue};
+            let Ok(decoded)=crate::vault::read_draft(&bytes) else{continue};
+            let Ok(envelope)=serde_json::from_slice::<PendingDraftEnvelope>(&decoded) else{continue};
             let Ok(id)=Uuid::parse_str(&envelope.session_id) else{continue};
             if envelope.format!="production-cycle-network-draft-v1"
                 || envelope.user_id!=active.metadata.user_id
@@ -587,6 +617,11 @@ pub fn maybe_relaunch_network_client()->Result<bool,String>{
     let root=direct.canonicalize().map_err(|e|L::io_error("Нет доступа к папке запуска",direct,e))?;
     super::startup::detail("Исходная папка программы",&root.display().to_string());
     super::startup::update("Проверка способа запуска и общей папки…");
+    if env::args().any(|a|a=="--offline-workstation"){
+        if !is_local_disk(&root){return Err("Распакуйте автономное рабочее место на локальный диск компьютера.".into())}
+        if root.join("shared/database/production-cycle.db").is_file(){return Err("Это каталог действующей общей базы. Автономный режим запускается из отдельной распаковки ZIP.".into())}
+        return Ok(false)
+    }
     let config_path=root.join("config/network.json");
     let exists=config_path.try_exists().map_err(|e|L::io_error("Не удалось проверить сетевую конфигурацию",&config_path,e))?;
     if !exists{
@@ -754,7 +789,7 @@ fn read_network_config(path:&Path)->Result<NetworkConfig,String>{
 }
 
 fn validate_database(path:&Path)->Result<(),String>{
-    let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e|format!("Не удалось открыть снимок базы: {e}"))?;
+    let conn=crate::vault::read(path).map_err(|e|format!("Не удалось открыть снимок базы: {e}"))?;
     let integrity:String=conn.query_row("PRAGMA integrity_check",[],|row|row.get(0)).map_err(|e|e.to_string())?;
     if integrity!="ok"{return Err(format!("Снимок общей базы повреждён: {integrity}"))}
     let tables:i64=conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('production_cycle','production_stage')",[],|row|row.get(0)).map_err(|e|e.to_string())?;
@@ -768,8 +803,12 @@ fn copy_checked_database(source:&Path,target:&Path)->Result<(),String>{
     if let Some(parent)=target.parent(){fs::create_dir_all(parent).map_err(|e|e.to_string())?;}
     let pending=target.with_extension(format!("copy-{}",Uuid::new_v4().simple()));
     fs::copy(source,&pending).map_err(|e|format!("Не удалось скопировать базу {}: {e}",source.display()))?;
-    validate_database(&pending)?;
-    atomic_replace(&pending,target)
+    // Validate on the local side of SMB. The shared target is an opaque snapshot.
+    let source_local=source.canonicalize().unwrap_or_else(|_|source.to_path_buf());
+    let shared_target=target.components().any(|part|part.as_os_str()=="shared");
+    let checked=if shared_target {validate_database(&source_local)}else{validate_database(&pending)};
+    let result=checked.and_then(|_|atomic_replace(&pending,target));
+    if result.is_err(){let _=fs::remove_file(&pending);}result
 }
 
 pub(crate) fn atomic_write(path:&Path,bytes:&[u8])->Result<(),String>{atomic_write_io(path,bytes).map_err(|e|e.to_string())}
@@ -792,7 +831,7 @@ fn atomic_write_io(path:&Path,bytes:&[u8])->std::io::Result<()>{
     result
 }
 
-fn atomic_replace(pending:&Path,target:&Path)->Result<(),String>{atomic_replace_io(pending,target).map_err(|e|e.to_string())}
+pub(crate) fn atomic_replace(pending:&Path,target:&Path)->Result<(),String>{atomic_replace_io(pending,target).map_err(|e|e.to_string())}
 
 #[cfg(windows)]
 fn atomic_replace_io(pending:&Path,target:&Path)->std::io::Result<()>{

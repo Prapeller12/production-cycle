@@ -160,7 +160,7 @@ pub fn diagnostic_report(value:&serde_json::Value){
     if let Some(path)=env::var_os("PRODUCTION_CYCLE_STARTUP_REPORT").map(PathBuf::from){let _=write_status(&path,value);}
 }
 pub fn wait_for_window(child:&mut Child,status:&Path,client:&Path,budget:Duration)->Result<serde_json::Value,String>{
-    let started=Instant::now();let mut phase_started=Instant::now();let mut last_stage="Запуск процесса клиента".to_string();
+    let mut started=Instant::now();let mut tick=started;let mut phase_started=Instant::now();let mut last_stage="Запуск процесса клиента".to_string();
     loop{
         let bytes=match fs::read(status){Ok(value)=>Some(value),Err(error) if error.kind()==std::io::ErrorKind::NotFound=>None,Err(error)=>return Err(io_error("Нет доступа к подтверждению готовности клиента",status,error))};
         if let Some(bytes)=bytes{
@@ -175,6 +175,7 @@ pub fn wait_for_window(child:&mut Child,status:&Path,client:&Path,budget:Duratio
         if super::startup::cancelled(){let _=child.kill();let _=child.wait();return Err("Запуск отменён пользователем.".into())}
         if ["Создание рабочего окна","Загрузка интерфейса","Ожидание готовности"].iter().any(|prefix|last_stage.starts_with(prefix)) && phase_started.elapsed()>Duration::from_secs(45){let _=child.kill();let _=child.wait();return Err(format!("Локальный клиент не завершил этап за 45 секунд.\nПоследний этап: {last_stage}\nЛокальный EXE: {}\nКлиент остановлен, чтобы не оставить зависший процесс.",client.display()));}
         if let Some(exit)=child.try_wait().map_err(|e|io_error("Не удалось проверить процесс клиента",client,e))?{return Err(format!("Локальный клиент завершился до открытия окна.\nПуть: {}\nКод завершения: {:?}\nПроверьте разрешение запуска EXE и WebView2 в настройках защиты Windows.",client.display(),exit.code()))}
+        let now=Instant::now();if last_stage.contains("Ожидание парольной фразы"){started+=now.duration_since(tick);}tick=now;
         if started.elapsed()>budget{let _=child.kill();let _=child.wait();return Err(format!("Клиент не подтвердил открытие окна за {} секунд.\nПоследний этап клиента: {last_stage}\nПуть: {}\nПроверьте разрешения EXE, WebView2 и локального профиля.",budget.as_secs(),client.display()))}
         std::thread::sleep(Duration::from_millis(100));
     }
