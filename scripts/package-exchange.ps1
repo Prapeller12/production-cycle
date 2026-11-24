@@ -6,6 +6,8 @@ $runtime=(Get-Content "$env:RUNNER_TEMP/secure-fixed-webview/runtime-path.txt" -
 $work=Join-Path $env:RUNNER_TEMP 'pc-exchange-bundle'
 ./scripts/package-native-share.ps1 -FixedRuntimePath $runtime -Version ('exchange-'+$env:GITHUB_SHA.Substring(0,12)) -OutputPath $work
 $root=Join-Path $work 'ProductionCycleNetwork'
+Copy-Item ./scripts/archive-encrypted-backup.ps1 "$root/archive-encrypted-backup.ps1"
+[IO.File]::WriteAllText("$root/ARCHIVE-BACKUP.cmd","@echo off`r`n`"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`" -NoProfile -STA -ExecutionPolicy RemoteSigned -File `"%~dp0archive-encrypted-backup.ps1`"`r`npause`r`n",[Text.Encoding]::ASCII)
 Copy-Item ./docs/database-encryption.json "$root/database-encryption.json"
 Copy-Item ./docs/db-exchange-start.txt "$root/КАК ЗАПУСТИТЬ.txt" -Force
 Remove-Item "$root/samples" -Recurse -Force -ErrorAction SilentlyContinue
@@ -25,6 +27,11 @@ npm ci --ignore-scripts --no-audit --no-fund
 if ($LASTEXITCODE) {throw 'UI test dependencies failed'}
 node tests/db-exchange-window.cjs $root offline $qa
 if ($LASTEXITCODE) {throw 'Offline native UI failed'}
+$sourceBackup=Get-ChildItem -LiteralPath "$root/data/backups" -File -Filter 'production-cycle_*.db' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+if(!$sourceBackup){throw 'Signed save did not produce an encrypted backup'}
+& "$root/archive-encrypted-backup.ps1" -BackupFile $sourceBackup.FullName -Destination $qa
+$written=Get-ChildItem -LiteralPath $qa -Directory -Filter 'ProductionCycle_*' | Select-Object -First 1
+if(!$written -or (Get-FileHash -LiteralPath (Join-Path $written.FullName $sourceBackup.Name)).Hash -ne (Get-FileHash -LiteralPath $sourceBackup.FullName).Hash){throw 'Offline backup verification failed'}
 Move-Item "$root/data" "$qa/offline-data"
 $shareName='PCExchange'+$env:GITHUB_RUN_ID
 $account=[Security.Principal.WindowsIdentity]::GetCurrent().Name

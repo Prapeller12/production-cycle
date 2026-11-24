@@ -3,6 +3,7 @@ on:
   push:
     branches: [feature/offline-db-exchange-20261124]
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -25,7 +26,7 @@ jobs:
       - name: Test and build executable
         shell: pwsh
         run: |
-          node --test tests/domain.test.cjs tests/statistics-domain.test.cjs
+          node --test tests/domain.test.cjs tests/statistics-domain.test.cjs tests/statistics-integration.test.cjs
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --locked --release --features custom-protocol,local-desktop --manifest-path src-tauri/Cargo.toml
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
