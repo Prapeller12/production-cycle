@@ -62,6 +62,7 @@ fn main(){
     let network_enabled=network.enabled();
     let frontend=paths.frontend.clone();
     let smoke=std::env::args().any(|arg|arg=="--smoke-test");
+    let run_embedded_smoke=smoke && !std::env::args().any(|a|a=="--external-ui-test");
     infrastructure::startup::update("Создание рабочего окна WebView2…");
     let result=tauri::Builder::default()
         .manage(paths)
@@ -107,7 +108,7 @@ fn main(){
                 .inner_size(1440.0,900.0).min_inner_size(700.0,500.0)
                 .data_directory(infrastructure::launch::native_local_path(&paths.webview))
                 .additional_browser_args(&if smoke {std::env::var("PRODUCTION_CYCLE_SMOKE_BROWSER_ARGS").unwrap_or_default()}else{String::new()})
-                .on_page_load(move |window,payload|{if !infrastructure::startup::is_ready(){infrastructure::startup::update(if payload.event()==tauri::webview::PageLoadEvent::Started{"Загрузка интерфейса программы…"}else{"Ожидание готовности интерфейса…"});}if smoke && payload.event()==tauri::webview::PageLoadEvent::Finished {if cfg!(feature="local-desktop"){let _=window.eval(smoke::LOCAL_TRACE);}
+                .on_page_load(move |window,payload|{if !infrastructure::startup::is_ready(){infrastructure::startup::update(if payload.event()==tauri::webview::PageLoadEvent::Started{"Загрузка интерфейса программы…"}else{"Ожидание готовности интерфейса…"});}if run_embedded_smoke && payload.event()==tauri::webview::PageLoadEvent::Finished {if cfg!(feature="local-desktop"){let _=window.eval(smoke::LOCAL_TRACE);}
                     let _=window.eval(if cfg!(feature="local-desktop"){smoke::LOCAL_SCRIPT}else if network_enabled{smoke::NETWORK_SCRIPT}else{smoke::SCRIPT});}})
                 .on_navigation(|url|matches!(url.scheme(),"production") || url.host_str()==Some("production.localhost"))
                 .build().map_err(|error|format!("Не удалось создать рабочее окно: {error}\nRuntime: {}\nПрофиль: {}\n{}",paths.runtime.display(),paths.webview.display(),paths.runtime_warning.as_deref().unwrap_or("")))?;

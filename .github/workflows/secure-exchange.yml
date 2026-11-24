@@ -43,3 +43,6 @@ jobs:
           path: dist/exchange/*.zip
           compression-level: 0
           if-no-files-found: error
+      - name: Verify shipped Windows application offline and over SMB
+        shell: pwsh
+        run: ./scripts/test-exchange-release.ps1

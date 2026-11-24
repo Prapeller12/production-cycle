@@ -8,7 +8,7 @@ const [root,mode,work]=process.argv.slice(2),isShared=mode==='shared',pin='72941
 const run=async()=>{
  const p=await port();const secret='AQPrivateStore'+Math.random().toString(36).slice(2);
  const report=path.join(work,mode+'-startup.json');
- const child=spawn(path.join(root,'production-cycle.exe'),isShared?[]:['--offline-workstation'],{cwd:os.tmpdir(),env:{...process.env,PRODUCTION_CYCLE_LAUNCH_STATUS:report,PRODUCTION_CYCLE_STARTUP_REPORT:report,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port='+p}});
+ const child=spawn(path.join(root,'production-cycle.exe'),['--smoke-test','--external-ui-test',...(isShared?[]:['--offline-workstation'])],{cwd:os.tmpdir(),env:{...process.env,PRODUCTION_CYCLE_LAUNCH_STATUS:report,PRODUCTION_CYCLE_STARTUP_REPORT:report,PRODUCTION_CYCLE_SMOKE_BROWSER_ARGS:'--remote-debugging-port='+p}});
  const unlock=spawn('powershell.exe',['-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'unlock-test-window.ps1')],{env:{...process.env,PC_TEST_WINDOW_PHRASE:secret},stdio:'inherit'});
  const unlockExit=new Promise(r=>unlock.on('exit',r));
  let browser,page;
@@ -28,7 +28,7 @@ const run=async()=>{
       await call('audit_save_snapshot',{snapshot:{project:{name:'Проверка обмена',orderNo:'005',initiator:'Цех',executor:'ОТК',enterprise:'Завод',start:'2026-12-01',deadline:'2026-12-31'},stages:[{uid:'ui-stage',seq:1,sort:1,parentUid:null,title:'Контроль',executor:'Сборка',addressees:'ОТК',start:'2026-12-01',deadline:'2026-12-15',status:'new',comment:''}],nextSeq:2},userId:user.id,pin,comment:'Испытание',evidence:null});
     }
   },{pin,isShared});
-  await page.reload();await page.waitForFunction(()=>window.ProductionDbExchange && document.querySelector('#importBtn'));
+  await page.reload();await page.waitForFunction(()=>window.ProductionDbExchange && document.querySelector('#importBtn') && !document.querySelector('#networkLoginModal')?.classList.contains('open'));
   // Dismiss the optional first-login guide if opened. Use the public menu event.
   await page.evaluate(()=>{document.querySelector('#onboardingModal.open [data-close="onboardingModal"]')?.click();document.querySelector('details.more-actions').open=true;document.querySelector('#importBtn').click()});
   await page.locator('#exchangeDbModal.open').waitFor();
