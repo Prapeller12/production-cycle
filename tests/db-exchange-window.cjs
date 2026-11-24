@@ -13,8 +13,8 @@ const run=async()=>{
  const unlockExit=new Promise(r=>unlock.on('exit',r));
  let browser,page;
  try{
-  assert.equal(await unlockExit,0,'unlock dialog');
-  await until(async()=>{try{return (await fetch('http://127.0.0.1:'+p+'/json/version',{signal:AbortSignal.timeout(1000)})).ok}catch{return false}},'WebView2 port');
+  assert.equal(await unlockExit,0,'unlock dialog');console.log('Native unlock submitted: '+mode);
+  await until(async()=>{try{return (await fetch('http://127.0.0.1:'+p+'/json/version',{signal:AbortSignal.timeout(1000)})).ok}catch{return false}},'WebView2 port');console.log('Packaged WebView connected: '+mode);
   browser=await chromium.connectOverCDP('http://127.0.0.1:'+p);
   page=await until(()=>browser.contexts()[0]?.pages().find(x=>x.url().includes('production.localhost')||x.url().includes('production://localhost')),'native page');
   await page.waitForFunction(()=>window.ProductionDbExchange && window.__TAURI__?.core?.invoke);

@@ -4,7 +4,7 @@ Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class VaultWindowTest {
- [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string type, string title);
+ [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string type, IntPtr title);
  [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr parent, int id);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr param, string text);
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr param, IntPtr extra);
@@ -13,7 +13,7 @@ public static class VaultWindowTest {
 '@
 $until=(Get-Date).AddSeconds(105)
 while((Get-Date) -lt $until){
- $window=[VaultWindowTest]::FindWindow('ProductionCycleVaultUnlock',$null)
+ $window=[VaultWindowTest]::FindWindow('ProductionCycleVaultUnlock',[IntPtr]::Zero)
  if($window -ne [IntPtr]::Zero){
   [uint32]$processNumber=0
   $null=[VaultWindowTest]::GetWindowThreadProcessId($window,[ref]$processNumber)
@@ -29,4 +29,5 @@ while((Get-Date) -lt $until){
  }
  Start-Sleep -Milliseconds 250
 }
+Get-Process -Name production-cycle -ErrorAction SilentlyContinue | Select-Object Id,SessionId,MainWindowTitle,Responding | Format-Table
 throw 'Test key dialog did not appear'
