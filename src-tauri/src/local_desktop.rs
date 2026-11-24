@@ -32,6 +32,9 @@ impl LocalSession {
         result["state"] = json!("active");
         Ok(result)
     }
+    pub(crate) fn exchange_identity(&self)->Result<std::sync::MutexGuard<'_,Option<AuditUserSummary>>,String>{
+        self.0.lock().map_err(|_|"Сеанс занят.".into())
+    }
     pub(crate) fn user(&self) -> Result<AuditUserSummary, String> {
         self.0.lock().map_err(|_| "Сеанс занят")?.clone().ok_or_else(|| "Войдите под своим профилем.".into())
     }

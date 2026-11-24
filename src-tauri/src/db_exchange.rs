@@ -123,6 +123,20 @@ fn make_packet(
     let sig = sign(&key, &p)?;
     Ok((p, sig))
 }
+fn validate_route(shared: bool, kind: &str, sending: bool) -> R<()> {
+    let allowed = match (shared, sending) {
+        (true, true) | (false, false) => {
+            matches!(kind, "assignment" | "receipt") || (!sending && kind == "legacy")
+        }
+        (false, true) => kind == "changes",
+        (true, false) => matches!(kind, "changes" | "legacy"),
+    };
+    if allowed {
+        Ok(())
+    } else {
+        Err("Этот тип передачи предназначен для другого рабочего места. Проверьте сетевой или автономный режим запуска.".into())
+    }
+}
 #[tauri::command]
 pub fn exchange_export(
     ids: Vec<i64>,
@@ -134,7 +148,11 @@ pub fn exchange_export(
     network: State<NetworkRuntime>,
     paths: State<Paths>,
 ) -> R<String> {
-    let user = session.user()?;
+    let session_guard = session.exchange_identity()?;
+    let user = session_guard
+        .as_ref()
+        .ok_or("Войдите под своим профилем.")?;
+    validate_route(network.enabled(), &kind, true)?;
     if !["assignment", "changes", "receipt"].contains(&kind.as_str()) {
         return Err("Неизвестный тип файла.".into());
     }
@@ -540,8 +558,12 @@ pub fn exchange_preview(
     session: State<LocalSession>,
     network: State<NetworkRuntime>,
 ) -> R<Value> {
-    let u = session.user()?;
+    let session_guard = session.exchange_identity()?;
+    let u = session_guard
+        .as_ref()
+        .ok_or("Войдите под своим профилем.")?;
     let p = parse(&data, &passphrase)?;
+    validate_route(network.enabled(), &p.kind, false)?;
     network.with_read(&db, || {
         let mut c = db.conn.lock().map_err(err)?;
         active(&c, &u)?;
@@ -575,8 +597,12 @@ pub fn exchange_commit(
     session: State<LocalSession>,
     network: State<NetworkRuntime>,
 ) -> R<Value> {
-    let u = session.user()?;
+    let session_guard = session.exchange_identity()?;
+    let u = session_guard
+        .as_ref()
+        .ok_or("Войдите под своим профилем.")?;
     let p = parse(&data, &passphrase)?;
+    validate_route(network.enabled(), &p.kind, false)?;
     if comment.trim().is_empty() {
         return Err("Введите комментарий к подписанному приёму.".into());
     }
@@ -622,7 +648,10 @@ pub fn exchange_reviews(
     session: State<LocalSession>,
     network: State<NetworkRuntime>,
 ) -> R<Vec<Value>> {
-    let u = session.user()?;
+    let session_guard = session.exchange_identity()?;
+    let u = session_guard
+        .as_ref()
+        .ok_or("Войдите под своим профилем.")?;
     network.with_read(&db,||{let c=db.conn.lock().map_err(err)?;active(&c,&u)?;
         let mut st=c.prepare("SELECT project_id,body,reason FROM exchange_inbox WHERE state='needs_review' ORDER BY rowid").map_err(err)?;
         let mut out=vec![];let rows=st.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).map_err(err)?;
@@ -640,7 +669,10 @@ pub fn exchange_resolve(
     session: State<LocalSession>,
     network: State<NetworkRuntime>,
 ) -> R<()> {
-    let u = session.user()?;
+    let session_guard = session.exchange_identity()?;
+    let u = session_guard
+        .as_ref()
+        .ok_or("Войдите под своим профилем.")?;
     if comment.trim().is_empty() {
         return Err("Введите основание решения.".into());
     }
@@ -694,4 +726,120 @@ pub fn exchange_resolve(
         tx.commit().map_err(err)?;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod exchange_tests {
+    use super::*;
+    use crate::audit::CreateAuditUserInput;
+    const PIN: &str = "837492";
+    fn operator(
+        db: &ProductionDb,
+        name: &str,
+        role: &str,
+        admin: Option<i64>,
+    ) -> audit::AuditUserSummary {
+        db.create_audit_user(CreateAuditUserInput {
+            display_name: name.into(),
+            pin: PIN.into(),
+            role: Some(role.into()),
+            is_admin: admin.is_none(),
+            admin_user_id: admin,
+            admin_pin: admin.map(|_| PIN.into()),
+        })
+        .unwrap()
+    }
+    fn sample() -> ProductionSnapshot {
+        serde_json::from_value(json!({"project":{"name":"Образец","orderNo":"001","initiator":"Цех","executor":"Сборка","enterprise":"Площадка","start":"2026-12-01","deadline":"2026-12-31"},"stages":[{"uid":"S1","seq":1,"sort":1,"parentUid":null,"title":"Контроль","executor":"Цех","addressees":"ОТК","start":"2026-12-01","deadline":"2026-12-15","status":"new","comment":""}],"nextSeq":2})).unwrap()
+    }
+    fn outgoing(
+        db: &ProductionDb,
+        id: i64,
+        kind: &str,
+        u: &audit::AuditUserSummary,
+    ) -> (Packet, String) {
+        let mut c = db.conn.lock().unwrap();
+        let tx = c.transaction().unwrap();
+        let p = make_packet(&tx, &[id], kind, u, PIN).unwrap();
+        tx.commit().unwrap();
+        p
+    }
+    fn receive(db: &ProductionDb, p: &Packet, target: i64, u: &audit::AuditUserSummary) -> Value {
+        let mut c = db.conn.lock().unwrap();
+        let tx = c.transaction().unwrap();
+        let choices = [Choice {
+            guid: p.parts[0].guid.clone(),
+            target,
+        }];
+        let v = transfer(&tx, p, &choices, u, Some((PIN, "Испытание"))).unwrap();
+        tx.commit().unwrap();
+        v
+    }
+    #[test]
+    fn field_roundtrip_parallel_change_replay_receipt_and_all_roles() {
+        let server = ProductionDb::memory().unwrap();
+        let offline = ProductionDb::memory().unwrap();
+        let a = operator(&server, "Администратор", "admin", None);
+        let r = operator(&server, "Проверяющий", "reviewer", Some(a.id));
+        let m = operator(&server, "Руководитель", "project_manager", Some(a.id));
+        let b = operator(&offline, "Автономный оператор", "admin", None);
+        let id = server
+            .save_signed_snapshot(&sample(), a.id, PIN, "Исходный", None)
+            .unwrap()
+            .project_id;
+        for u in [&a, &r, &m] {
+            let (p, s) = outgoing(&server, id, "assignment", u);
+            verify(&p.key, &s, &p).unwrap();
+        }
+        let (issued, sig) = outgoing(&server, id, "assignment", &r);
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("issue.pcdb");
+        exchange_file::write(&path, &issued, &sig, "separate-test-phrase").unwrap();
+        let raw = std::fs::read(path).unwrap();
+        assert!(!raw.starts_with(b"SQLite format 3"));
+        assert!(exchange_file::read(&raw, "wrong-test-phrase").is_err());
+        let issued = exchange_file::read(&raw, "separate-test-phrase").unwrap();
+        let v = receive(&offline, &issued, 0, &b);
+        let lid = v["projects"][0]["target"].as_i64().unwrap();
+        let mut left = server.load_snapshot_by_id(id).unwrap().unwrap();
+        left.stages[0].deadline = "2026-12-19".into();
+        server
+            .save_signed_snapshot(&left, a.id, PIN, "Срок сервера", None)
+            .unwrap();
+        let mut right = offline.load_snapshot_by_id(lid).unwrap().unwrap();
+        right.stages[0].deadline = "2026-12-17".into();
+        right.stages[0].executor = "Новый цех".into();
+        let mut extra = right.stages[0].clone();
+        extra.uid = "S2".into();
+        extra.seq = 2;
+        extra.sort = 2;
+        extra.title = "Новый этап".into();
+        right.stages.push(extra);
+        right.next_seq = 3;
+        offline
+            .save_signed_snapshot(&right, b.id, PIN, "Работа без связи", None)
+            .unwrap();
+        let (changes, _) = outgoing(&offline, lid, "changes", &b);
+        let accepted = receive(&server, &changes, id, &m);
+        let rows = accepted["projects"][0]["rows"].as_array().unwrap();
+        assert_eq!(rows.iter().filter(|v| v["state"] == "applied").count(), 2);
+        assert_eq!(
+            rows.iter().filter(|v| v["state"] == "needs_review").count(),
+            1
+        );
+        let replay = receive(&server, &changes, id, &r);
+        assert!(replay["projects"][0]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|v| v["repeat"] == true));
+        let s = server.load_snapshot_by_id(id).unwrap().unwrap();
+        assert_eq!(s.stages.len(), 2);
+        assert_eq!(s.stages[0].deadline, "2026-12-19");
+        assert_eq!(s.stages[0].executor, "Новый цех");
+        let (receipt, _) = outgoing(&server, id, "receipt", &a);
+        receive(&offline, &receipt, lid, &b);
+        let (changes, _) = outgoing(&offline, lid, "changes", &b);
+        assert_eq!(changes.parts[0].ops.len(), 1);
+    }
 }

@@ -201,6 +201,7 @@ impl NetworkRuntime {
                 copy_checked_database(local_db,&shared)?;
             }
         }
+        crate::vault::protect_backup_history(&self.root()?.join("shared/backups"))?;
         if shared.is_file(){
             let converted=self.prepare_snapshot(&shared,local_db)?;
             if converted {copy_checked_database(local_db,&shared)?;}

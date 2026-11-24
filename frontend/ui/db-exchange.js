@@ -18,7 +18,7 @@
     $('PassHint').textContent=next==='export'?'От 12 символов. Передайте фразу получателю отдельно.':'Введите фразу переданного файла. Для старой открытой базы оставьте поле пустым.';
     $('Go').textContent=next==='export'?'Сохранить файл базы':'Подписать и применить';$('Plan').hidden=true;$('Mapping').replaceChildren();invalidate();status('');}
   function guarded(fn){return async()=>{if(busy)return;const generation=session;busy=true;try{await fn(()=>generation===session)}catch(e){if(generation===session)status(String(e?.message||e))}finally{if(generation===session)busy=false}}}
-  async function open(){reset();tab('export');$('Kind').value=window.ProductionShared?'assignment':'changes';const epoch=session;
+  async function open(){reset();tab('export');$('Kind').value=window.ProductionShared?'assignment':'changes';for(const option of $('Kind').options){option.disabled=window.ProductionShared?option.value==='changes':option.value!=='changes';option.hidden=option.disabled;}const epoch=session;
     try{const items=await invoke('production_list_projects');if(epoch!==session)return;catalog=items;
       for(const p of items){const l=el('label');l.className='checkline';const ch=el('input');ch.type='checkbox';ch.value=p.projectId;l.append(ch,document.createTextNode(p.name+' · заказ '+p.orderNo));$('Projects').append(l)}
       if(!items.length)$('Projects').textContent='Сохранённых проектов пока нет. Для получения проекта выберите импорт.';
